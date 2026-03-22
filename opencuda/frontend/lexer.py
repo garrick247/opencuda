@@ -10,9 +10,10 @@ from enum import Enum, auto
 
 class TokKind(Enum):
     # Literals
-    INT_LIT   = auto()
-    FLOAT_LIT = auto()
-    IDENT     = auto()
+    INT_LIT    = auto()
+    FLOAT_LIT  = auto()
+    STRING_LIT = auto()
+    IDENT      = auto()
 
     # Keywords
     KW_GLOBAL   = auto()  # __global__
@@ -137,6 +138,7 @@ _KEYWORDS = {
 _TOKEN_RE = re.compile(r"""
     (?P<COMMENT_LINE>   //[^\n]*            ) |
     (?P<COMMENT_BLOCK>  /\*.*?\*/           ) |
+    (?P<STRING_LIT>     "(?:[^"\\]|\\.)*"   ) |
     (?P<FLOAT_LIT>      [0-9]+\.[0-9]*[fF]?
                       | [0-9]*\.[0-9]+[fF]?
                       | [0-9]+[fF]          ) |
@@ -242,6 +244,8 @@ def lex(source: str) -> list[Token]:
             tok_kind = TokKind.INT_LIT
         elif kind_name == 'FLOAT_LIT':
             tok_kind = TokKind.FLOAT_LIT
+        elif kind_name == 'STRING_LIT':
+            tok_kind = TokKind.STRING_LIT
         else:
             tok_kind = _GROUP_TO_KIND.get(kind_name)
             if tok_kind is None:

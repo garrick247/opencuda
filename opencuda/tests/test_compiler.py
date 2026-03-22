@@ -38,6 +38,8 @@ def test_parse_and_emit(cu_file):
     assert len(ptx_map) >= 1, f"No PTX emitted for {cu_file.name}"
 
     for kernel_name, ptx_text in ptx_map.items():
+        if kernel_name.startswith('__'):
+            continue
         assert '.version' in ptx_text
         assert '.entry' in ptx_text
         assert 'ret;' in ptx_text
@@ -53,7 +55,15 @@ def test_ptxas_validates(cu_file, tmp_path):
 
     # Concatenate all kernels
     all_ptx = ['.version 9.0', '.target sm_120', '.address_size 64', '']
-    for ptx_text in ptx_map.values():
+
+    # Insert module-level preamble (e.g. vprintf extern + format string globals)
+    if '__preamble__' in ptx_map:
+        all_ptx.extend(ptx_map['__preamble__'].split('\n'))
+        all_ptx.append('')
+
+    for name, ptx_text in ptx_map.items():
+        if name.startswith('__'):
+            continue
         lines = ptx_text.split('\n')
         for j, line in enumerate(lines):
             if line.startswith('.visible') or line.startswith('{'):

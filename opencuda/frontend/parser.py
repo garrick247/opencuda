@@ -14,11 +14,11 @@ from typing import Optional
 
 from .lexer import Token, TokKind, lex
 from ..ir.types import (Type, ScalarTy, PtrTy, AddrSpace, ScalarType, StructTy,
-                         INT32, UINT32, FLOAT, VOID, INT64, UINT64, DOUBLE)
+                         INT32, UINT32, FLOAT, VOID, INT64, UINT64, DOUBLE, HALF)
 from ..ir.nodes import (Module, Kernel, KernelParam, BasicBlock,
                          Value, Const, Operand,
                          BinInst, CmpInst, LoadInst, StoreInst,
-                         CvtInst, CallInst, ParamInst,
+                         CvtInst, CallInst, ParamInst, PrintfInst,
                          BinOp, CmpOp,
                          RetTerm, BrTerm, CondBrTerm)
 
@@ -39,6 +39,7 @@ class Parser:
         self._typedefs: dict[str, Type] = {}  # typedef name → Type
         self._break_targets: list[str] = []     # stack of break target labels
         self._continue_targets: list[str] = []  # stack of continue target labels
+        self._inline_return_target = None  # (return_dest_val, return_merge_label) or None
 
     # -- Token helpers -------------------------------------------------------
 
@@ -94,6 +95,9 @@ class Parser:
         elif tok.kind == TokKind.KW_DOUBLE:
             self._advance()
             return DOUBLE
+        elif tok.kind == TokKind.KW_HALF:
+            self._advance()
+            return HALF
         elif tok.kind == TokKind.KW_INT:
             self._advance()
             return INT32
@@ -128,9 +132,18 @@ class Parser:
 
     def _parse_type_with_ptr(self) -> Type:
         """Parse type followed by optional pointer stars."""
+        # Skip leading const qualifier
+        self._match(TokKind.KW_CONST)
         base = self._parse_type()
+        # Skip const after type (e.g. "float const *")
+        self._match(TokKind.KW_CONST)
         while self._match(TokKind.STAR):
+            # Skip const after each pointer star (e.g. "float * const")
+            self._match(TokKind.KW_CONST)
             base = PtrTy(base, AddrSpace.GLOBAL)
+        # Skip __restrict__ qualifier
+        if self._at(TokKind.IDENT) and self._peek().value == '__restrict__':
+            self._advance()
         return base
 
     # -- Expression parsing (precedence climbing) ----------------------------
@@ -328,6 +341,35 @@ class Parser:
         return lhs
 
     def _parse_unary_expr(self) -> Operand:
+        if self._match(TokKind.AMP):
+            # Address-of: &expr — for ptr[idx], return the address not the loaded value
+            # Peek: if it's ident[expr], parse as lvalue to get the address
+            if self._at(TokKind.IDENT):
+                name = self._peek().value
+                if name in self._variables:
+                    var = self._variables[name]
+                    if isinstance(var.ty, PtrTy):
+                        saved = self._pos
+                        self._advance()  # consume ident
+                        if self._match(TokKind.LBRACKET):
+                            index = self._parse_expr()
+                            self._expect(TokKind.RBRACKET)
+                            elem_size = var.ty.pointee.size
+                            if elem_size != 1:
+                                scaled = self._new_val("scale", INT32)
+                                self._emit(BinInst(scaled, BinOp.MUL, index,
+                                                   Const(index.ty if isinstance(index, Value) else INT32, elem_size)))
+                                index = scaled
+                            addr = self._new_val("addr", var.ty)
+                            self._emit(BinInst(addr, BinOp.ADD, var, index))
+                            return addr  # return address, no load
+                        # Not array index, restore
+                        self._pos = saved
+            # Generic fallback
+            operand = self._parse_unary_expr()
+            if isinstance(operand, Value) and isinstance(operand.ty, PtrTy):
+                return operand
+            return operand
         if self._match(TokKind.STAR):
             operand = self._parse_unary_expr()
             if isinstance(operand, Value) and isinstance(operand.ty, PtrTy):
@@ -489,39 +531,58 @@ class Parser:
                         self._emit(CallInst(dest, name, args))
                         return dest
                     return Const(INT32, 0)
+                elif name == '__ldg':
+                    # __ldg(ptr) — load with non-coherent (read-only) cache
+                    if args:
+                        ptr_arg = args[0]
+                        if isinstance(ptr_arg, Value) and isinstance(ptr_arg.ty, PtrTy):
+                            # Re-wrap with CONST addr space for nc load
+                            nc_ptr = Value(ptr_arg.name, PtrTy(ptr_arg.ty.pointee, AddrSpace.CONST), ptr_arg.id)
+                            dest = self._new_val("ldg", ptr_arg.ty.pointee)
+                            self._emit(LoadInst(dest, nc_ptr))
+                            return dest
+                    return Const(INT32, 0)
+                elif name == 'printf':
+                    # printf("fmt", args...) — emit PrintfInst
+                    # The first arg was STRING_LIT; it set self._last_string_lit
+                    fmt_str = getattr(self, '_last_string_lit', '')
+                    printf_args = args[1:] if len(args) > 1 else []
+                    self._emit(PrintfInst(fmt_str, printf_args))
+                    return Const(VOID, 0)
                 elif hasattr(self, '_device_funcs') and name in self._device_funcs:
-                    # Inline __device__ function: bind args, replay body
+                    # Inline __device__ function with multi-return support
                     dfunc = self._device_funcs[name]
                     saved_vars = dict(self._variables)
                     saved_pos = self._pos
+                    saved_inline_target = self._inline_return_target
 
                     # Bind arguments to parameters
                     for (pname, pty), arg in zip(dfunc['params'], args):
                         self._variables[pname] = arg
 
-                    # Parse body — stop at 'return' and capture the expr
+                    # Create return destination and merge block
+                    ret_ty = dfunc['ret_ty']
+                    return_dest = self._new_val(f"{name}_ret", ret_ty)
+                    return_merge = self._new_block(f"inline_{name}_merge")
+                    self._inline_return_target = (return_dest, return_merge.label)
+
+                    # Parse entire body using normal statement parsing
                     self._pos = dfunc['body_start']
                     self._expect(TokKind.LBRACE)
-                    result = Const(dfunc['ret_ty'], 0)
                     while not self._at(TokKind.RBRACE):
-                        if self._match(TokKind.KW_RETURN):
-                            if not self._at(TokKind.SEMI):
-                                result = self._parse_expr()
-                            self._match(TokKind.SEMI)
-                            # Skip rest of function
-                            depth = 1
-                            while depth > 0:
-                                if self._peek().kind == TokKind.LBRACE: depth += 1
-                                if self._peek().kind == TokKind.RBRACE: depth -= 1
-                                if depth > 0: self._advance()
-                            break
-                        else:
-                            self._parse_stmt()
+                        self._parse_stmt()
+                    # Consume closing brace
+                    self._advance()
 
+                    # If current block has no terminator, branch to merge
+                    if self._cur_block.terminator is None:
+                        self._cur_block.terminator = BrTerm(return_merge.label)
+
+                    self._cur_block = return_merge
                     self._pos = saved_pos
-                    # Restore original variables
                     self._variables = saved_vars
-                    return result
+                    self._inline_return_target = saved_inline_target
+                    return return_dest
                 else:
                     dest = self._new_val(name, INT32)
                     self._emit(CallInst(dest, name, args))
@@ -543,6 +604,14 @@ class Parser:
                 return Value(name, INT32)  # placeholder, resolved by .member access
 
             raise ParseError(f"Line {tok.line}: undefined variable '{name}'")
+
+        if tok.kind == TokKind.STRING_LIT:
+            self._advance()
+            # Strip surrounding quotes and process escape sequences
+            raw = tok.value[1:-1]  # remove leading/trailing "
+            processed = raw.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r').replace('\\\\', '\\').replace('\\"', '"')
+            self._last_string_lit = processed
+            return Const(VOID, 0)  # placeholder
 
         if tok.kind == TokKind.LPAREN:
             self._advance()
@@ -584,7 +653,8 @@ class Parser:
 
         # Variable declaration: type name [= expr];
         if tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_FLOAT,
-                        TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG):
+                        TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
+                        TokKind.KW_HALF):
             ty = self._parse_type_with_ptr()
             name = self._expect(TokKind.IDENT).value
             val = self._new_val(name, ty)
@@ -854,8 +924,23 @@ class Parser:
         # Return
         if tok.kind == TokKind.KW_RETURN:
             self._advance()
-            self._expect(TokKind.SEMI)
-            self._cur_block.terminator = RetTerm()
+            if self._at(TokKind.SEMI):
+                self._advance()
+                ret_val = None
+            else:
+                ret_val = self._parse_expr()
+                self._expect(TokKind.SEMI)
+            if self._inline_return_target is not None:
+                # Inside inlined device function — store return value and branch to merge
+                return_dest, return_merge_label = self._inline_return_target
+                if ret_val is not None:
+                    zero = Const(return_dest.ty, 0.0 if (isinstance(return_dest.ty, ScalarTy) and return_dest.ty.is_float) else 0)
+                    self._emit(BinInst(return_dest, BinOp.ADD, ret_val, zero))
+                self._cur_block.terminator = BrTerm(return_merge_label)
+                # Create dead block for any code after this return
+                self._cur_block = self._new_block("after_inline_return")
+            else:
+                self._cur_block.terminator = RetTerm()
             return
 
         # Expression statement — check for array assignment: ptr[idx] = expr;

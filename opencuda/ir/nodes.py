@@ -132,8 +132,15 @@ class ParamInst:
     param_name: str
 
 
+@dataclass
+class PrintfInst:
+    """printf("fmt", args...) intrinsic — lowered to vprintf in PTX."""
+    fmt: str          # processed format string (escapes resolved)
+    args: list[Operand] = field(default_factory=list)
+
+
 Instruction = Union[BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
-                    CallInst, PhiInst, ParamInst]
+                    CallInst, PhiInst, ParamInst, PrintfInst]
 
 
 # ---------------------------------------------------------------------------
