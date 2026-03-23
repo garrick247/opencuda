@@ -13,6 +13,11 @@ Pass 5: Dead instruction elimination — remove BinInst/CmpInst/CvtInst
         whose result is never consumed.
 Pass 6: Post-CSE cleanup — second CSE + identity_fold + dead_inst_elim
         round to catch expressions exposed by pass 3–5.
+Pass 7: LICM — Loop-Invariant Code Motion (v0.8). Conservative:
+        only hoists pure BinInst/CvtInst whose operands are all defined
+        outside the loop, with def_count==1 (not a writeback target).
+        Never hoists memory ops, calls, side-effecting instructions, or
+        loop-condition comparisons.
 
 SAFETY RULE for passes 1–2: Replacements never cross basic block boundaries.
 This prevents the loop writeback bug where a variable initialized
@@ -22,6 +27,10 @@ the loop body, causing the loop condition to never see updates.
 SAFETY RULE for pass 4 (identity_fold): only propagates single-definition
 Values (def_count == 1). Loop-writeback Values are redefined each iteration
 and therefore have def_count >= 2 — they are never touched.
+
+SAFETY RULE for pass 7 (licm): only hoists instructions with def_count==1.
+Values that appear in CondBrTerm conditions (predicates) are never hoisted
+even if technically invariant, since they guard the loop exit.
 """
 
 from __future__ import annotations
@@ -452,6 +461,227 @@ def dead_inst_elim(kernel: Kernel) -> int:
     return eliminated
 
 
+# ---------------------------------------------------------------------------
+# LICM helpers
+# ---------------------------------------------------------------------------
+
+def _bb_successors(bb: BasicBlock) -> list[str]:
+    t = bb.terminator
+    if isinstance(t, BrTerm):
+        return [t.target]
+    if isinstance(t, CondBrTerm):
+        return [t.true_bb, t.false_bb]
+    return []
+
+
+class _Loop:
+    """A natural loop detected by back-edge analysis."""
+    __slots__ = ('header', 'preheader', 'body', 'backedge_src')
+
+    def __init__(self, header: str, preheader: str,
+                 body: frozenset, backedge_src: str) -> None:
+        self.header = header
+        self.preheader = preheader
+        self.body = body          # frozenset of block labels
+        self.backedge_src = backedge_src
+
+
+def _find_loops(kernel: Kernel) -> list[_Loop]:
+    """Detect natural loops by finding back edges in the CFG.
+
+    A back edge is (u, v) where v appears earlier in the block list than u.
+    The loop body is all blocks from which u is reachable without going
+    through v's predecessors outside the loop (reverse BFS from u to v).
+
+    Returns one _Loop per back edge.  Loops without a detectable preheader
+    (the unique non-loop predecessor of the header) are silently skipped.
+    """
+    if not kernel.blocks:
+        return []
+
+    label_to_idx = {bb.label: i for i, bb in enumerate(kernel.blocks)}
+    label_to_bb = {bb.label: bb for bb in kernel.blocks}
+
+    # Build predecessor map
+    pred_map: dict[str, list[str]] = {bb.label: [] for bb in kernel.blocks}
+    for bb in kernel.blocks:
+        for s in _bb_successors(bb):
+            if s in pred_map:
+                pred_map[s].append(bb.label)
+
+    loops: list[_Loop] = []
+    seen: set[tuple[str, str]] = set()
+
+    for bb in kernel.blocks:
+        for succ in _bb_successors(bb):
+            if succ not in label_to_idx:
+                continue
+            # Back edge: target earlier in block list than source
+            if label_to_idx[succ] >= label_to_idx[bb.label]:
+                continue
+            edge = (bb.label, succ)
+            if edge in seen:
+                continue
+            seen.add(edge)
+
+            header = succ
+            backedge_src = bb.label
+
+            # Loop body: reverse BFS from backedge_src until header is reached
+            body: set[str] = {header}
+            work = [backedge_src]
+            while work:
+                cur = work.pop()
+                if cur in body:
+                    continue
+                body.add(cur)
+                for p in pred_map.get(cur, []):
+                    if p not in body:
+                        work.append(p)
+
+            # Preheader: block just before header in block list, not in loop
+            header_idx = label_to_idx[header]
+            if header_idx == 0:
+                continue  # no room for a preheader
+            prev_label = kernel.blocks[header_idx - 1].label
+            if prev_label in body:
+                continue  # predecessor is itself in the loop (back-to-back loops)
+
+            loops.append(_Loop(
+                header=header,
+                preheader=prev_label,
+                body=frozenset(body),
+                backedge_src=backedge_src,
+            ))
+
+    return loops
+
+
+def licm(kernel: Kernel) -> int:
+    """Loop-Invariant Code Motion (conservative).
+
+    For each natural loop, hoists pure instructions (BinInst, CvtInst) to the
+    loop preheader when ALL of the following hold:
+
+      1. All source operands are loop-invariant (defined outside the loop or
+         by a previously hoisted instruction).
+      2. The destination Value has exactly one definition in the kernel
+         (def_count == 1) — excludes writeback-carried loop variables.
+      3. The instruction is not a CmpInst whose result feeds a CondBrTerm
+         within the loop (would hoist the loop's exit condition).
+      4. Never hoists LoadInst, StoreInst, CallInst, PrintfInst, ParamInst.
+
+    Uses an inner fixpoint loop to handle chains of invariant instructions
+    (where hoisting A makes B's operands invariant, enabling B to be hoisted).
+
+    Returns total number of instructions hoisted across all loops.
+    """
+    loops = _find_loops(kernel)
+    if not loops:
+        return 0
+
+    label_to_bb = {bb.label: bb for bb in kernel.blocks}
+    label_to_idx = {bb.label: i for i, bb in enumerate(kernel.blocks)}
+
+    # def_count: number of times each Value ID is written across the whole kernel
+    def_count: dict[int, int] = {}
+    for bb in kernel.blocks:
+        for inst in bb.instructions:
+            if hasattr(inst, 'dest') and inst.dest is not None:
+                did = inst.dest.id
+                def_count[did] = def_count.get(did, 0) + 1
+
+    # cond_ids: Value IDs used directly as CondBrTerm conditions in any block.
+    # Never hoist these — they guard loop exits.
+    cond_ids: set[int] = set()
+    for bb in kernel.blocks:
+        t = bb.terminator
+        if isinstance(t, CondBrTerm) and isinstance(t.cond, Value):
+            cond_ids.add(t.cond.id)
+
+    total_hoisted = 0
+
+    for loop in loops:
+        preheader_bb = label_to_bb.get(loop.preheader)
+        if preheader_bb is None:
+            continue
+
+        # Values with ANY definition inside the loop are NOT invariant.
+        # This is critical: loop-carried variables (i, sum, etc.) are defined
+        # both in the preheader (initial value) AND inside the loop body
+        # (writeback in for_inc / while_body). If we only checked "defined
+        # outside", they'd incorrectly appear invariant.
+        loop_defs: set[int] = set()
+        for bb in kernel.blocks:
+            if bb.label in loop.body:
+                for inst in bb.instructions:
+                    if hasattr(inst, 'dest') and inst.dest is not None:
+                        loop_defs.add(inst.dest.id)
+
+        # Seed: all Values defined outside this loop AND never defined inside
+        inv_ids: set[int] = set()
+        for bb in kernel.blocks:
+            if bb.label not in loop.body:
+                for inst in bb.instructions:
+                    if hasattr(inst, 'dest') and inst.dest is not None:
+                        vid = inst.dest.id
+                        if vid not in loop_defs:
+                            inv_ids.add(vid)
+
+        def _is_inv(op: Operand) -> bool:
+            return isinstance(op, Const) or (isinstance(op, Value) and op.id in inv_ids)
+
+        # Fixpoint: repeat until no more instructions can be hoisted
+        changed = True
+        while changed:
+            changed = False
+
+            # Process loop body blocks in block-list order (approximates topo order)
+            for lbl in sorted(loop.body, key=lambda l: label_to_idx.get(l, 0)):
+                if lbl == loop.header:
+                    continue  # do not hoist from the loop header itself
+                bb = label_to_bb.get(lbl)
+                if bb is None:
+                    continue
+
+                new_insts = []
+                for inst in bb.instructions:
+                    # Only consider pure BinInst and CvtInst
+                    if not isinstance(inst, (BinInst, CvtInst)):
+                        new_insts.append(inst)
+                        continue
+
+                    # Dest must have exactly one definition (not writeback-carried)
+                    if def_count.get(inst.dest.id, 0) != 1:
+                        new_insts.append(inst)
+                        continue
+
+                    # Never hoist a value used as a branch condition
+                    if inst.dest.id in cond_ids:
+                        new_insts.append(inst)
+                        continue
+
+                    # All operands must be loop-invariant
+                    if isinstance(inst, BinInst):
+                        operands_inv = _is_inv(inst.lhs) and _is_inv(inst.rhs)
+                    else:  # CvtInst
+                        operands_inv = _is_inv(inst.src)
+
+                    if not operands_inv:
+                        new_insts.append(inst)
+                        continue
+
+                    # Hoist: append to preheader's instruction list (before terminator)
+                    preheader_bb.instructions.append(inst)
+                    inv_ids.add(inst.dest.id)
+                    total_hoisted += 1
+                    changed = True
+
+                bb.instructions = new_insts
+
+    return total_hoisted
+
+
 def optimize(module: Module, verbose: bool = False) -> Module:
     """Run all optimization passes on the module.
 
@@ -465,10 +695,12 @@ def optimize(module: Module, verbose: bool = False) -> Module:
       5. identity_fold      — copy-propagate single-def add-zero patterns
       6. dead_inst_elim     — remove instructions whose results are unused
                               (iterates to fixpoint)
-      7. cse (round 2)      — catch expressions newly exposed by passes 4–6
-      8. identity_fold (2)  — propagate copies created by round-2 CSE
-      9. dead_inst_elim (2) — remove instructions whose results are unused
-                              after round-2 CSE+fold
+      7. licm               — hoist loop-invariant pure BinInst/CvtInst to
+                              loop preheaders (conservative; v0.8)
+      8. cse (round 2)      — catch expressions newly exposed by passes 4–7
+      9. identity_fold (2)  — propagate copies created by round-2 CSE
+     10. dead_inst_elim (2) — remove instructions whose results are unused
+                              after LICM + round-2 CSE+fold
     """
     from .unroll import unroll_loops
 
@@ -479,12 +711,14 @@ def optimize(module: Module, verbose: bool = False) -> Module:
         n_dbe = dead_block_elim(kernel)
         n_idf = identity_fold(kernel)
         n_die = dead_inst_elim(kernel)
-        # Round 2: post-cleanup CSE catches expressions newly exposed above
+        n_licm = licm(kernel)
+        # Round 2: post-LICM CSE catches newly exposed duplicates
         n_cse2 = cse(kernel)
         n_idf2 = identity_fold(kernel)
         n_die2 = dead_inst_elim(kernel)
         if verbose:
-            total = n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die + n_cse2 + n_idf2 + n_die2
+            total = (n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die
+                     + n_licm + n_cse2 + n_idf2 + n_die2)
             if total > 0:
                 parts = []
                 if n_unroll:       parts.append(f"{n_unroll} loops unrolled")
@@ -493,6 +727,7 @@ def optimize(module: Module, verbose: bool = False) -> Module:
                 if n_dbe:          parts.append(f"{n_dbe} dead blocks removed")
                 if n_idf:          parts.append(f"{n_idf} copies propagated")
                 if n_die:          parts.append(f"{n_die} dead insts removed")
+                if n_licm:         parts.append(f"{n_licm} LICM hoisted")
                 if n_cse2:         parts.append(f"{n_cse2} CSE-2 eliminated")
                 if n_idf2:         parts.append(f"{n_idf2} copies-2 propagated")
                 if n_die2:         parts.append(f"{n_die2} dead-2 insts removed")
