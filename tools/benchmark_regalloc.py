@@ -71,6 +71,48 @@ def count_instructions(ptx: str) -> int:
     return count
 
 
+def count_loads(ptx: str) -> int:
+    """Count ld.global., ld.local., and ld.param. instruction lines."""
+    count = 0
+    for line in ptx.splitlines():
+        stripped = line.strip()
+        if (stripped.startswith('ld.global.') or
+                stripped.startswith('ld.local.') or
+                stripped.startswith('ld.param.')):
+            count += 1
+    return count
+
+
+def count_stores(ptx: str) -> int:
+    """Count st.global. and st.local. instruction lines."""
+    count = 0
+    for line in ptx.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('st.global.') or stripped.startswith('st.local.'):
+            count += 1
+    return count
+
+
+def count_branches(ptx: str) -> int:
+    """Count unconditional (bra ) and predicated (@%p) branch instructions."""
+    count = 0
+    for line in ptx.splitlines():
+        stripped = line.strip()
+        if 'bra ' in stripped or stripped.startswith('@%p'):
+            count += 1
+    return count
+
+
+def count_converts(ptx: str) -> int:
+    """Count cvt. instruction lines."""
+    count = 0
+    for line in ptx.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('cvt.'):
+            count += 1
+    return count
+
+
 # ---------------------------------------------------------------------------
 # Per-file benchmark
 # ---------------------------------------------------------------------------
@@ -116,6 +158,10 @@ def benchmark_file(cu_path: Path) -> list[dict]:
             'reduction': reduction,
             'gap_ratio': gap_ratio,
             'decls': decls,
+            'n_loads': count_loads(ptx_text),
+            'n_stores': count_stores(ptx_text),
+            'n_branches': count_branches(ptx_text),
+            'n_converts': count_converts(ptx_text),
             'error': None,
         }
         rows.append(row)
@@ -154,7 +200,9 @@ def print_table(rows: list[dict], sort_key: str = 'file') -> None:
     hdr = (
         f"{'File':<{w_file}}  {'Kernel':<{w_kern}}"
         f"  {'Insts':>6}  {'Naive':>5}  {'Decl':>5}  {'Used':>5}"
-        f"  {'Reduc':>5}  {'Gap':>5}  Regs"
+        f"  {'Reduc':>5}  {'Gap':>5}"
+        f"  {'Lds':>4}  {'Sts':>4}  {'Brs':>4}  {'Cvt':>4}"
+        f"  Regs"
     )
     print(hdr)
     print('-' * len(hdr))
@@ -164,6 +212,7 @@ def print_table(rows: list[dict], sort_key: str = 'file') -> None:
             f"{r['file']:<{w_file}}  {r['kernel']:<{w_kern}}"
             f"  {r['n_insts']:>6}  {r['naive_ssa']:>5}  {r['total_declared']:>5}"
             f"  {r['distinct_used']:>5}  {r['reduction']:>5.2f}x  {r['gap_ratio']:>4.2f}"
+            f"  {r['n_loads']:>4}  {r['n_stores']:>4}  {r['n_branches']:>4}  {r['n_converts']:>4}"
             f"  {format_decls(r['decls'])}"
         )
 
@@ -186,7 +235,7 @@ def print_table(rows: list[dict], sort_key: str = 'file') -> None:
 
 def print_csv(rows: list[dict]) -> None:
     print("file,kernel,n_insts,naive_ssa,total_declared,distinct_used,"
-          "reduction,gap_ratio,r,rd,f,fd,h,p")
+          "reduction,gap_ratio,r,rd,f,fd,h,p,n_loads,n_stores,n_branches,n_converts")
     for r in rows:
         if r['error']:
             continue
@@ -196,7 +245,8 @@ def print_csv(rows: list[dict]) -> None:
             f"{r['total_declared']},{r['distinct_used']},"
             f"{r['reduction']:.4f},{r['gap_ratio']:.4f},"
             f"{d.get('r',0)},{d.get('rd',0)},{d.get('f',0)},"
-            f"{d.get('fd',0)},{d.get('h',0)},{d.get('p',0)}"
+            f"{d.get('fd',0)},{d.get('h',0)},{d.get('p',0)},"
+            f"{r['n_loads']},{r['n_stores']},{r['n_branches']},{r['n_converts']}"
         )
 
 
