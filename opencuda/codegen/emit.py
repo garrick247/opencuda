@@ -13,7 +13,7 @@ from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
                          BinOp, CmpOp,
                          RetTerm, BrTerm, CondBrTerm)
 from ..ir.types import (Type, ScalarTy, PtrTy, ScalarType, AddrSpace,
-                         INT32, UINT32, FLOAT, VOID, DOUBLE)
+                         INT32, UINT32, FLOAT, VOID, DOUBLE, HALF)
 
 
 def _ptx_type(ty: Type) -> str:
@@ -260,6 +260,40 @@ class PTXEmitter:
     def _float_hex(self, f: float) -> str:
         return struct.pack('>f', f).hex().upper()
 
+    def _coerce_to_float(self, op: Operand, target_fty: str, kernel: Kernel) -> str:
+        """Return a PTX operand string that is guaranteed to be of target_fty type.
+
+        Emits a conversion instruction if the operand's type does not match
+        the target float type (e.g., int→f32, half→f32, half→f64).
+        Const operands are returned directly as float literals.
+        """
+        if isinstance(op, Const):
+            return self._operand(op, target_fty)
+        if not isinstance(op, Value):
+            return str(op)
+        op_ty = op.ty
+        op_ptx = _ptx_type(op_ty) if isinstance(op_ty, ScalarTy) else None
+        if op_ptx == target_fty:
+            return self._reg(op)
+        # Emit a conversion instruction
+        from ..ir.types import FLOAT, DOUBLE, HALF, INT32, UINT32
+        dest_ty = {'f32': FLOAT, 'f64': DOUBLE, 'f16': HALF}.get(target_fty, FLOAT)
+        tmp = kernel.new_value(f'_coerce_{op.id}', dest_ty)
+        if op_ptx == 'f16' and target_fty == 'f32':
+            self._lines.append(f'    cvt.f32.f16 {self._reg(tmp)}, {self._reg(op)};')
+        elif op_ptx == 'f16' and target_fty == 'f64':
+            self._lines.append(f'    cvt.f64.f16 {self._reg(tmp)}, {self._reg(op)};')
+        elif op_ptx in ('s32', 'u32') and target_fty == 'f32':
+            self._lines.append(f'    cvt.rn.f32.{op_ptx} {self._reg(tmp)}, {self._reg(op)};')
+        elif op_ptx in ('s32', 'u32') and target_fty == 'f64':
+            self._lines.append(f'    cvt.rn.f64.{op_ptx} {self._reg(tmp)}, {self._reg(op)};')
+        elif op_ptx == 'f32' and target_fty == 'f64':
+            self._lines.append(f'    cvt.f64.f32 {self._reg(tmp)}, {self._reg(op)};')
+        else:
+            # Fallback: trust the caller (may produce invalid PTX for unusual combos)
+            return self._reg(op)
+        return self._reg(tmp)
+
     def emit_kernel(self, kernel: Kernel) -> str:
         self._lines = []
         self._reg_counts = {}
@@ -306,9 +340,13 @@ class PTXEmitter:
         ptx.append('.address_size 64')
         ptx.append('')
 
-        # Kernel signature
+        # Kernel signature — half params use .b16 (PTX has no .param .f16)
+        def _param_ptx_type(ty):
+            t = _ptx_type(ty)
+            return 'b16' if t == 'f16' else t
+
         params = ', '.join(
-            f'.param .{_ptx_type(p.ty)} {p.name}' for p in kernel.params
+            f'.param .{_param_ptx_type(p.ty)} {p.name}' for p in kernel.params
         )
         ptx.append(f'.visible .entry {kernel.name}(')
         ptx.append(f'    {params})')
@@ -387,6 +425,9 @@ class PTXEmitter:
         if isinstance(inst, ParamInst):
             ty = kernel.params[inst.param_index].ty
             ptx_ty = _ptx_type(ty)
+            # PTX does not support ld.param.f16 — use b16 instead
+            if ptx_ty == 'f16':
+                ptx_ty = 'b16'
             self._lines.append(
                 f'    ld.param.{ptx_ty} {self._reg(inst.dest)}, [{inst.param_name}];')
 
@@ -410,9 +451,21 @@ class PTXEmitter:
                     BinOp.MUL: 'mul', BinOp.DIV: 'div.approx',
                 }
                 ptx_op = half_op_map.get(inst.op, 'add')
+                # PTX does not accept 0h#### immediate constants in f16 arithmetic
+                # instructions. Materialize any Const operands into h registers first
+                # using cvt.rn.f16.f32 (narrowing from f32, which accepts immediates).
+                def _half_operand(op):
+                    if isinstance(op, Const):
+                        tmp = kernel.new_value('_h_tmp', HALF)
+                        f32_hex = self._float_hex(float(op.value))
+                        self._lines.append(
+                            f'    cvt.rn.f16.f32 {self._reg(tmp)}, 0f{f32_hex};')
+                        return self._reg(tmp)
+                    return self._operand(op, 'f16')
+                lhs_str = _half_operand(inst.lhs)
+                rhs_str = _half_operand(inst.rhs)
                 self._lines.append(
-                    f'    {ptx_op}.f16 {self._reg(inst.dest)}, '
-                    f'{self._operand(inst.lhs, "f16")}, {self._operand(inst.rhs, "f16")};')
+                    f'    {ptx_op}.f16 {self._reg(inst.dest)}, {lhs_str}, {rhs_str};')
                 return
             # Bitwise ops use .b32 type, not .s32/.u32
             if inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR, BinOp.SHL, BinOp.SHR):
@@ -436,9 +489,12 @@ class PTXEmitter:
                     f'    {ptx_op}.u64 {self._reg(inst.dest)}, {lhs}, {rhs};')
             elif _is_float(ty):
                 fty = _ptx_type(ty)  # f32 or f64
+                # Coerce operands to the destination float type; this handles
+                # mixed-type expressions like float+int or float+half.
+                lhs_str = self._coerce_to_float(inst.lhs, fty, kernel)
+                rhs_str = self._coerce_to_float(inst.rhs, fty, kernel)
                 self._lines.append(
-                    f'    {ptx_op}.{fty} {self._reg(inst.dest)}, '
-                    f'{self._operand(inst.lhs, fty)}, {self._operand(inst.rhs, fty)};')
+                    f'    {ptx_op}.{fty} {self._reg(inst.dest)}, {lhs_str}, {rhs_str};')
             elif _is_64bit(ty):
                 self._lines.append(
                     f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
@@ -496,6 +552,9 @@ class PTXEmitter:
         elif isinstance(inst, StoreInst):
             ty = inst.value.ty if isinstance(inst.value, Value) else INT32
             ptx_ty = _ptx_type(ty)
+            # PTX does not support st.f16 — use b16 instead
+            if ptx_ty == 'f16':
+                ptx_ty = 'b16'
             addr_space = 'global'
             if isinstance(inst.addr, Value) and isinstance(inst.addr.ty, PtrTy):
                 if inst.addr.ty.addr_space == AddrSpace.SHARED:
@@ -534,7 +593,7 @@ class PTXEmitter:
                         # Promote f32 → f64
                         promoted = kernel.new_value(f'_va_arg_{n}_{i}', DOUBLE)
                         self._lines.append(
-                            f'    cvt.rn.f64.f32 {self._reg(promoted)}, {self._operand(arg)};')
+                            f'    cvt.f64.f32 {self._reg(promoted)}, {self._operand(arg)};')
                         store_val = self._reg(promoted)
                         store_ty = 'f64'
                     elif not _is_64bit(arg_ty) and not _is_float(arg_ty):

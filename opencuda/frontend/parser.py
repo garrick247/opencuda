@@ -80,6 +80,30 @@ class Parser:
     def _new_val(self, name: str, ty: Type) -> Value:
         return self._kernel.new_value(name, ty)
 
+    def _loop_writeback(self, entry_vars: dict) -> None:
+        """Write modified loop variables back to their canonical entry Values.
+
+        For each variable that was assigned inside a loop body, emit:
+            add <entry_val>, <current_val>, 0
+        in the current block, then restore _variables to the canonical entry
+        Values so that the loop condition (which was built from entry_vals)
+        sees the updated values on re-entry.
+
+        This mirrors the for-loop writeback in inc_bb, applied to while/do-while.
+        NOTE: continue statements bypass this writeback — they branch directly to
+        cond_bb without running through the end of body. That is a known
+        limitation: mutating the loop-condition variable and using continue in
+        the same while loop may produce incorrect loop termination.
+        """
+        for var_name, entry_val in entry_vars.items():
+            cur_val = self._variables.get(var_name)
+            if (cur_val is not None
+                    and cur_val is not entry_val
+                    and isinstance(cur_val, Value)
+                    and isinstance(entry_val, Value)):
+                self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
+                self._variables[var_name] = entry_val
+
     # -- Type parsing --------------------------------------------------------
 
     def _parse_type(self) -> Type:
@@ -268,12 +292,16 @@ class Parser:
         return lhs
 
     def _result_type(self, a: Operand, b: Operand) -> Type:
-        """Determine result type with promotion (float wins over int, wider wins)."""
-        a_ty = a.ty if isinstance(a, Value) else (FLOAT if isinstance(a, Const) and isinstance(a.value, float) else INT32)
-        b_ty = b.ty if isinstance(b, Value) else (FLOAT if isinstance(b, Const) and isinstance(b.value, float) else INT32)
-        # Float promotion
-        if (isinstance(a_ty, ScalarTy) and a_ty.is_float) or (isinstance(b_ty, ScalarTy) and b_ty.is_float):
-            return FLOAT
+        """Determine result type with promotion (wider float wins, float > int)."""
+        a_ty = a.ty if isinstance(a, (Value, Const)) else FLOAT
+        b_ty = b.ty if isinstance(b, (Value, Const)) else FLOAT
+        a_is_float = isinstance(a_ty, ScalarTy) and a_ty.is_float
+        b_is_float = isinstance(b_ty, ScalarTy) and b_ty.is_float
+        # Float promotion: use the wider float type (double > float > half)
+        if a_is_float or b_is_float:
+            if a_is_float and b_is_float:
+                return a_ty if a_ty.size >= b_ty.size else b_ty
+            return a_ty if a_is_float else b_ty
         # Pointer arithmetic
         if isinstance(a_ty, PtrTy):
             return a_ty
@@ -785,6 +813,12 @@ class Parser:
             self._advance()
             self._expect(TokKind.LPAREN)
 
+            # Snapshot variables BEFORE parsing condition.
+            # cond_bb instructions will reference these canonical Values.
+            # At the end of each body iteration we write updated values back
+            # to these canonical registers so cond_bb sees them on re-entry.
+            while_entry_vars = dict(self._variables)
+
             cond_bb = self._new_block("while_cond")
             body_bb = self._new_block("while_body")
             exit_bb = self._new_block("while_exit")
@@ -801,6 +835,12 @@ class Parser:
             self._parse_stmt_or_block()
             self._break_targets.pop()
             self._continue_targets.pop()
+
+            # Write back any variables modified in the body to their canonical
+            # cond-entry Values, then restore _variables to canonical state so
+            # that code after the loop sees the correct (updated) registers.
+            self._loop_writeback(while_entry_vars)
+
             if self._cur_block.terminator is None:
                 self._cur_block.terminator = BrTerm(cond_bb.label)
 
@@ -810,6 +850,11 @@ class Parser:
         # do/while loop
         if tok.kind == TokKind.KW_DO:
             self._advance()
+
+            # Snapshot before body so we know the canonical Values that the
+            # condition block will reference after writeback.
+            do_entry_vars = dict(self._variables)
+
             body_bb = self._new_block("do_body")
             cond_bb = self._new_block("do_cond")
             exit_bb = self._new_block("do_exit")
@@ -821,6 +866,12 @@ class Parser:
             self._parse_stmt_or_block()
             self._break_targets.pop()
             self._continue_targets.pop()
+
+            # Write back modified variables before parsing the condition so
+            # that cond_bb's CmpInst references the canonical (writeback)
+            # registers rather than pinning to the first-body Values.
+            self._loop_writeback(do_entry_vars)
+
             if self._cur_block.terminator is None:
                 self._cur_block.terminator = BrTerm(cond_bb.label)
 
