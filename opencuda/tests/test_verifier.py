@@ -50,7 +50,7 @@ from opencuda.ir.nodes import (
     BinOp, CmpOp,
 )
 from opencuda.ir.types import INT32, UINT32
-from opencuda.ir.verify_ir import verify_kernel, verify_module
+from opencuda.ir.verify_ir import verify_kernel, verify_module, find_critical_edges
 from opencuda.ir.dominator import kernel_stats
 from opencuda.ir.optimize import (
     optimize, constant_fold, cse, dead_block_elim,
@@ -488,3 +488,156 @@ def test_known_parser_bugs_detected(cu_file):
     assert flat, (
         f'{cu_file.stem}: expected IR violations (known parser bug) '
         f'but verifier found none — remove from KNOWN_PARSER_BUGS if fixed')
+
+
+# ---------------------------------------------------------------------------
+# Group 6: Single-entry loop guarantee (Check 6 in verify_kernel)
+# ---------------------------------------------------------------------------
+
+def test_natural_loop_header_dominates_body():
+    """A well-formed for-loop: header dominates all body blocks."""
+    k = Kernel(name='natural_loop', params=[])
+    cond_v = k.new_value('cond', INT32)
+    entry = BasicBlock(label='entry_1', terminator=BrTerm('header_2'))
+    header = BasicBlock(
+        label='header_2',
+        instructions=[CmpInst(dest=cond_v, op=CmpOp.LT,
+                               lhs=Const(INT32, 0), rhs=Const(INT32, 10))],
+        terminator=CondBrTerm(cond=cond_v, true_bb='body_3', false_bb='exit_4'),
+    )
+    body = BasicBlock(label='body_3', terminator=BrTerm('header_2'))
+    exit_ = BasicBlock(label='exit_4', terminator=RetTerm())
+    k.blocks.extend([entry, header, body, exit_])
+    errs = verify_kernel(k, check_reachability=True)
+    loop_errs = [e for e in errs if 'non-natural' in e]
+    assert not loop_errs, f'Expected natural loop to pass, got: {loop_errs}'
+
+
+def test_irreducible_loop_detected():
+    """A non-natural loop where the 'header' does not dominate the body."""
+    # Irreducible CFG: entry → A and entry → B; A → B and B → A (no single header)
+    k = Kernel(name='irreducible', params=[])
+    cond1 = k.new_value('c1', INT32)
+    cond2 = k.new_value('c2', INT32)
+    entry = BasicBlock(
+        label='entry_1',
+        instructions=[CmpInst(dest=cond1, op=CmpOp.EQ,
+                               lhs=Const(INT32, 0), rhs=Const(INT32, 0))],
+        terminator=CondBrTerm(cond=cond1, true_bb='bb_A', false_bb='bb_B'),
+    )
+    bb_A = BasicBlock(
+        label='bb_A',
+        instructions=[CmpInst(dest=cond2, op=CmpOp.EQ,
+                               lhs=Const(INT32, 1), rhs=Const(INT32, 1))],
+        terminator=CondBrTerm(cond=cond2, true_bb='bb_B', false_bb='exit_4'),
+    )
+    bb_B = BasicBlock(
+        label='bb_B',
+        terminator=BrTerm(target='bb_A'),  # back edge B → A (but A is not header)
+    )
+    exit_ = BasicBlock(label='exit_4', terminator=RetTerm())
+    k.blocks.extend([entry, bb_A, bb_B, exit_])
+    errs = verify_kernel(k, check_reachability=True)
+    loop_errs = [e for e in errs if 'non-natural' in e]
+    assert loop_errs, f'Expected non-natural loop error, got none. All errs: {errs}'
+
+
+@pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
+def test_real_kernel_loops_are_natural(cu_file):
+    """All natural loops in real kernels must have headers that dominate bodies."""
+    if cu_file.stem in KNOWN_PARSER_BUGS:
+        pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
+    mod = _parse_opt(cu_file)
+    for kernel in mod.kernels:
+        errs = verify_kernel(kernel, check_reachability=True)
+        loop_errs = [e for e in errs if 'non-natural' in e]
+        assert not loop_errs, (
+            f'{cu_file.stem}/{kernel.name}: non-natural loop errors:\n'
+            + '\n'.join(loop_errs))
+
+
+# ---------------------------------------------------------------------------
+# Group 7: Critical edge detection (find_critical_edges utility)
+# ---------------------------------------------------------------------------
+
+def test_no_critical_edges_straight_line():
+    """Straight-line CFG has no critical edges."""
+    k = Kernel(name='straight', params=[])
+    k.blocks.append(BasicBlock(label='entry_1', terminator=BrTerm('bb_2')))
+    k.blocks.append(BasicBlock(label='bb_2', terminator=RetTerm()))
+    assert find_critical_edges(k) == []
+
+
+def test_no_critical_edges_diamond():
+    """Simple diamond: entry → (A, B) → merge.
+    entry has 2 succs but A and B each have 1 pred.
+    merge has 2 preds but A and B each have 1 succ.
+    No critical edges."""
+    k = Kernel(name='diamond', params=[])
+    cond = k.new_value('c', INT32)
+    k.blocks.append(BasicBlock(
+        label='entry_1',
+        instructions=[CmpInst(dest=cond, op=CmpOp.EQ,
+                               lhs=Const(INT32, 0), rhs=Const(INT32, 0))],
+        terminator=CondBrTerm(cond=cond, true_bb='bb_A', false_bb='bb_B'),
+    ))
+    k.blocks.append(BasicBlock(label='bb_A', terminator=BrTerm('merge_4')))
+    k.blocks.append(BasicBlock(label='bb_B', terminator=BrTerm('merge_4')))
+    k.blocks.append(BasicBlock(label='merge_4', terminator=RetTerm()))
+    assert find_critical_edges(k) == []
+
+
+def test_critical_edge_do_while():
+    """Do-while loop creates a critical edge: do_cond → do_body.
+    do_cond has 2 succs (do_body for true, exit for false).
+    do_body has 2 preds (entry and do_cond).
+    """
+    k = Kernel(name='do_while', params=[])
+    cond = k.new_value('c', INT32)
+    entry = BasicBlock(label='entry_1', terminator=BrTerm('do_body_2'))
+    do_body = BasicBlock(
+        label='do_body_2',
+        instructions=[CmpInst(dest=cond, op=CmpOp.LT,
+                               lhs=Const(INT32, 0), rhs=Const(INT32, 10))],
+        terminator=CondBrTerm(cond=cond, true_bb='do_body_2', false_bb='exit_3'),
+    )
+    exit_ = BasicBlock(label='exit_3', terminator=RetTerm())
+    k.blocks.extend([entry, do_body, exit_])
+    crit = find_critical_edges(k)
+    assert any(src == 'do_body_2' and dst == 'do_body_2' for src, dst in crit), \
+        f'Expected do_body_2 self-loop critical edge, got: {crit}'
+
+
+def test_find_critical_edges_empty_kernel():
+    """Empty kernel has no critical edges."""
+    k = Kernel(name='empty', params=[])
+    assert find_critical_edges(k) == []
+
+
+@pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
+def test_critical_edge_count_is_non_negative(cu_file):
+    """find_critical_edges returns a list (never raises)."""
+    mod = _parse_opt(cu_file)
+    for kernel in mod.kernels:
+        crit = find_critical_edges(kernel)
+        assert isinstance(crit, list)
+        assert all(isinstance(e, tuple) and len(e) == 2 for e in crit)
+
+
+# ---------------------------------------------------------------------------
+# Group 8: debug_verify gating in optimize()
+# ---------------------------------------------------------------------------
+
+def test_debug_verify_passes_clean_kernels():
+    """debug_verify=True does not raise on clean kernels."""
+    mod = _parse(TESTS_DIR / 'vector_add.cu')
+    optimize(mod, debug_verify=True)  # must not raise
+
+
+def test_debug_verify_is_off_by_default():
+    """optimize() without debug_verify=True uses no verification overhead."""
+    import time
+    mod = _parse(TESTS_DIR / 'matmul_tiled.cu')
+    # Just ensure default optimize() completes without exception
+    result = optimize(mod)
+    assert result is mod

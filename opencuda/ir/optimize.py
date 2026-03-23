@@ -706,7 +706,8 @@ def licm(kernel: Kernel) -> int:
     return total_hoisted
 
 
-def optimize(module: Module, verbose: bool = False) -> Module:
+def optimize(module: Module, verbose: bool = False,
+             debug_verify: bool = False) -> Module:
     """Run all optimization passes on the module.
 
     Pass order (designed to maximise cascading improvements):
@@ -725,21 +726,51 @@ def optimize(module: Module, verbose: bool = False) -> Module:
       9. identity_fold (2)  — propagate copies created by round-2 CSE
      10. dead_inst_elim (2) — remove instructions whose results are unused
                               after LICM + round-2 CSE+fold
+
+    Parameters
+    ----------
+    debug_verify : bool
+        If True, run verify_kernel after every pass and raise AssertionError
+        on any violation.  Off by default — use in tests and debugging, not
+        in production builds.
     """
     from .unroll import unroll_loops
 
+    if debug_verify:
+        from ..ir.verify_ir import verify_kernel as _verify
+
+        def _gate(kernel, pass_name: str) -> None:
+            errs = _verify(kernel, check_reachability=False)
+            if errs:
+                raise AssertionError(
+                    f'IR violation after {pass_name} in {kernel.name!r}:\n'
+                    + '\n'.join(errs))
+    else:
+        def _gate(kernel, pass_name: str) -> None:  # type: ignore[misc]
+            pass
+
     for kernel in module.kernels:
         n_unroll = unroll_loops(kernel, max_unroll=16)
+        _gate(kernel, 'unroll_loops')
         n_fold = constant_fold(kernel)
+        _gate(kernel, 'constant_fold')
         n_cse = cse(kernel)
+        _gate(kernel, 'cse')
         n_dbe = dead_block_elim(kernel)
+        _gate(kernel, 'dead_block_elim')
         n_idf = identity_fold(kernel)
+        _gate(kernel, 'identity_fold')
         n_die = dead_inst_elim(kernel)
+        _gate(kernel, 'dead_inst_elim')
         n_licm = licm(kernel)
+        _gate(kernel, 'licm')
         # Round 2: post-LICM CSE catches newly exposed duplicates
         n_cse2 = cse(kernel)
+        _gate(kernel, 'cse-2')
         n_idf2 = identity_fold(kernel)
+        _gate(kernel, 'identity_fold-2')
         n_die2 = dead_inst_elim(kernel)
+        _gate(kernel, 'dead_inst_elim-2')
         if verbose:
             total = (n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die
                      + n_licm + n_cse2 + n_idf2 + n_die2)

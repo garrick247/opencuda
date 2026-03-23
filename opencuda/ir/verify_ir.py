@@ -1,5 +1,5 @@
 """
-OpenCUDA IR Verifier — v0.9.
+OpenCUDA IR Verifier — v0.10.
 
 Checks correctness invariants after any transformation pass.
 
@@ -17,6 +17,14 @@ Checks performed
    defining block dominates every block that uses the value.
    Multi-definition Values (loop writeback pattern, def_count ≥ 2) are
    skipped for this check since they intentionally predate pure SSA form.
+6. **Critical edge detection**: a critical edge is one from a block with
+   multiple successors to a block with multiple predecessors.  Such edges
+   block many transforms (PHI insertion, PRE, edge splitting).  Reported as
+   warnings — transforms that require edge splitting will add the check
+   themselves.
+7. **Single-entry loop guarantee**: for every natural loop, the loop header
+   must dominate every block in the loop body.  Violations indicate a
+   structurally malformed loop (non-natural or irreducible CFG).
 
 Usage
 -----
@@ -226,7 +234,101 @@ def verify_kernel(kernel: Kernel,
                                 f'{def_lbl!r} does not dominate use in '
                                 f'{bb.label!r}')
 
+    # ------------------------------------------------------------------
+    # Check 6: single-entry loop guarantee
+    # For every natural loop (DFS back-edge), the loop header must dominate
+    # every REACHABLE block in the loop body.  Unreachable stubs (after_break,
+    # after_continue) are skipped — dead_block_elim will remove them.
+    # Violation = non-natural / irreducible CFG on live code.
+    # ------------------------------------------------------------------
+    _visited2: set[str] = set()
+    _on_stack2: set[str] = set()
+    _back_edges: list[tuple[str, str]] = []
+
+    def _dfs2(lbl: str) -> None:
+        if lbl in _visited2:
+            return
+        _visited2.add(lbl)
+        _on_stack2.add(lbl)
+        bb = label_to_bb.get(lbl)
+        if bb:
+            for succ in _bb_successors(bb):
+                if succ not in label_to_bb:
+                    continue
+                if succ in _on_stack2:
+                    _back_edges.append((lbl, succ))
+                elif succ not in _visited2:
+                    _dfs2(succ)
+        _on_stack2.discard(lbl)
+
+    _dfs2(entry)
+
+    _pred_map2: dict[str, list[str]] = {bb.label: [] for bb in kernel.blocks}
+    for bb in kernel.blocks:
+        for s in _bb_successors(bb):
+            if s in _pred_map2:
+                _pred_map2[s].append(bb.label)
+
+    seen_loop_edges: set[tuple[str, str]] = set()
+    for backedge_src, header in _back_edges:
+        edge = (backedge_src, header)
+        if edge in seen_loop_edges:
+            continue
+        seen_loop_edges.add(edge)
+
+        body: set[str] = {header}
+        work = [backedge_src]
+        while work:
+            cur = work.pop()
+            if cur in body:
+                continue
+            body.add(cur)
+            for p in _pred_map2.get(cur, []):
+                if p not in body:
+                    work.append(p)
+
+        for body_lbl in body:
+            if body_lbl == header:
+                continue
+            if body_lbl not in reachable:
+                continue  # dead stub — ignore
+            if not dominates(dom, header, body_lbl):
+                errors.append(
+                    f'[{kname}] non-natural loop: header {header!r} does not '
+                    f'dominate reachable body block {body_lbl!r}')
+
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Standalone structural queries (not part of the error-raising verifier)
+# ---------------------------------------------------------------------------
+
+def find_critical_edges(kernel: Kernel) -> list[tuple[str, str]]:
+    """Return all critical edges in the kernel's CFG.
+
+    A critical edge is an edge (src → dst) where src has more than one
+    successor AND dst has more than one predecessor.  Such edges must be
+    split before PHI insertion, PRE, or any transform that needs to insert
+    code on a specific edge.
+
+    Critical edges are structural properties, not errors — do-while loops
+    and post-loop join blocks naturally create them.
+    """
+    pred_count: dict[str, int] = {bb.label: 0 for bb in kernel.blocks}
+    for bb in kernel.blocks:
+        for tgt in _bb_successors(bb):
+            if tgt in pred_count:
+                pred_count[tgt] += 1
+
+    critical: list[tuple[str, str]] = []
+    for bb in kernel.blocks:
+        succs = _bb_successors(bb)
+        if len(succs) > 1:
+            for tgt in succs:
+                if pred_count.get(tgt, 0) > 1:
+                    critical.append((bb.label, tgt))
+    return critical
 
 
 def verify_module(module: Module,

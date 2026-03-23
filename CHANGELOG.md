@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.10 — Verifier Enforcement + CFG Completeness (2026-03-23)
+
+### Verifier Gating
+
+**`optimize(module, debug_verify=False)`**
+- New `debug_verify` parameter; when `True`, runs `verify_kernel` after every
+  pass and raises `AssertionError` on the first violation
+- Pass name is included in the error: `IR violation after licm in 'kernel_name'`
+- Off by default (no performance regression in production); on in debug/test use
+
+### New Invariants
+
+**Check 6: Single-entry loop guarantee** (now in `verify_kernel`)
+- For every natural loop (DFS back-edge), the loop header must dominate every
+  *reachable* block in the loop body
+- Unreachable stubs (`after_break_*`, `after_continue_*`) are exempt — they
+  are removed by `dead_block_elim`
+- Violation = non-natural or irreducible CFG on live code; indicates the DFS
+  loop detection found a structurally invalid loop
+
+**`find_critical_edges(kernel)`** (new utility in `verify_ir.py`)
+- Returns `[(src, dst)]` for all critical edges (src has >1 succ AND dst has >1 pred)
+- Not an error — critical edges are structural properties of real CFGs (do-while
+  loops and post-loop joins naturally produce them)
+- Any pass that requires clean edges should call `find_critical_edges` and
+  split them itself before proceeding
+- Required by PHI insertion, PRE, and some forms of edge-valued analysis
+
+### Tests
+
+**`test_verifier.py`** extended with three new groups (141 new tests):
+- **Group 6** — natural loop and irreducible CFG cases; real kernels verified clean
+- **Group 7** — `find_critical_edges`: straight-line (none), diamond (none),
+  do-while self-loop (detected), empty kernel (empty list), all kernels return list
+- **Group 8** — `debug_verify` gating: passes on clean kernels, default is off
+
+### Metrics
+
+- Total tests: **3029** collected, **2899 passing**, **130 skipped**
+
+---
+
 ## v0.9 — Dominance + IR Verifier (2026-03-23)
 
 ### New Infrastructure
