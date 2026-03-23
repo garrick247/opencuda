@@ -1,5 +1,120 @@
 # Changelog
 
+## v0.9 — Dominance + IR Verifier (2026-03-23)
+
+### New Infrastructure
+
+**Dominance computation (`opencuda/ir/dominator.py`)**
+- `compute_dominators(kernel)` — iterative dataflow (Cooper et al.); returns `dom[label] = frozenset` of all dominating blocks
+- Only intersects **reachable** predecessors — unreachable blocks (dead inlined return stubs) do not poison the dom sets of their successors
+- `dominates(dom, a, b)` — O(1) query; reflexive, transitive, antisymmetric
+- `immediate_dominator(dom, labels, b)` — returns the closest strict dominator (idom)
+- `build_dom_tree(dom, labels)` — parent→children adjacency dict for the dom tree
+- `kernel_stats(kernel)` — block count, reachable count, back-edge (loop) count, has_branches flag
+
+**IR Verifier (`opencuda/ir/verify_ir.py`)**
+- `verify_kernel(kernel, dom=None, check_reachability=True)` — five checks:
+  1. **Terminator presence** — every block has a non-None terminator
+  2. **Branch target validity** — every branch/cond-branch names an existing block
+  3. **Block reachability** — every block reachable from entry (optional; set False for pre-opt IR)
+  4. **Def presence** — every used Value has a defining instruction (shared-memory `PtrTy(SHARED)` Values exempted — their def is the `.shared` PTX declaration)
+  5. **Domination** — for single-definition Values, the defining block dominates every use block. Loop-recurrence uses (use_block dominates def_block) are valid and exempt.
+- `verify_module(module)` — aggregate across all kernels
+
+### Optimizer Bug Fixes (found by verifier)
+
+**DFS back-edge detection in `_find_loops`**
+- Previous heuristic (target has lower block-list index = back edge) was **wrong** for post-if-else merge blocks that appear early in the list but execute late
+- Example: in `half_edges.cu`, `if_merge_10 → if_merge_4` looked like a back edge (if_merge_4 is block 3, if_merge_10 is block 9) but is actually a normal forward edge; LICM incorrectly treated `if_false_3` as the loop preheader and hoisted instructions there, creating real IR violations
+- Fix: replaced with **DFS-based** back-edge detection — a back edge is one that leads to a currently-open node on the DFS stack (a true ancestor). This is the standard definition and correctly rejects non-loop forward/cross edges regardless of block ordering.
+- Impact: three kernels (`half_edges`, `inline_printf_return`, `nested_returns`) no longer have LICM-introduced violations
+
+**Preheader validation in `_find_loops`**
+- Previous code used "block physically before the header" as the preheader without checking it actually branches to the header
+- Fix: compute unique non-loop predecessor via `pred_map` — requires the preheader to actually branch to the header
+
+### Pre-existing Parser Bugs Discovered
+
+The verifier found 13 kernels with IR violations that pre-date v0.9:
+- **Single-arm definition pattern** (12 kernels): variable assigned in only one branch of an if/else, used at the diamond merge. PTX zero-initialization masks the error at runtime.
+- **Unary negation generates no instruction** (`branch_overlap`): `-x` in an else branch produces no IR instruction; the value is silently 0.
+- **Unroller stale reference** (`nasty_mem_loop_store`): after loop unrolling, `for_cond` still references the loop counter increment from the deleted `for_inc` block.
+- **Switch lowering** (`switch_test`): unterminated block (pre-existing since v0.4).
+
+All 13 are tracked in `KNOWN_PARSER_BUGS` in `test_verifier.py` and excluded from the zero-violations tests. A dedicated test (`test_known_parser_bugs_detected`) confirms the verifier remains sensitive to these bugs.
+
+### Tests (Deliverables B, C, D)
+
+**`opencuda/tests/test_dominance.py`** — 337 tests across 11 groups:
+- Straight-line, diamond, simple loop, nested loop, unreachable block, multi-exit loop
+- `dominates()` API: reflexivity, antisymmetry, transitivity, unknown-label safety
+- `immediate_dominator()`: straight-line idoms, diamond join idom, loop header idom
+- `build_dom_tree()`: children structure, root has no parent invariant
+- `kernel_stats()`: block/loop/reachable counts on synthetic and real kernels
+- Real kernels: entry dominates all reachable blocks; idom chain leads to entry; dom tree covers all blocks exactly once
+
+**`opencuda/tests/test_verifier.py`** — 503 tests (104 skipped for known bugs):
+- **Group 1**: zero violations after full optimization for all clean kernels
+- **Group 2**: negative cases — missing terminator, dangling branch, undefined value, dominance violation, unreachable block all detected correctly
+- **Group 3**: pass-by-pass revalidation — verifier clean after constant_fold, CSE, dead_block_elim, identity_fold, LICM individually (pre-existing bugs excluded)
+- **Group 4**: benchmark stats table — block/reachable/loop counts for all kernels; `reachable_count == block_count` after dead_block_elim
+- **Group 5**: known-bug confirmation — all 12 known-buggy kernels still detected (ensures verifier stays sensitive)
+
+### Metrics
+
+- Total tests: **2875** collected, **2758 passing**, **117 skipped**
+- New files: `dominator.py`, `verify_ir.py`, `test_dominance.py`, `test_verifier.py`
+- Zero regressions in existing test suites (compiler, cfg, invariants, opt_legality, cse_legality, licm_legality)
+
+---
+
+## v0.8 — Conservative LICM (2026-03-22)
+
+### New Optimization Pass
+
+**Loop-Invariant Code Motion (`licm`)**
+- Detects natural loops via back-edge analysis (`_find_loops`)
+- Hoists pure `BinInst` and `CvtInst` to loop preheader when all operands are loop-invariant (defined outside the loop body) and `def_count == 1`
+- Inner fixpoint loop handles chains: hoisting A exposes B as hoistable
+- Never hoists: `LoadInst`, `StoreInst`, `CallInst`, `PrintfInst`, `ParamInst`, `CmpInst`, CondBrTerm condition Values, multi-def writeback Values
+- Runs between round-1 and round-2 cleanup passes
+
+### Tests
+
+**New test file:** `opencuda/tests/test_licm_legality.py` — 237 tests
+
+**New nasty kernels:** `nasty_licm_cvt.cu`, `nasty_licm_arith.cu`, `nasty_licm_safety.cu`
+
+### Metrics (84 kernels)
+
+- Avg instruction reduction: 1.76× (LICM reduces loop-body register pressure)
+
+---
+
+## v0.7 — Local CSE / Value Numbering (2026-03-22)
+
+### Extended CSE
+
+**Commutative normalization** — `a+b` and `b+a` share the same CSE key for ADD/MUL/AND/OR/XOR
+
+**CmpInst deduplication** — EQ/NE commutative; LT↔GT and LE↔GE normalized via operand swap
+
+**Round-2 cleanup** — CSE + identity_fold + dead_inst_elim run again after LICM to catch newly exposed duplicates
+
+**Predicate AND/OR/XOR codegen fix** — `&&` generated `and.b32 %r, %p0, %p1` (invalid PTX); now emits `and.pred %p, %p0, %p1`
+
+### Tests
+
+**New test file:** `opencuda/tests/test_cse_legality.py` — 297 tests
+
+**New nasty kernels:** `nasty_cse_commutative.cu`, `nasty_cse_cvt.cu`, `nasty_cse_cmp.cu`
+
+### Metrics (78 kernels)
+
+- Avg reduction: 1.77× (commutative normalization catches same-value cross-operand patterns)
+
+---
+
 ## v0.6 — Optimization Legality (2026-03-22)
 
 ### New Optimization Passes

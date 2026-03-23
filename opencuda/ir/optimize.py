@@ -487,20 +487,29 @@ class _Loop:
 
 
 def _find_loops(kernel: Kernel) -> list[_Loop]:
-    """Detect natural loops by finding back edges in the CFG.
+    """Detect natural loops by finding back edges via DFS.
 
-    A back edge is (u, v) where v appears earlier in the block list than u.
-    The loop body is all blocks from which u is reachable without going
-    through v's predecessors outside the loop (reverse BFS from u to v).
+    A back edge is an edge (u → v) where v is an *ancestor* of u in the DFS
+    spanning tree (i.e. v is on the current DFS stack when we visit u).  This
+    is the standard definition and correctly rejects non-loop forward/cross
+    edges even when the block list ordering would misclassify them.
 
-    Returns one _Loop per back edge.  Loops without a detectable preheader
-    (the unique non-loop predecessor of the header) are silently skipped.
+    Example: the parser emits outer-merge blocks before inner content, so
+    block-list-position heuristics create false back edges in nested if-else
+    chains.  DFS-based detection avoids this.
+
+    For each back edge (u → header):
+      • loop body: reverse BFS from u back to header (exclusive)
+      • preheader: the unique non-loop predecessor of header (required for
+        safe hoisting); skipped if ambiguous
+
+    Returns one _Loop per back edge.
     """
     if not kernel.blocks:
         return []
 
-    label_to_idx = {bb.label: i for i, bb in enumerate(kernel.blocks)}
     label_to_bb = {bb.label: bb for bb in kernel.blocks}
+    entry = kernel.blocks[0].label
 
     # Build predecessor map
     pred_map: dict[str, list[str]] = {bb.label: [] for bb in kernel.blocks}
@@ -509,50 +518,65 @@ def _find_loops(kernel: Kernel) -> list[_Loop]:
             if s in pred_map:
                 pred_map[s].append(bb.label)
 
+    # DFS to find back edges (u → v where v is on the current stack)
+    back_edges: list[tuple[str, str]] = []  # (src, header)
+    visited: set[str] = set()
+    on_stack: set[str] = set()
+
+    def dfs(lbl: str) -> None:
+        if lbl in visited:
+            return
+        visited.add(lbl)
+        on_stack.add(lbl)
+        bb = label_to_bb.get(lbl)
+        if bb:
+            for succ in _bb_successors(bb):
+                if succ not in label_to_bb:
+                    continue
+                if succ in on_stack:
+                    back_edges.append((lbl, succ))  # back edge
+                elif succ not in visited:
+                    dfs(succ)
+        on_stack.discard(lbl)
+
+    dfs(entry)
+
     loops: list[_Loop] = []
     seen: set[tuple[str, str]] = set()
 
-    for bb in kernel.blocks:
-        for succ in _bb_successors(bb):
-            if succ not in label_to_idx:
+    for backedge_src, header in back_edges:
+        edge = (backedge_src, header)
+        if edge in seen:
+            continue
+        seen.add(edge)
+
+        # Loop body: reverse BFS from backedge_src back to header
+        body: set[str] = {header}
+        work = [backedge_src]
+        while work:
+            cur = work.pop()
+            if cur in body:
                 continue
-            # Back edge: target earlier in block list than source
-            if label_to_idx[succ] >= label_to_idx[bb.label]:
-                continue
-            edge = (bb.label, succ)
-            if edge in seen:
-                continue
-            seen.add(edge)
+            body.add(cur)
+            for p in pred_map.get(cur, []):
+                if p not in body:
+                    work.append(p)
 
-            header = succ
-            backedge_src = bb.label
+        # Preheader: the unique non-loop predecessor of the header
+        non_loop_preds = [
+            p for p in pred_map.get(header, [])
+            if p not in body
+        ]
+        if len(non_loop_preds) != 1:
+            continue  # no unique preheader — skip
+        preheader = non_loop_preds[0]
 
-            # Loop body: reverse BFS from backedge_src until header is reached
-            body: set[str] = {header}
-            work = [backedge_src]
-            while work:
-                cur = work.pop()
-                if cur in body:
-                    continue
-                body.add(cur)
-                for p in pred_map.get(cur, []):
-                    if p not in body:
-                        work.append(p)
-
-            # Preheader: block just before header in block list, not in loop
-            header_idx = label_to_idx[header]
-            if header_idx == 0:
-                continue  # no room for a preheader
-            prev_label = kernel.blocks[header_idx - 1].label
-            if prev_label in body:
-                continue  # predecessor is itself in the loop (back-to-back loops)
-
-            loops.append(_Loop(
-                header=header,
-                preheader=prev_label,
-                body=frozenset(body),
-                backedge_src=backedge_src,
-            ))
+        loops.append(_Loop(
+            header=header,
+            preheader=preheader,
+            body=frozenset(body),
+            backedge_src=backedge_src,
+        ))
 
     return loops
 
