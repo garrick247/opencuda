@@ -133,6 +133,14 @@ def _build_alloc_map(kernel: Kernel):
             _note_def(inst.dest, i)
             if isinstance(inst, CmpInst):
                 pred_ids.add(inst.dest.id)
+        # Propagate predicate-ness through AND/OR/XOR of predicates.
+        # This handles `&&` / `||`: if both operands are predicates, the result is too.
+        # Runs as a fixpoint because chains are rare in practice.
+        if (isinstance(inst, BinInst)
+                and inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR)
+                and isinstance(inst.lhs, Value) and inst.lhs.id in pred_ids
+                and isinstance(inst.rhs, Value) and inst.rhs.id in pred_ids):
+            pred_ids.add(inst.dest.id)
         if isinstance(inst, (LoadInst,)):
             _note_def(inst.dest, i)
         if isinstance(inst, (CallInst,)):
@@ -467,6 +475,16 @@ class PTXEmitter:
                 self._lines.append(
                     f'    {ptx_op}.f16 {self._reg(inst.dest)}, {lhs_str}, {rhs_str};')
                 return
+            # Predicate AND/OR/XOR: both operands are predicates → use .pred type
+            if inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR):
+                lhs_is_pred = isinstance(inst.lhs, Value) and inst.lhs.id in self._pred_ids
+                rhs_is_pred = isinstance(inst.rhs, Value) and inst.rhs.id in self._pred_ids
+                if lhs_is_pred and rhs_is_pred:
+                    ptx_op_map = {BinOp.AND: 'and', BinOp.OR: 'or', BinOp.XOR: 'xor'}
+                    self._lines.append(
+                        f'    {ptx_op_map[inst.op]}.pred {self._reg(inst.dest)}, '
+                        f'{self._reg(inst.lhs)}, {self._reg(inst.rhs)};')
+                    return
             # Bitwise ops use .b32 type, not .s32/.u32
             if inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR, BinOp.SHL, BinOp.SHR):
                 ptx_ty = f'b{ty.size * 8}' if isinstance(ty, ScalarTy) else 'b32'

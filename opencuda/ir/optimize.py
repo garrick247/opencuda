@@ -3,11 +3,16 @@ OpenCUDA IR optimization passes.
 
 Pass 1: Constant folding — evaluate Const op Const at compile time.
 Pass 2: CSE — reuse identical computations within a basic block.
+        v0.7: extended with commutative normalization (ADD/MUL/AND/OR/XOR,
+        EQ/NE), reversible CmpOp normalization (LT↔GT, LE↔GE), and
+        full CmpInst deduplication.
 Pass 3: Dead block elimination — remove unreachable basic blocks.
 Pass 4: Identity fold / copy propagation — eliminate add D, S, 0 for
         single-definition Values.
 Pass 5: Dead instruction elimination — remove BinInst/CmpInst/CvtInst
         whose result is never consumed.
+Pass 6: Post-CSE cleanup — second CSE + identity_fold + dead_inst_elim
+        round to catch expressions exposed by pass 3–5.
 
 SAFETY RULE for passes 1–2: Replacements never cross basic block boundaries.
 This prevents the loop writeback bug where a variable initialized
@@ -152,12 +157,22 @@ def constant_fold(kernel: Kernel) -> int:
     return folded
 
 
+_COMMUTATIVE_BINOPS = frozenset({BinOp.ADD, BinOp.MUL, BinOp.AND, BinOp.OR, BinOp.XOR})
+
+# CmpOp pairs where swapping operands yields an equivalent comparison
+_CMP_SWAP = {CmpOp.LT: CmpOp.GT, CmpOp.GT: CmpOp.LT,
+             CmpOp.LE: CmpOp.GE, CmpOp.GE: CmpOp.LE}
+_CMP_COMMUTATIVE = frozenset({CmpOp.EQ, CmpOp.NE})
+
+
 def cse(kernel: Kernel) -> int:
     """
     Common Subexpression Elimination (local, per basic block).
 
-    If two BinInst in the same block have identical (op, lhs, rhs),
-    the second reuses the first result.
+    Eliminates duplicate BinInst, CvtInst, and CmpInst within a block.
+    Commutative BinInst (ADD/MUL/AND/OR/XOR) and symmetric CmpInst
+    (EQ/NE) are normalized so that a+b and b+a share the same key.
+    Reversible CmpOp pairs (LT↔GT, LE↔GE) are also normalized.
 
     SAFETY: per-block only. Never eliminates an instruction whose
     dest was already written in this block (loop writeback pattern).
@@ -195,7 +210,11 @@ def cse(kernel: Kernel) -> int:
                 # Include dest TYPE in key — prevents merging int and float
                 # variables that happen to have the same init value
                 dest_type_key = str(inst.dest.ty)
-                key = (inst.op, _key(inst.lhs), _key(inst.rhs), dest_type_key)
+                lk, rk = _key(inst.lhs), _key(inst.rhs)
+                # Normalize commutative ops: canonical form is smaller key first
+                if inst.op in _COMMUTATIVE_BINOPS and lk > rk:
+                    lk, rk = rk, lk
+                key = (inst.op, lk, rk, dest_type_key)
                 if key in seen:
                     replacements[inst.dest.id] = seen[key]
                     eliminated += 1
@@ -217,14 +236,35 @@ def cse(kernel: Kernel) -> int:
                     seen[cvt_key] = inst.dest
                     written_ids.add(inst.dest.id)
 
+            elif isinstance(inst, CmpInst):
+                # Propagate replacements into operands
+                if isinstance(inst.lhs, Value) and inst.lhs.id in replacements:
+                    inst.lhs = replacements[inst.lhs.id]
+                if isinstance(inst.rhs, Value) and inst.rhs.id in replacements:
+                    inst.rhs = replacements[inst.rhs.id]
+
+                # CSE: deduplicate identical comparisons within the block
+                if inst.dest.id not in written_ids:
+                    lk, rk = _key(inst.lhs), _key(inst.rhs)
+                    op = inst.op
+                    # Normalize commutative predicates (EQ/NE): smaller key first
+                    if op in _CMP_COMMUTATIVE and lk > rk:
+                        lk, rk = rk, lk
+                    # Normalize swappable predicates (LT↔GT, LE↔GE): always lk<=rk form
+                    elif op in _CMP_SWAP and lk > rk:
+                        lk, rk = rk, lk
+                        op = _CMP_SWAP[op]
+                    cmp_key = ('cmp', op, lk, rk)
+                    if cmp_key in seen:
+                        replacements[inst.dest.id] = seen[cmp_key]
+                        eliminated += 1
+                        continue
+                    seen[cmp_key] = inst.dest
+                    written_ids.add(inst.dest.id)
+
             else:
-                # Apply replacements to other instruction types
-                if isinstance(inst, CmpInst):
-                    if isinstance(inst.lhs, Value) and inst.lhs.id in replacements:
-                        inst.lhs = replacements[inst.lhs.id]
-                    if isinstance(inst.rhs, Value) and inst.rhs.id in replacements:
-                        inst.rhs = replacements[inst.rhs.id]
-                elif isinstance(inst, LoadInst):
+                # Apply replacements to memory instructions
+                if isinstance(inst, LoadInst):
                     if isinstance(inst.addr, Value) and inst.addr.id in replacements:
                         inst.addr = replacements[inst.addr.id]
                 elif isinstance(inst, StoreInst):
@@ -418,12 +458,17 @@ def optimize(module: Module, verbose: bool = False) -> Module:
     Pass order (designed to maximise cascading improvements):
       1. unroll_loops       — expose constants for folding
       2. constant_fold      — Const-op-Const, strength reduction
-      3. cse                — eliminate duplicate expressions
+      3. cse                — eliminate duplicate expressions (commutative-
+                              aware; includes CmpInst dedup since v0.7)
       4. dead_block_elim    — remove unreachable blocks before identity_fold
                               so dead-block defs don't inflate def_count
       5. identity_fold      — copy-propagate single-def add-zero patterns
       6. dead_inst_elim     — remove instructions whose results are unused
                               (iterates to fixpoint)
+      7. cse (round 2)      — catch expressions newly exposed by passes 4–6
+      8. identity_fold (2)  — propagate copies created by round-2 CSE
+      9. dead_inst_elim (2) — remove instructions whose results are unused
+                              after round-2 CSE+fold
     """
     from .unroll import unroll_loops
 
@@ -434,15 +479,22 @@ def optimize(module: Module, verbose: bool = False) -> Module:
         n_dbe = dead_block_elim(kernel)
         n_idf = identity_fold(kernel)
         n_die = dead_inst_elim(kernel)
+        # Round 2: post-cleanup CSE catches expressions newly exposed above
+        n_cse2 = cse(kernel)
+        n_idf2 = identity_fold(kernel)
+        n_die2 = dead_inst_elim(kernel)
         if verbose:
-            total = n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die
+            total = n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die + n_cse2 + n_idf2 + n_die2
             if total > 0:
                 parts = []
-                if n_unroll: parts.append(f"{n_unroll} loops unrolled")
-                if n_fold:   parts.append(f"{n_fold} constants folded")
-                if n_cse:    parts.append(f"{n_cse} CSE eliminated")
-                if n_dbe:    parts.append(f"{n_dbe} dead blocks removed")
-                if n_idf:    parts.append(f"{n_idf} copies propagated")
-                if n_die:    parts.append(f"{n_die} dead insts removed")
+                if n_unroll:       parts.append(f"{n_unroll} loops unrolled")
+                if n_fold:         parts.append(f"{n_fold} constants folded")
+                if n_cse:          parts.append(f"{n_cse} CSE eliminated")
+                if n_dbe:          parts.append(f"{n_dbe} dead blocks removed")
+                if n_idf:          parts.append(f"{n_idf} copies propagated")
+                if n_die:          parts.append(f"{n_die} dead insts removed")
+                if n_cse2:         parts.append(f"{n_cse2} CSE-2 eliminated")
+                if n_idf2:         parts.append(f"{n_idf2} copies-2 propagated")
+                if n_die2:         parts.append(f"{n_die2} dead-2 insts removed")
                 print(f"[opt] {kernel.name}: {', '.join(parts)}")
     return module
