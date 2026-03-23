@@ -379,3 +379,59 @@ __global__ void k(int *data) {
     size = int(m.group(1))
     assert size >= 32, \
         f"Expected >= 32 bytes for 4-arg valist (4 * 8), got {size}"
+
+
+# ---------------------------------------------------------------------------
+# Liveness / register reuse tests
+# ---------------------------------------------------------------------------
+
+from pathlib import Path as _Path
+
+_TESTS_DIR = _Path(__file__).parent.parent.parent / 'tests'
+
+
+def test_liveness_chain_reuse_compact_f32():
+    """chain_reuse.cu should declare <= 4 f32 registers (not 6 for 6 values in naive allocation)."""
+    src = (_TESTS_DIR / 'chain_reuse.cu').read_text(encoding='utf-8')
+    ptx = _ptx(src)
+    count = _count_regs(ptx, 'f32')
+    assert count <= 4, \
+        f"Expected <= 4 .f32 registers for chain_reuse (linear scan reuse), got {count}. PTX:\n{ptx}"
+
+
+def test_liveness_branch_overlap_compiles():
+    """branch_overlap.cu must compile to valid PTX with ret; and at least one bra."""
+    src = (_TESTS_DIR / 'branch_overlap.cu').read_text(encoding='utf-8')
+    ptx = _ptx(src)
+    assert 'ret;' in ptx, \
+        f"Expected ret; in branch_overlap PTX, got:\n{ptx}"
+    assert 'bra ' in ptx, \
+        f"Expected at least one bra in branch_overlap PTX, got:\n{ptx}"
+
+
+def test_liveness_merge_reuse_compiles():
+    """merge_reuse.cu must compile and produce valid PTX without register collision."""
+    src = (_TESTS_DIR / 'merge_reuse.cu').read_text(encoding='utf-8')
+    ptx = _ptx(src)
+    assert 'ret;' in ptx, \
+        f"Expected ret; in merge_reuse PTX, got:\n{ptx}"
+    assert '.entry' in ptx, \
+        f"Expected .entry in merge_reuse PTX, got:\n{ptx}"
+
+
+def test_liveness_mixed_type_no_prefix_collision():
+    """mixed_type_pressure.cu: r (b32) and f (f32) register declarations are independent."""
+    src = (_TESTS_DIR / 'mixed_type_pressure.cu').read_text(encoding='utf-8')
+    ptx = _ptx(src)
+    r_count = _count_regs(ptx, 'b32')
+    f_count = _count_regs(ptx, 'f32')
+    # Both must be present since the kernel uses both int and float values
+    assert r_count > 0, \
+        f"Expected .b32 registers in mixed_type_pressure PTX, got:\n{ptx}"
+    assert f_count > 0, \
+        f"Expected .f32 registers in mixed_type_pressure PTX, got:\n{ptx}"
+    # Verify b32 and f32 are declared separately (no cross-type aliasing)
+    assert '.reg .b32' in ptx, \
+        f"Expected '.reg .b32' declaration in PTX, got:\n{ptx}"
+    assert '.reg .f32' in ptx, \
+        f"Expected '.reg .f32' declaration in PTX, got:\n{ptx}"
