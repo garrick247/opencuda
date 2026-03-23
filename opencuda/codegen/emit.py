@@ -222,7 +222,8 @@ class PTXEmitter:
         # Linear scan allocation results (set per kernel in emit_kernel)
         self._alloc: dict[int, int] = {}
         self._alloc_max: dict[str, int] = {}
-        self._base_fallback_id: int = 0
+        self._fallback_alloc: dict[int, int] = {}   # emission-time values
+        self._fallback_count: dict[str, int] = {}   # per-prefix next index
         self._pred_ids: set[int] = set()
         self._val_type_map: dict[int, Type] = {}
 
@@ -230,10 +231,15 @@ class PTXEmitter:
         prefix = 'p' if v.id in self._pred_ids else _ptx_reg_prefix(v.ty)
         if v.id in self._alloc:
             phys = self._alloc[v.id]
+        elif v.id in self._fallback_alloc:
+            phys = self._fallback_alloc[v.id]
         else:
-            # Fallback for values created during emission (e.g., widen temps)
-            max_alloc = self._alloc_max.get(prefix, -1) + 1
-            phys = max_alloc + (v.id - self._base_fallback_id)
+            # Emission-time value (widen cache, printf temps, etc.) — assign
+            # the next compact index above the linear-scan allocated range.
+            base = self._alloc_max.get(prefix, 0)  # alloc_max stores count (max+1)
+            phys = base + self._fallback_count.get(prefix, 0)
+            self._fallback_count[prefix] = self._fallback_count.get(prefix, 0) + 1
+            self._fallback_alloc[v.id] = phys
         self._reg_counts[prefix] = max(self._reg_counts.get(prefix, 0), phys + 1)
         return f'%{prefix}{phys}'
 
@@ -260,10 +266,11 @@ class PTXEmitter:
         self._shared_val_ids: dict[str, list] = {}
         self._widen_cache = {}
         self._printf_call_count = 0
+        self._fallback_alloc = {}
+        self._fallback_count = {}
 
         # Run linear scan allocation
         self._alloc, self._val_type_map, self._pred_ids, self._alloc_max = _build_alloc_map(kernel)
-        self._base_fallback_id = kernel._next_id
 
         # Pre-scan: find Values that are shared memory variables
         if hasattr(kernel, '_shared_decls'):
@@ -421,8 +428,6 @@ class PTXEmitter:
                         wide = self._widen_cache[rhs_id]
                     else:
                         wide = kernel.new_value(f'wide{inst.dest.id}', ty)
-                        self._reg_counts[_ptx_reg_prefix(ty)] = max(
-                            self._reg_counts.get(_ptx_reg_prefix(ty), 0), wide.id + 1)
                         self._lines.append(
                             f'    cvt.u64.u32 {self._reg(wide)}, {rhs};')
                         self._widen_cache[rhs_id] = wide
