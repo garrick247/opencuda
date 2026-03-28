@@ -37,8 +37,9 @@ class Parser:
         self._block_count = 0
         self._struct_types: dict[str, StructTy] = {}  # struct name → StructTy
         self._typedefs: dict[str, Type] = {}  # typedef name → Type
-        self._break_targets: list[str] = []     # stack of break target labels
-        self._continue_targets: list[str] = []  # stack of continue target labels
+        self._break_targets: list[str] = []          # stack of break target labels
+        self._break_snapshots: list[Optional[dict]] = []  # vars snapshot at break scope entry
+        self._continue_targets: list[str] = []       # stack of continue target labels
         self._inline_return_target = None  # (return_dest_val, return_merge_label) or None
 
     # -- Token helpers -------------------------------------------------------
@@ -96,11 +97,17 @@ class Parser:
         the same while loop may produce incorrect loop termination.
         """
         for var_name, entry_val in entry_vars.items():
+            if not isinstance(entry_val, Value):
+                continue
             cur_val = self._variables.get(var_name)
-            if (cur_val is not None
-                    and cur_val is not entry_val
-                    and isinstance(cur_val, Value)
-                    and isinstance(entry_val, Value)):
+            if cur_val is None or cur_val is entry_val:
+                continue
+            if isinstance(cur_val, Value):
+                self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
+                self._variables[var_name] = entry_val
+            elif isinstance(cur_val, Const):
+                # Constant assigned to a canonical register: emit copy so that
+                # constant_fold can materialise the value into entry_val.
                 self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
                 self._variables[var_name] = entry_val
 
@@ -176,6 +183,22 @@ class Parser:
         return self._parse_assign_expr()
 
     def _parse_assign_expr(self) -> Operand:
+        # Capture the original source-level variable name before parsing the LHS.
+        # _parse_or_expr() resolves variable aliases (variables['val'] may return
+        # Value('elem', ...)), so lhs.name would update the wrong key in _variables.
+        _lhs_orig_name = None
+        if self._at(TokKind.IDENT):
+            cand = self._peek().value
+            next_pos = self._pos + 1
+            if (next_pos < len(self._toks)
+                    and self._toks[next_pos].kind in (
+                        TokKind.ASSIGN, TokKind.PLUS_EQ, TokKind.MINUS_EQ,
+                        TokKind.STAR_EQ, TokKind.SLASH_EQ, TokKind.PERCENT_EQ,
+                        TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
+                        TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ)
+                    and cand in self._variables):
+                _lhs_orig_name = cand
+
         lhs = self._parse_or_expr()
         # Ternary: cond ? true_expr : false_expr
         if self._match(TokKind.QUESTION):
@@ -206,9 +229,12 @@ class Parser:
             if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
                 self._emit(StoreInst(addr=lhs, value=rhs))
                 return rhs
-            # Variable assignment: update the variable binding
-            if isinstance(lhs, Value) and lhs.name in self._variables:
-                self._variables[lhs.name] = rhs
+            # Variable assignment: update the variable binding.
+            # Prefer the original source name (_lhs_orig_name) over lhs.name,
+            # since lhs.name may be an alias created by a prior assignment.
+            update_name = _lhs_orig_name or (lhs.name if isinstance(lhs, Value) else None)
+            if update_name and update_name in self._variables:
+                self._variables[update_name] = rhs
             return rhs
         # Compound assignment: +=, -=, *=
         for tok_kind, op in [(TokKind.PLUS_EQ, BinOp.ADD),
@@ -226,8 +252,9 @@ class Parser:
                 if isinstance(lhs, Value):
                     new_val = self._new_val(f"{lhs.name}_compound", lhs.ty)
                     self._emit(BinInst(new_val, op, lhs, rhs))
-                    if lhs.name in self._variables:
-                        self._variables[lhs.name] = new_val
+                    update_name = _lhs_orig_name or lhs.name
+                    if update_name in self._variables:
+                        self._variables[update_name] = new_val
                     return new_val
         return lhs
 
@@ -474,10 +501,15 @@ class Parser:
                         index = scaled
                     addr = self._new_val("addr", lhs.ty)
                     self._emit(BinInst(addr, BinOp.ADD, lhs, index))
-                    # Load the value
-                    dest = self._new_val("elem", lhs.ty.pointee)
-                    self._emit(LoadInst(dest, addr))
-                    lhs = dest
+                    if isinstance(lhs.ty.pointee, StructTy):
+                        # Struct element: keep as pointer so .field access can
+                        # compute the correct byte offset and load the scalar.
+                        lhs = addr
+                    else:
+                        # Load the scalar value
+                        dest = self._new_val("elem", lhs.ty.pointee)
+                        self._emit(LoadInst(dest, addr))
+                        lhs = dest
             elif self._match(TokKind.DOT):
                 member = self._expect(TokKind.IDENT).value
                 # Built-in: threadIdx.x, blockIdx.y, etc.
@@ -714,17 +746,36 @@ class Parser:
 
             self._cur_block.terminator = CondBrTerm(cond, true_bb.label, false_bb.label)
 
+            # Snapshot variables before branches so that:
+            # (a) each branch starts from the same state,
+            # (b) values modified in one branch are written back to their
+            #     canonical pre-if register before branching to the merge, and
+            # (c) the merge block always sees canonical (pre-if) bindings.
+            vars_before_if = dict(self._variables)
+
             self._cur_block = true_bb
             self._parse_stmt_or_block()
+            # Always writeback modified variables to their canonical pre-if Values,
+            # even when the branch already has a terminator (break/continue/return).
+            # This ensures that modifications before a break/continue are persisted
+            # into the canonical registers that the outer loop's writeback relies on.
+            self._loop_writeback(vars_before_if)
             if self._cur_block.terminator is None:
                 self._cur_block.terminator = BrTerm(merge_bb.label)
+
+            # Reset to pre-if state so the false branch starts from the same
+            # variable environment as the true branch did.
+            self._variables = dict(vars_before_if)
 
             self._cur_block = false_bb
             if self._match(TokKind.KW_ELSE):
                 self._parse_stmt_or_block()
+            self._loop_writeback(vars_before_if)
             if self._cur_block.terminator is None:
                 self._cur_block.terminator = BrTerm(merge_bb.label)
 
+            # Restore canonical bindings at the merge block.
+            self._variables = dict(vars_before_if)
             self._cur_block = merge_bb
             return
 
@@ -780,11 +831,19 @@ class Parser:
             self._pos = body_resume
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
+            self._break_snapshots.append(None)
             self._continue_targets.append(inc_bb.label)
             self._parse_stmt_or_block()
             self._break_targets.pop()
+            self._break_snapshots.pop()
             self._continue_targets.pop()
             if self._cur_block.terminator is None:
+                # Natural fall-through from the body's last block to inc_bb.
+                # Emit writebacks for body-modified variables HERE, while still
+                # in that block, so the written-back values dominate their uses
+                # in inc_bb and cond_bb.  (If the body exits via break/continue
+                # the if-branch writeback mechanism already persisted those values.)
+                self._loop_writeback(loop_vars)
                 self._cur_block.terminator = BrTerm(inc_bb.label)
 
             # Emit increment
@@ -794,13 +853,11 @@ class Parser:
             self._parse_expr()
             self._pos = saved_pos
 
-            # Write back modified variables to their canonical loop-entry Values
-            # so the condition block reads the updated values on the next iteration.
+            # Write back any variables modified by the increment expression
+            # (or by direct-continue paths that bypassed the body writeback above).
             for var_name, init_val in loop_vars.items():
                 cur_val = self._variables.get(var_name)
                 if cur_val is not None and cur_val is not init_val and isinstance(cur_val, Value):
-                    # Variable was modified — emit a copy back to the init register
-                    # PTX: mov dest, src (but we emit add dest, src, 0 for simplicity)
                     self._emit(BinInst(init_val, BinOp.ADD, cur_val, Const(init_val.ty, 0)))
                     self._variables[var_name] = init_val
 
@@ -831,9 +888,11 @@ class Parser:
 
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
+            self._break_snapshots.append(None)
             self._continue_targets.append(cond_bb.label)
             self._parse_stmt_or_block()
             self._break_targets.pop()
+            self._break_snapshots.pop()
             self._continue_targets.pop()
 
             # Write back any variables modified in the body to their canonical
@@ -862,9 +921,11 @@ class Parser:
             self._cur_block.terminator = BrTerm(body_bb.label)
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
+            self._break_snapshots.append(None)
             self._continue_targets.append(cond_bb.label)
             self._parse_stmt_or_block()
             self._break_targets.pop()
+            self._break_snapshots.pop()
             self._continue_targets.pop()
 
             # Write back modified variables before parsing the condition so
@@ -892,6 +953,10 @@ class Parser:
             self._expect(TokKind.SEMI)
             if not self._break_targets:
                 raise ParseError("break outside of loop")
+            # If the enclosing scope has a vars snapshot (switch or loop),
+            # write back any modifications to canonical entry registers.
+            if self._break_snapshots and self._break_snapshots[-1] is not None:
+                self._loop_writeback(self._break_snapshots[-1])
             self._cur_block.terminator = BrTerm(self._break_targets[-1])
             # Dead code after break — create a new unreachable block
             self._cur_block = self._new_block("after_break")
@@ -915,36 +980,76 @@ class Parser:
             self._expect(TokKind.RPAREN)
             self._expect(TokKind.LBRACE)
 
+            # Save current block so we can connect it to switch_dispatch later.
+            pre_switch_bb = self._cur_block
+            # Snapshot variables so each case starts from the same state and
+            # modifications can be written back to canonical registers at break.
+            vars_before_switch = dict(self._variables)
+
             exit_bb = self._new_block("switch_exit")
             self._break_targets.append(exit_bb.label)
+            self._break_snapshots.append(vars_before_switch)
 
-            # Collect cases
-            cases = []  # (value, block_label)
+            # Collect cases, resetting variable state for each new case/default
+            # so each body starts from the same canonical environment.
+            cases = []  # (value, case_bb)
             default_bb = None
             while not self._match(TokKind.RBRACE):
-                if self._peek().kind == TokKind.KW_CASE:
-                    self._advance()
-                    case_val = self._parse_expr()
-                    self._expect(TokKind.COLON)
-                    case_bb = self._new_block("case")
-                    cases.append((case_val, case_bb))
-                    self._cur_block = case_bb
-                elif self._peek().kind == TokKind.KW_DEFAULT:
-                    self._advance()
-                    self._expect(TokKind.COLON)
-                    default_bb = self._new_block("default")
-                    self._cur_block = default_bb
+                if self._peek().kind in (TokKind.KW_CASE, TokKind.KW_DEFAULT):
+                    # If the block we're currently in has no terminator (e.g. an
+                    # after_break stub or a fall-through case body), close it.
+                    # Guard: never close pre_switch_bb here — its terminator is
+                    # set later (line 1045) to point at the switch_dispatch block.
+                    # Without this guard, the first `case` keyword would close
+                    # pre_switch_bb with BrTerm(exit_bb), bypassing the dispatch
+                    # entirely and producing a switch that always falls through to
+                    # exit without testing any case.
+                    if self._cur_block.terminator is None and self._cur_block is not pre_switch_bb:
+                        self._loop_writeback(vars_before_switch)
+                        self._cur_block.terminator = BrTerm(exit_bb.label)
+                    if self._peek().kind == TokKind.KW_CASE:
+                        self._advance()
+                        case_val = self._parse_expr()
+                        self._expect(TokKind.COLON)
+                        case_bb = self._new_block("case")
+                        cases.append((case_val, case_bb))
+                        self._variables = dict(vars_before_switch)
+                        self._cur_block = case_bb
+                    else:
+                        self._advance()
+                        self._expect(TokKind.COLON)
+                        default_bb = self._new_block("default")
+                        self._variables = dict(vars_before_switch)
+                        self._cur_block = default_bb
                 else:
                     self._parse_stmt()
 
             self._break_targets.pop()
+            self._break_snapshots.pop()
 
-            # Build comparison chain: if switch_val == case_val → branch to case_bb
-            chain_bb = self._kernel.blocks[-len(cases) - (1 if default_bb else 0) - 2]  # entry block before cases
-            # Actually, rebuild chain from the entry point
-            # Simple approach: emit a chain of if-else comparisons
+            # Close the last active block (e.g. after_break stub left behind by
+            # the final break statement, or a fall-through body ending at '}'.
+            if self._cur_block.terminator is None:
+                self._loop_writeback(vars_before_switch)
+                self._cur_block.terminator = BrTerm(exit_bb.label)
+
+            # Ensure all case/default blocks have a terminator.
+            # If the body ended without a break (fall-through), write back and
+            # fall to exit.
+            for _, case_bb in cases:
+                if case_bb.terminator is None:
+                    self._cur_block = case_bb
+                    self._loop_writeback(vars_before_switch)
+                    case_bb.terminator = BrTerm(exit_bb.label)
+            if default_bb and default_bb.terminator is None:
+                self._cur_block = default_bb
+                self._loop_writeback(vars_before_switch)
+                default_bb.terminator = BrTerm(exit_bb.label)
+
+            # Build comparison chain dispatch and connect the pre-switch block.
             entry_bb = self._new_block("switch_dispatch")
-            chain_bb.terminator = BrTerm(entry_bb.label) if chain_bb.terminator is None else chain_bb.terminator
+            if pre_switch_bb.terminator is None:
+                pre_switch_bb.terminator = BrTerm(entry_bb.label)
 
             cur = entry_bb
             for case_val, case_bb in cases:
@@ -955,20 +1060,15 @@ class Parser:
                 cur.terminator = CondBrTerm(cmp, case_bb.label, next_bb.label)
                 cur = next_bb
 
-            # Default or exit
+            # Final dispatch: fall to default or exit
             self._cur_block = cur
             if default_bb:
                 cur.terminator = BrTerm(default_bb.label)
             else:
                 cur.terminator = BrTerm(exit_bb.label)
 
-            # Ensure all case blocks fall through to exit if no terminator
-            for _, case_bb in cases:
-                if case_bb.terminator is None:
-                    case_bb.terminator = BrTerm(exit_bb.label)
-            if default_bb and default_bb.terminator is None:
-                default_bb.terminator = BrTerm(exit_bb.label)
-
+            # Restore canonical variable state at the exit block
+            self._variables = dict(vars_before_switch)
             self._cur_block = exit_bb
             return
 
@@ -995,14 +1095,28 @@ class Parser:
             return
 
         # Expression statement — check for array assignment: ptr[idx] = expr;
+        # Capture original variable name before the LHS expression consumes the token
+        # and may resolve it to an aliased Value with a different .name.
+        _stmt_lhs_name = None
+        if self._at(TokKind.IDENT):
+            cand = self._peek().value
+            next_pos = self._pos + 1
+            if (next_pos < len(self._toks)
+                    and self._toks[next_pos].kind in (
+                        TokKind.ASSIGN, TokKind.PLUS_EQ, TokKind.MINUS_EQ,
+                        TokKind.STAR_EQ)
+                    and cand in self._variables):
+                _stmt_lhs_name = cand
         saved_pos = self._pos
         lhs = self._parse_lvalue_or_expr()
         if self._match(TokKind.ASSIGN):
             rhs = self._parse_expr()
             if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
                 self._emit(StoreInst(addr=lhs, value=rhs))
-            elif isinstance(lhs, Value) and lhs.name in self._variables:
-                self._variables[lhs.name] = rhs
+            elif isinstance(lhs, Value):
+                update_name = _stmt_lhs_name or lhs.name
+                if update_name in self._variables:
+                    self._variables[update_name] = rhs
             self._expect(TokKind.SEMI)
             return
         # Compound assignment: +=, -=, *=
@@ -1021,8 +1135,9 @@ class Parser:
                 else:
                     result = self._new_val("compound", lhs.ty if isinstance(lhs, Value) else INT32)
                     self._emit(BinInst(result, op, lhs, rhs))
-                    if isinstance(lhs, Value) and lhs.name in self._variables:
-                        self._variables[lhs.name] = result
+                    update_name = _stmt_lhs_name or (lhs.name if isinstance(lhs, Value) else None)
+                    if update_name and update_name in self._variables:
+                        self._variables[update_name] = result
                 self._expect(TokKind.SEMI)
                 return
         self._expect(TokKind.SEMI)

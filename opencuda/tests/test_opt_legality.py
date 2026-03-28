@@ -146,10 +146,7 @@ def test_ret_reachable_after_opt(cu_file):
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=[f.stem for f in ALL_CU_FILES])
 def test_no_double_terminator_after_opt(cu_file):
     """Each reachable block must have exactly one terminator after opt."""
-    # switch_test has a pre-existing parser bug where the switch merge block
-    # gets no terminator — unrelated to v0.6 work.
-    if cu_file.name == 'switch_test.cu':
-        pytest.skip('pre-existing switch lowering bug (out of v0.6 scope)')
+    # switch_test switch lowering bug fixed in v0.13.
     source = cu_file.read_text(encoding='utf-8')
     try:
         mod, _ = _compile(source)
