@@ -172,6 +172,48 @@ def _build_alloc_map(kernel: Kernel):
         elif isinstance(inst, CondBrTerm):
             _note_use(inst.cond, i)
 
+    # Back-edge liveness extension: values defined before a loop header and used
+    # within the loop body must remain live until the loop's back edge, otherwise
+    # the flat-order allocator incorrectly reuses their register after their last
+    # flat use but before the back edge (which re-enters the loop body).
+    #
+    # Algorithm:
+    #   1. Build flat-start index for each basic block.
+    #   2. Detect back edges: a branch whose target block starts at or before the
+    #      source block's own start (i.e., the branch goes backwards in flat order).
+    #   3. For every back edge from source_end→header_start, extend the live_end
+    #      of any value V where live_start[V] <= header_start and
+    #      header_start <= live_end[V] <= source_end  (V is defined before or at
+    #      the header and last-used inside the loop body).
+    bb_flat_start: dict[str, int] = {}
+    bb_flat_end: dict[str, int] = {}
+    _pos = 0
+    for bb in kernel.blocks:
+        bb_flat_start[bb.label] = _pos
+        n_insts = len(bb.instructions) + (1 if bb.terminator else 0)
+        bb_flat_end[bb.label] = _pos + n_insts - 1
+        _pos += n_insts
+
+    back_edges: list[tuple[int, int]] = []  # (loop_header_start, back_edge_end)
+    for bb in kernel.blocks:
+        if bb.terminator is None:
+            continue
+        src_start = bb_flat_start[bb.label]
+        targets: list[str] = []
+        if isinstance(bb.terminator, BrTerm):
+            targets = [bb.terminator.target]
+        elif isinstance(bb.terminator, CondBrTerm):
+            targets = [bb.terminator.true_bb, bb.terminator.false_bb]
+        for tgt in targets:
+            if tgt in bb_flat_start and bb_flat_start[tgt] <= src_start:
+                back_edges.append((bb_flat_start[tgt], bb_flat_end[bb.label]))
+
+    for header_start, loop_end in back_edges:
+        for val_id, le in list(live_end.items()):
+            ls = live_start.get(val_id, 0)
+            if ls <= header_start and header_start <= le <= loop_end:
+                live_end[val_id] = loop_end
+
     # Group vals by prefix bucket
     buckets = {}
     for val_id, ty in val_type_map.items():
