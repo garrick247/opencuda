@@ -442,6 +442,43 @@ class PTXEmitter:
         elif isinstance(inst, BinInst):
             ty = inst.dest.ty
             ptx_ty = _ptx_type(ty)
+
+            # Emit mov for add-zero copy patterns (loop writeback / initializers).
+            # add D, V, 0  or  add D, 0, V  → mov D, V
+            # add D, 0, 0              → mov D, 0
+            # This avoids wasteful ALU slots for pure register copies.
+            if (inst.op == BinOp.ADD
+                    and not _is_half(ty)         # half has its own path below
+                    and not _is_ptr(ty)):         # pointer add has widen logic
+                lhs_zero = isinstance(inst.lhs, Const) and inst.lhs.value == 0
+                rhs_zero = isinstance(inst.rhs, Const) and inst.rhs.value == 0
+                if lhs_zero and rhs_zero:
+                    # mov D, 0
+                    if _is_float(ty):
+                        fty = _ptx_type(ty)
+                        self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, 0f00000000;')
+                    else:
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, 0;')
+                    return
+                elif rhs_zero and not isinstance(inst.lhs, Const):
+                    # mov D, V  (add D, V, 0)
+                    if _is_float(ty):
+                        fty = _ptx_type(ty)
+                        src = self._reg(inst.lhs) if isinstance(inst.lhs, Value) else self._coerce_to_float(inst.lhs, fty, kernel)
+                        self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
+                    else:
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.lhs, ptx_ty)};')
+                    return
+                elif lhs_zero and not isinstance(inst.rhs, Const):
+                    # mov D, V  (add D, 0, V)
+                    if _is_float(ty):
+                        fty = _ptx_type(ty)
+                        src = self._reg(inst.rhs) if isinstance(inst.rhs, Value) else self._coerce_to_float(inst.rhs, fty, kernel)
+                        self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
+                    else:
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.rhs, ptx_ty)};')
+                    return
+
             op_map = {
                 BinOp.ADD: 'add', BinOp.SUB: 'sub', BinOp.MUL: 'mul.lo',
                 BinOp.DIV: 'div', BinOp.MOD: 'rem',
@@ -568,7 +605,7 @@ class PTXEmitter:
                     f'[{self._operand(inst.addr)}];')
 
         elif isinstance(inst, StoreInst):
-            ty = inst.value.ty if isinstance(inst.value, Value) else INT32
+            ty = getattr(inst.value, 'ty', INT32)
             ptx_ty = _ptx_type(ty)
             # PTX does not support st.f16 — use b16 instead
             if ptx_ty == 'f16':
@@ -723,7 +760,17 @@ class PTXEmitter:
             self._lines.append(f'    bra {term.target};')
         elif isinstance(term, CondBrTerm):
             if isinstance(term.cond, Value):
-                pred = self._reg(term.cond)
+                if term.cond.id in self._pred_ids:
+                    pred = self._reg(term.cond)
+                else:
+                    # Integer condition — synthesize a predicate register
+                    p_idx = self._reg_counts.get('p', 0)
+                    self._reg_counts['p'] = p_idx + 1
+                    pred = f'%p{p_idx}'
+                    ptx_ty = _ptx_type(term.cond.ty)
+                    src = self._reg(term.cond)
+                    self._lines.append(
+                        f'    setp.ne.{ptx_ty} {pred}, {src}, 0;')
             else:
                 pred = '%p0'
             self._lines.append(f'    @{pred} bra {term.true_bb};')

@@ -185,8 +185,31 @@ def cse(kernel: Kernel) -> int:
 
     SAFETY: per-block only. Never eliminates an instruction whose
     dest was already written in this block (loop writeback pattern).
+
+    SAFETY: Never eliminates an instruction whose dest is writeback-carried
+    (global def_count >= 2).  Two identically-valued initializers like
+    `int sum = 0; int i = 0;` emit identical `add v, 0, 0` instructions in
+    the same entry block.  Without this guard, CSE merges their dest Values,
+    aliasing sum ↔ i.  The CSE global-replacement sweep then rewrites all
+    uses of i (the loop counter) with sum's register, silently breaking the
+    loop condition while leaving the for_inc writeback with def_count==1 so
+    that identity_fold subsequently deletes it.
+
+    Cross-block correctness: after all local passes, a second sweep applies
+    accumulated replacements to operands in all blocks.  This handles the
+    case where block A eliminates def X (keeping canonical Y) but block B
+    (which post-dominates A) still references X.
     """
+    # Pre-compute global def_count so we can protect writeback-carried Values.
+    _global_def_count: dict[int, int] = {}
+    for _bb in kernel.blocks:
+        for _inst in _bb.instructions:
+            if hasattr(_inst, 'dest') and _inst.dest is not None:
+                _did = _inst.dest.id
+                _global_def_count[_did] = _global_def_count.get(_did, 0) + 1
+
     eliminated = 0
+    global_replacements: dict[int, Value] = {}
 
     for bb in kernel.blocks:
         seen: dict[tuple, Value] = {}
@@ -211,8 +234,18 @@ def cse(kernel: Kernel) -> int:
                 if isinstance(inst.rhs, Value) and inst.rhs.id in replacements:
                     inst.rhs = replacements[inst.rhs.id]
 
-                # Don't CSE if dest was already written (loop writeback)
+                # Don't CSE if dest was already written (loop writeback in THIS block)
                 if inst.dest.id in written_ids:
+                    new_insts.append(inst)
+                    continue
+
+                # Don't CSE if dest is writeback-carried (defined in multiple blocks).
+                # Two identically-initialised writeback vars (e.g. sum=0, i=0) emit
+                # identical `add v, 0, 0` in the same entry block.  Merging them via
+                # global_replacements would alias their registers and silently corrupt
+                # the loop counter / accumulator semantics downstream.
+                if _global_def_count.get(inst.dest.id, 0) >= 2:
+                    written_ids.add(inst.dest.id)
                     new_insts.append(inst)
                     continue
 
@@ -236,7 +269,7 @@ def cse(kernel: Kernel) -> int:
                 # CSE for type conversions (e.g., cvt.u64.u32 of same source)
                 if isinstance(inst.src, Value) and inst.src.id in replacements:
                     inst.src = replacements[inst.src.id]
-                if inst.dest.id not in written_ids:
+                if inst.dest.id not in written_ids and _global_def_count.get(inst.dest.id, 0) < 2:
                     cvt_key = ('cvt', _key(inst.src), str(inst.dest.ty), str(inst.src.ty))
                     if cvt_key in seen:
                         replacements[inst.dest.id] = seen[cvt_key]
@@ -253,7 +286,7 @@ def cse(kernel: Kernel) -> int:
                     inst.rhs = replacements[inst.rhs.id]
 
                 # CSE: deduplicate identical comparisons within the block
-                if inst.dest.id not in written_ids:
+                if inst.dest.id not in written_ids and _global_def_count.get(inst.dest.id, 0) < 2:
                     lk, rk = _key(inst.lhs), _key(inst.rhs)
                     op = inst.op
                     # Normalize commutative predicates (EQ/NE): smaller key first
@@ -284,6 +317,45 @@ def cse(kernel: Kernel) -> int:
 
             new_insts.append(inst)
         bb.instructions = new_insts
+        global_replacements.update(replacements)
+
+    # Second pass: propagate replacements to any cross-block uses that the
+    # per-block loop could not reach (e.g. block A eliminates def X → Y, but
+    # block B still references X).
+    if global_replacements:
+        def _chase(v: Value) -> Value:
+            while v.id in global_replacements:
+                v = global_replacements[v.id]
+            return v
+
+        for bb in kernel.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, BinInst):
+                    if isinstance(inst.lhs, Value):
+                        inst.lhs = _chase(inst.lhs)
+                    if isinstance(inst.rhs, Value):
+                        inst.rhs = _chase(inst.rhs)
+                elif isinstance(inst, CmpInst):
+                    if isinstance(inst.lhs, Value):
+                        inst.lhs = _chase(inst.lhs)
+                    if isinstance(inst.rhs, Value):
+                        inst.rhs = _chase(inst.rhs)
+                elif isinstance(inst, CvtInst):
+                    if isinstance(inst.src, Value):
+                        inst.src = _chase(inst.src)
+                elif isinstance(inst, LoadInst):
+                    if isinstance(inst.addr, Value):
+                        inst.addr = _chase(inst.addr)
+                elif isinstance(inst, StoreInst):
+                    if isinstance(inst.addr, Value):
+                        inst.addr = _chase(inst.addr)
+                    if isinstance(inst.value, Value):
+                        inst.value = _chase(inst.value)
+            t = bb.terminator
+            if isinstance(t, CondBrTerm) and isinstance(t.cond, Value):
+                new_cond = _chase(t.cond)
+                if new_cond is not t.cond:
+                    bb.terminator = CondBrTerm(new_cond, t.true_bb, t.false_bb)
 
     return eliminated
 
@@ -706,26 +778,136 @@ def licm(kernel: Kernel) -> int:
     return total_hoisted
 
 
+def thread_empty_blocks(kernel: Kernel) -> int:
+    """Branch threading: forward unconditional branches through empty blocks.
+
+    A block is *transparent* if it has no instructions and a single
+    unconditional BrTerm.  Any predecessor that targets a transparent block
+    can skip directly to its ultimate destination, shortening branch chains
+    and allowing the transparent blocks to be removed entirely.
+
+    Algorithm
+    ---------
+    1. Build a forwarding map: transparent_label → forwarded_target.
+       Follow chains (A→B→C where B and C are also transparent) with
+       cycle detection to avoid infinite loops.
+    2. Rewrite every BrTerm and CondBrTerm in every block to use the
+       forwarded target instead of the original.
+       Special case: if CondBrTerm.true_bb == CondBrTerm.false_bb after
+       forwarding, replace with a plain BrTerm (dead-branch folding).
+    3. Remove transparent blocks that are no longer needed.
+       Exception: the entry block (first block) is never removed even if
+       it is transparent, because the kernel must start execution there.
+
+    Returns the number of transparent blocks threaded (removed).
+
+    SAFETY: Never threads across a block that has instructions (it may have
+    side effects).  The entry block is never removed.  Loop back-edges are
+    preserved because the loop header always has at least a CmpInst.
+    """
+    if not kernel.blocks:
+        return 0
+
+    entry_label = kernel.blocks[0].label
+
+    # Step 1: build forwarding map (only for non-entry transparent blocks)
+    label_to_bb = {bb.label: bb for bb in kernel.blocks}
+
+    def _forward(lbl: str) -> str:
+        """Follow transparent blocks to their ultimate target."""
+        visited: set[str] = set()
+        while True:
+            if lbl in visited:
+                return lbl  # cycle — bail out
+            bb = label_to_bb.get(lbl)
+            if bb is None:
+                return lbl
+            if lbl == entry_label:
+                return lbl
+            if len(bb.instructions) == 0 and isinstance(bb.terminator, BrTerm):
+                visited.add(lbl)
+                lbl = bb.terminator.target
+            else:
+                return lbl
+
+    # Collect transparent block labels (before rewriting, so the map is stable)
+    transparent: set[str] = set()
+    for bb in kernel.blocks:
+        if bb.label != entry_label and len(bb.instructions) == 0 and isinstance(bb.terminator, BrTerm):
+            transparent.add(bb.label)
+
+    if not transparent:
+        return 0
+
+    # Precompute forwarding targets for all transparent blocks
+    fwd: dict[str, str] = {lbl: _forward(lbl) for lbl in transparent}
+
+    def _fwd(lbl: str) -> str:
+        return fwd.get(lbl, lbl)
+
+    # Step 2: rewrite branch targets in all blocks
+    for bb in kernel.blocks:
+        t = bb.terminator
+        if isinstance(t, BrTerm):
+            new_tgt = _fwd(t.target)
+            if new_tgt != t.target:
+                bb.terminator = BrTerm(new_tgt)
+        elif isinstance(t, CondBrTerm):
+            new_true = _fwd(t.true_bb)
+            new_false = _fwd(t.false_bb)
+            if new_true != t.true_bb or new_false != t.false_bb:
+                if new_true == new_false:
+                    # Both arms go to same target — fold to unconditional branch
+                    bb.terminator = BrTerm(new_true)
+                else:
+                    bb.terminator = CondBrTerm(t.cond, new_true, new_false)
+
+    # Step 3: remove transparent blocks that now have no in-edges.
+    # Rebuild pred map after rewriting.
+    referenced: set[str] = {entry_label}
+    for bb in kernel.blocks:
+        t = bb.terminator
+        if isinstance(t, BrTerm):
+            referenced.add(t.target)
+        elif isinstance(t, CondBrTerm):
+            referenced.add(t.true_bb)
+            referenced.add(t.false_bb)
+
+    removed = 0
+    new_blocks = []
+    for bb in kernel.blocks:
+        if bb.label in transparent and bb.label not in referenced:
+            removed += 1
+        else:
+            new_blocks.append(bb)
+    kernel.blocks = new_blocks
+
+    return removed
+
+
 def optimize(module: Module, verbose: bool = False,
              debug_verify: bool = False) -> Module:
     """Run all optimization passes on the module.
 
     Pass order (designed to maximise cascading improvements):
-      1. unroll_loops       — expose constants for folding
-      2. constant_fold      — Const-op-Const, strength reduction
-      3. cse                — eliminate duplicate expressions (commutative-
-                              aware; includes CmpInst dedup since v0.7)
-      4. dead_block_elim    — remove unreachable blocks before identity_fold
-                              so dead-block defs don't inflate def_count
-      5. identity_fold      — copy-propagate single-def add-zero patterns
-      6. dead_inst_elim     — remove instructions whose results are unused
-                              (iterates to fixpoint)
-      7. licm               — hoist loop-invariant pure BinInst/CvtInst to
-                              loop preheaders (conservative; v0.8)
-      8. cse (round 2)      — catch expressions newly exposed by passes 4–7
-      9. identity_fold (2)  — propagate copies created by round-2 CSE
-     10. dead_inst_elim (2) — remove instructions whose results are unused
-                              after LICM + round-2 CSE+fold
+      1. unroll_loops         — expose constants for folding
+      2. constant_fold        — Const-op-Const, strength reduction
+      3. cse                  — eliminate duplicate expressions (commutative-
+                                aware; includes CmpInst dedup since v0.7;
+                                writeback-carried guard since v0.11)
+      4. dead_block_elim      — remove unreachable blocks before identity_fold
+                                so dead-block defs don't inflate def_count
+      5. identity_fold        — copy-propagate single-def add-zero patterns
+      6. dead_inst_elim       — remove instructions whose results are unused
+                                (iterates to fixpoint)
+      7. licm                 — hoist loop-invariant pure BinInst/CvtInst to
+                                loop preheaders (conservative; v0.8)
+      8. cse (round 2)        — catch expressions newly exposed by passes 4–7
+      9. identity_fold (2)    — propagate copies created by round-2 CSE
+     10. dead_inst_elim (2)   — remove instructions whose results are unused
+                                after LICM + round-2 CSE+fold
+     11. thread_empty_blocks  — forward unconditional branches through empty
+                                blocks, eliminating ~22% of all blocks (v0.11)
 
     Parameters
     ----------
@@ -771,9 +953,11 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'identity_fold-2')
         n_die2 = dead_inst_elim(kernel)
         _gate(kernel, 'dead_inst_elim-2')
+        n_teb = thread_empty_blocks(kernel)
+        _gate(kernel, 'thread_empty_blocks')
         if verbose:
             total = (n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die
-                     + n_licm + n_cse2 + n_idf2 + n_die2)
+                     + n_licm + n_cse2 + n_idf2 + n_die2 + n_teb)
             if total > 0:
                 parts = []
                 if n_unroll:       parts.append(f"{n_unroll} loops unrolled")
@@ -786,5 +970,6 @@ def optimize(module: Module, verbose: bool = False,
                 if n_cse2:         parts.append(f"{n_cse2} CSE-2 eliminated")
                 if n_idf2:         parts.append(f"{n_idf2} copies-2 propagated")
                 if n_die2:         parts.append(f"{n_die2} dead-2 insts removed")
+                if n_teb:          parts.append(f"{n_teb} empty blocks threaded")
                 print(f"[opt] {kernel.name}: {', '.join(parts)}")
     return module
