@@ -454,20 +454,21 @@ class PTXEmitter:
             # add D, 0, 0              → mov D, 0
             # This avoids wasteful ALU slots for pure register copies.
             if (inst.op == BinOp.ADD
-                    and not _is_half(ty)         # half has its own path below
                     and not _is_ptr(ty)):         # pointer add has widen logic
                 lhs_zero = isinstance(inst.lhs, Const) and inst.lhs.value == 0
                 rhs_zero = isinstance(inst.rhs, Const) and inst.rhs.value == 0
                 if lhs_zero and rhs_zero:
                     # mov D, 0
-                    if _is_float(ty):
+                    if _is_half(ty):
+                        self._lines.append(f'    cvt.rn.f16.f32 {self._reg(inst.dest)}, 0f00000000;')
+                    elif _is_float(ty):
                         fty = _ptx_type(ty)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, 0f00000000;')
                     else:
                         self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, 0;')
                     return
-                elif rhs_zero:
-                    # mov D, V  or  mov D, C  (add D, V/C, 0)
+                elif rhs_zero and not _is_half(ty):
+                    # mov D, V  or  mov D, C  (add D, V/C, 0)  — not half (fall through to half path)
                     if _is_float(ty):
                         fty = _ptx_type(ty)
                         src = self._reg(inst.lhs) if isinstance(inst.lhs, Value) else self._coerce_to_float(inst.lhs, fty, kernel)
@@ -475,8 +476,8 @@ class PTXEmitter:
                     else:
                         self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.lhs, ptx_ty)};')
                     return
-                elif lhs_zero and not isinstance(inst.rhs, Const):
-                    # mov D, V  (add D, 0, V)
+                elif lhs_zero and not isinstance(inst.rhs, Const) and not _is_half(ty):
+                    # mov D, V  (add D, 0, V)  — not half
                     if _is_float(ty):
                         fty = _ptx_type(ty)
                         src = self._reg(inst.rhs) if isinstance(inst.rhs, Value) else self._coerce_to_float(inst.rhs, fty, kernel)

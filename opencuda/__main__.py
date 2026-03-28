@@ -54,7 +54,13 @@ def main():
         all_ptx.append('.target sm_120')
         all_ptx.append('.address_size 64')
         all_ptx.append('')
+        # Emit module-level preamble (vprintf extern + format string globals) before kernels
+        if '__preamble__' in ptx_map:
+            all_ptx.extend(ptx_map['__preamble__'].split('\n'))
+            all_ptx.append('')
         for kernel_name, ptx_text in ptx_map.items():
+            if kernel_name.startswith('__'):
+                continue
             # Strip the header (already added above) and append kernel body
             lines = ptx_text.split('\n')
             # Skip .version, .target, .address_size lines

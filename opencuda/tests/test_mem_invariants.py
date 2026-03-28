@@ -109,7 +109,7 @@ def test_global_load_addr_is_64bit(cu_file):
     source = cu_file.read_text(encoding='utf-8')
     ptx = _ptx(source)
 
-    load_addr_regs = re.findall(r'ld\.global\.\w+ %\w+, \[%(\w+)\]', ptx)
+    load_addr_regs = re.findall(r'ld\.global[\.\w]+ %\w+, \[%(\w+)\]', ptx)
     if not load_addr_regs:
         pytest.skip(f"{cu_file.name}: no global loads, nothing to check")
 
