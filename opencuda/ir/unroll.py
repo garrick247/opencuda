@@ -70,19 +70,23 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
         if inc_bb.terminator.target != cond_bb.label:
             continue
 
-        # Find loop-carried variables from the increment block.
+        # Find loop-carried variables from both the body and increment blocks.
         # Pattern: add CANONICAL, NEW_VAL, 0  (writeback copy)
         # The CANONICAL is the loop-carried var, NEW_VAL is the body's output.
+        # Body-modified variables (e.g. accumulators like `sum`) write back inside
+        # the body block; induction variables write back in the increment block.
+        # Scan body_bb first so inc_bb can overwrite if the same var appears in both.
         carried_vars = {}  # canonical_id → (canonical_Value, new_Value)
-        for inst in inc_bb.instructions:
-            if isinstance(inst, BinInst) and inst.op == BinOp.ADD:
-                if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
-                    # add CANONICAL, NEW_VAL, 0 → writeback
-                    if isinstance(inst.lhs, Value):
-                        carried_vars[inst.dest.id] = (inst.dest, inst.lhs)
-                elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
-                    if isinstance(inst.rhs, Value):
-                        carried_vars[inst.dest.id] = (inst.dest, inst.rhs)
+        for check_bb in [body_bb, inc_bb]:
+            for inst in check_bb.instructions:
+                if isinstance(inst, BinInst) and inst.op == BinOp.ADD:
+                    if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
+                        # add CANONICAL, NEW_VAL, 0 → writeback
+                        if isinstance(inst.lhs, Value):
+                            carried_vars[inst.dest.id] = (inst.dest, inst.lhs)
+                    elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
+                        if isinstance(inst.rhs, Value):
+                            carried_vars[inst.dest.id] = (inst.dest, inst.rhs)
 
         loops.append({
             'cond_bb': cond_bb,
@@ -198,6 +202,12 @@ def _remap_inst(inst, remap: dict, kernel: Kernel, iteration: int):
     elif isinstance(inst, CmpInst):
         new_dest = kernel.new_value(f"{inst.dest.name}_u{iteration}", inst.dest.ty)
         new_inst = CmpInst(new_dest, inst.op, _r(inst.lhs), _r(inst.rhs))
+        remap[inst.dest.id] = new_dest
+        return new_inst
+
+    elif isinstance(inst, CvtInst):
+        new_dest = kernel.new_value(f"{inst.dest.name}_u{iteration}", inst.dest.ty)
+        new_inst = CvtInst(new_dest, _r(inst.src))
         remap[inst.dest.id] = new_dest
         return new_inst
 
