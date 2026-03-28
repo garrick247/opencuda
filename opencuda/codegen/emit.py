@@ -384,13 +384,19 @@ class PTXEmitter:
         ptx.append(f'    .reg .pred %p<{pred_count}>;')
         ptx.append('')
 
-        # Initialize shared memory base addresses
+        # Initialize shared memory base addresses — one mov per unique phys register.
+        # Multiple Values can alias to the same physical register after linear-scan
+        # allocation; only emit one initializer per register name to avoid redundant
+        # `mov.u64 %rd1, smem; mov.u64 %rd1, smem; ...` sequences.
         if hasattr(kernel, '_shared_decls'):
             smem_inits = []
+            emitted_smem_regs: set[str] = set()
             for sname, sty, scount in kernel._shared_decls:
                 for val in self._shared_val_ids.get(sname, []):
                     reg = self._reg(val)
-                    smem_inits.append(f'    mov.u64 {reg}, {sname};')
+                    if reg not in emitted_smem_regs:
+                        emitted_smem_regs.add(reg)
+                        smem_inits.append(f'    mov.u64 {reg}, {sname};')
             body_lines = smem_inits + body_lines
 
         # Body
@@ -460,8 +466,8 @@ class PTXEmitter:
                     else:
                         self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, 0;')
                     return
-                elif rhs_zero and not isinstance(inst.lhs, Const):
-                    # mov D, V  (add D, V, 0)
+                elif rhs_zero:
+                    # mov D, V  or  mov D, C  (add D, V/C, 0)
                     if _is_float(ty):
                         fty = _ptx_type(ty)
                         src = self._reg(inst.lhs) if isinstance(inst.lhs, Value) else self._coerce_to_float(inst.lhs, fty, kernel)

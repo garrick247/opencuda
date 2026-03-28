@@ -304,6 +304,29 @@ def cse(kernel: Kernel) -> int:
                     seen[cmp_key] = inst.dest
                     written_ids.add(inst.dest.id)
 
+            elif isinstance(inst, CallInst):
+                # CSE for pure zero-arg CUDA builtins (threadIdx/blockIdx/blockDim).
+                # These return a constant value per-thread for the kernel's lifetime,
+                # so duplicate reads within the same block are always redundant.
+                # We do NOT CSE arbitrary CallInsts (they may have side effects).
+                _PURE_BUILTINS = frozenset({
+                    'threadIdx.x', 'threadIdx.y', 'threadIdx.z',
+                    'blockIdx.x',  'blockIdx.y',  'blockIdx.z',
+                    'blockDim.x',  'blockDim.y',  'blockDim.z',
+                    'gridDim.x',   'gridDim.y',   'gridDim.z',
+                })
+                if (inst.func in _PURE_BUILTINS
+                        and inst.dest is not None
+                        and inst.dest.id not in written_ids
+                        and _global_def_count.get(inst.dest.id, 0) < 2):
+                    call_key = ('pure_call', inst.func)
+                    if call_key in seen:
+                        replacements[inst.dest.id] = seen[call_key]
+                        eliminated += 1
+                        continue
+                    seen[call_key] = inst.dest
+                    written_ids.add(inst.dest.id)
+
             else:
                 # Apply replacements to memory instructions
                 if isinstance(inst, LoadInst):
@@ -351,6 +374,9 @@ def cse(kernel: Kernel) -> int:
                         inst.addr = _chase(inst.addr)
                     if isinstance(inst.value, Value):
                         inst.value = _chase(inst.value)
+                elif isinstance(inst, CallInst):
+                    inst.args = [_chase(a) if isinstance(a, Value) else a
+                                 for a in inst.args]
             t = bb.terminator
             if isinstance(t, CondBrTerm) and isinstance(t.cond, Value):
                 new_cond = _chase(t.cond)
