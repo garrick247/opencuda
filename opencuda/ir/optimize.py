@@ -446,17 +446,17 @@ def identity_fold(kernel: Kernel) -> int:
                 def_count[did] = def_count.get(did, 0) + 1
 
     # Collect single-def add-zero copy instructions.
-    copies: dict[int, Operand] = {}   # dest_id → source operand
+    copies: dict[int, Operand] = {}   # dest_id → source operand (Value or Const)
     for bb in kernel.blocks:
         for inst in bb.instructions:
             if (isinstance(inst, BinInst)
                     and inst.op == BinOp.ADD
                     and def_count.get(inst.dest.id, 0) == 1):
-                # add D, V, Const(0)  — V must be a Value, not another Const
-                if isinstance(inst.lhs, Value) and isinstance(inst.rhs, Const) and inst.rhs.value == 0:
+                # add D, X, Const(0)  — X may be Value or Const (e.g. result = -1)
+                if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
                     copies[inst.dest.id] = inst.lhs
-                # add D, Const(0), V  — symmetric
-                elif isinstance(inst.rhs, Value) and isinstance(inst.lhs, Const) and inst.lhs.value == 0:
+                # add D, Const(0), X  — symmetric
+                elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
                     copies[inst.dest.id] = inst.rhs
 
     if not copies:
