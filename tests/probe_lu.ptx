@@ -1,0 +1,225 @@
+[opencuda] Parsing tests/probe_lu.cu...
+[opencuda] 5 kernel(s) found
+[opencuda] Wrote PTX: tests\probe_lu.ptx (5 kernels)
+[opencuda] Done.
+1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    add.s32 %r1, %r0, 1;
+    add.s32 %r2, %r1, 2;
+    add.s32 %r1, %r2, 3;
+    add.s32 %r2, %r1, 4;
+    add.s32 %r1, %r2, 5;
+    add.s32 %r2, %r1, 6;
+    add.s32 %r1, %r2, 7;
+    add.s32 %r2, %r1, 8;
+    add.s32 %r1, %r2, 9;
+    add.s32 %r2, %r1, 10;
+    add.s32 %r1, %r2, 11;
+    add.s32 %r2, %r1, 12;
+    add.s32 %r1, %r2, 13;
+    add.s32 %r2, %r1, 14;
+    add.s32 %r1, %r2, 15;
+    mov.s32 %r0, %r1;
+    bra for_exit_8;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry no_unroll_17(
+    .param .u64 out)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    mov.s32 %r1, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, 17;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    add.s32 %r2, %r0, %r1;
+    mov.s32 %r0, %r2;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r2, %r1, 1;
+    mov.s32 %r1, %r2;
+    bra for_cond_5;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry fill_array(
+    .param .u64 out, .param .s32 n, .param .s32 val)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    ld.param.s32 %r1, [val];
+    mov.u32 %r2, %tid.x;
+    cvt.s32.u32 %r3, %r2;
+    setp.eq.s32 %p0, %r3, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r2, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra for_body_6;
+    bra if_merge_4;
+for_body_6:
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd2, %r3;
+    add.u64 %rd1, %rd0, %rd2;
+    st.global.s32 [%rd1], %r1;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r3, %r2, 1;
+    mov.s32 %r2, %r3;
+    bra for_cond_5;
+}
+
+.visible .entry nested_unroll(
+    .param .u64 out, .param .u64 in)
+{
+    .reg .b32 %r<8>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    mov.s32 %r1, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, 3;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    mov.s32 %r2, 0;
+    bra for_cond_9;
+for_inc_7:
+    add.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
+    bra for_cond_5;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+for_cond_9:
+    shl.b32 %r4, %r1, 2;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd3, %r5;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r5, [%rd2];
+    add.s32 %r6, %r2, %r5;
+    add.s32 %r5, %r4, 1;
+    shl.b32 %r7, %r5, 2;
+    cvt.s64.s32 %rd4, %r7;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.s32 %r5, [%rd2];
+    add.s32 %r7, %r6, %r5;
+    add.s32 %r6, %r4, 2;
+    shl.b32 %r5, %r6, 2;
+    cvt.s64.s32 %rd5, %r5;
+    add.u64 %rd2, %rd1, %rd5;
+    ld.global.s32 %r6, [%rd2];
+    add.s32 %r5, %r7, %r6;
+    add.s32 %r7, %r4, 3;
+    shl.b32 %r6, %r7, 2;
+    cvt.s64.s32 %rd6, %r6;
+    add.u64 %rd2, %rd1, %rd6;
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r7, %r5, %r4;
+    mov.s32 %r2, %r7;
+    bra for_exit_12;
+for_exit_12:
+    add.s32 %r6, %r0, %r2;
+    mov.s32 %r0, %r6;
+    bra for_inc_7;
+}
+
+.visible .entry atomic_loop(
+    .param .u64 counter, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [counter];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r1, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra for_body_6;
+    bra if_merge_4;
+for_body_6:
+    shl.b32 %r2, %r1, 2;
+    cvt.s64.s32 %rd3, %r2;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r2, [%rd2];
+    setp.gt.s32 %p1, %r2, 0;
+    @%p1 bra if_true_9;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r2, %r1, 1;
+    mov.s32 %r1, %r2;
+    bra for_cond_5;
+if_true_9:
+    atom.global.add.s32 %r3, [%rd0], 1;
+    bra for_inc_7;
+}
