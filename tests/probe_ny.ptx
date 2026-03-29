@@ -1,0 +1,154 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry arrow_access(
+    .param .u64 out, .param .f32 dx, .param .f32 dy)
+{
+    .local .align 8 .b8 _local_11[8];
+    .reg .f32 %f<4>;
+    .reg .b32 %r<2>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd1, _local_11;
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.f32 %f0, [dx];
+    ld.param.f32 %f1, [dy];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    st.local.f32 [%rd1], 0f3F800000;
+    add.u64 %rd2, %rd1, 4;
+    st.local.f32 [%rd2], 0f40000000;
+    ld.local.f32 %f2, [%rd1];
+    add.f32 %f3, %f2, %f0;
+    st.local.f32 [%rd1], %f3;
+    ld.local.f32 %f0, [%rd2];
+    add.f32 %f2, %f0, %f1;
+    st.local.f32 [%rd2], %f2;
+    bra inline_update_vec_merge_5;
+if_merge_4:
+    ret;
+inline_update_vec_merge_5:
+    ld.local.f32 %f3, [%rd1];
+    add.u64 %rd2, %rd1, 4;
+    ld.local.f32 %f1, [%rd2];
+    st.global.f32 [%rd0], %f3;
+    add.u64 %rd2, %rd0, 4;
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+}
+
+.visible .entry shift64(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.u64 %rd1, [%rd2];
+    shl.b32 %r1, %r2, 1;
+    shl.b32 %r0, %r1, 3;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd2, %rd0, %rd5;
+    shl.b64 %rd3, %rd1, 3;
+    st.global.u64 [%rd2], %rd3;
+    add.s32 %r2, %r1, 1;
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd6, %r0;
+    add.u64 %rd2, %rd0, %rd6;
+    shr.b64 %rd3, %rd1, 3;
+    st.global.u64 [%rd2], %rd3;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry nc_load(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<2>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.nc.f32 %f0, [%rd0];
+    mul.f32 %f1, %f0, 0f40000000;
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry ternary_field(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    setp.gt.f32 %p0, %f0, 0f00000000;
+    @%p0 bra tern_true_5;
+    bra tern_false_6;
+if_merge_4:
+    ret;
+tern_true_5:
+    mov.f32 %f0, 0f3F800000;
+    bra tern_merge_7;
+tern_false_6:
+    mov.f32 %f0, 0fBF800000;
+    bra tern_merge_7;
+tern_merge_7:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.f32 [%rd1], %f0;
+    bra if_merge_4;
+}

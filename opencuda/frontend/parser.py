@@ -201,12 +201,16 @@ class Parser:
                 }.get(op)
             else:
                 a, b = int(lhs.value), int(rhs.value)
+                # C integer division truncates toward zero (not Python floor).
+                # -7 // 2 = -4 in Python, but -7 / 2 = -3 in C.
+                _cdiv = (lambda a, b: (abs(a) // abs(b)) * (1 if (a >= 0) == (b >= 0) else -1)) if b != 0 else (lambda a, b: 0)
+                _cmod = (lambda a, b: (abs(a) - (abs(a) // abs(b)) * abs(b)) * (1 if a >= 0 else -1)) if b != 0 else (lambda a, b: 0)
                 result = {
                     BinOp.ADD: a + b,
                     BinOp.SUB: a - b,
                     BinOp.MUL: a * b,
-                    BinOp.DIV: a // b if b != 0 else 0,
-                    BinOp.MOD: a % b if b != 0 else 0,
+                    BinOp.DIV: _cdiv(a, b),
+                    BinOp.MOD: _cmod(a, b),
                     BinOp.OR:  a | b,
                     BinOp.AND: a & b,
                     BinOp.XOR: a ^ b,
