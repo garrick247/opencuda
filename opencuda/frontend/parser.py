@@ -921,7 +921,7 @@ class Parser:
                                 spill_val = self._variables[spill_name]
                             # Store current field values to their byte offsets
                             for _sfname, _sfty in var.ty.fields:
-                                if isinstance(_sfty, ScalarTy):
+                                if isinstance(_sfty, (ScalarTy, PtrTy)):
                                     _sfkey = f"{name}_{_sfname}"
                                     _sfval = self._variables.get(_sfkey)
                                     if _sfval is not None:
@@ -1545,7 +1545,7 @@ class Parser:
                             # For struct-typed spill slots, reload each scalar
                             # field individually using the field's byte offset.
                             for _fname, _fty in orig_ty.fields:
-                                if not isinstance(_fty, ScalarTy):
+                                if not isinstance(_fty, (ScalarTy, PtrTy)):
                                     continue
                                 _off = orig_ty.field_offset(_fname)
                                 _faddr = self._new_val(
@@ -2834,6 +2834,27 @@ class Parser:
                                 addr = new_addr
                             else:
                                 break
+                        # ptr->ptr_field[idx] = v: the field is a pointer-typed member.
+                        # addr currently points to the pointer field itself; load it to
+                        # get the actual pointer, then index into it for the element address.
+                        if (self._at(TokKind.LBRACKET) and isinstance(addr.ty, PtrTy)
+                                and isinstance(addr.ty.pointee, PtrTy)):
+                            ptr_val = self._new_val("pfield", addr.ty.pointee)
+                            self._emit(LoadInst(ptr_val, addr))
+                            self._advance()  # consume '['
+                            idx_expr = self._parse_expr()
+                            self._expect(TokKind.RBRACKET)
+                            elem_ty = addr.ty.pointee.pointee
+                            elem_size = elem_ty.size
+                            if elem_size != 1:
+                                idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
+                                scaled = self._new_val("scale", idx_ty)
+                                self._emit(BinInst(scaled, BinOp.MUL, idx_expr, Const(idx_ty, elem_size)))
+                                idx_expr = scaled
+                            elem_addr = self._new_val("addr",
+                                PtrTy(elem_ty, addr.ty.pointee.addr_space))
+                            self._emit(BinInst(elem_addr, BinOp.ADD, ptr_val, idx_expr))
+                            addr = elem_addr
                         return addr  # Return ADDRESS for StoreInst
                     if self._match(TokKind.LBRACKET):
                         index = self._parse_expr()
