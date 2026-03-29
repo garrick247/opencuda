@@ -1831,7 +1831,7 @@ class Parser:
                 self._typedefs[alias] = INT32
             self._match(TokKind.SEMI)
             return
-        if self._at(TokKind.KW_STRUCT):
+        if self._at(TokKind.KW_STRUCT) or self._at(TokKind.KW_UNION):
             sty = self._parse_struct_def()
             # _parse_struct_def may or may not have consumed the ';'.
             # If there is an IDENT next, it is the typedef alias name.
