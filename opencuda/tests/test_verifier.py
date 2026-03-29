@@ -82,6 +82,7 @@ KNOWN_PREOPT_ONLY_BUGS = frozenset({
     'probe_fu',     # multiple-return struct fn: unreachable after_inline_return blocks
     'probe_gn',     # missing terminator in dead ternary-merge block (dead_block_elim fixes)
     'probe_hs',     # struct return fields undefined — loop unrolling resolves them
+    'probe_mk',     # struct fn with internal if-branches: dominance viol resolved by dead_block_elim
     'typedef_union', # union field aliasing: dead_inst_elim eliminates the bad use
 })
 

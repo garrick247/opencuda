@@ -2034,12 +2034,20 @@ class Parser:
             # Write back any variables modified by the increment expression
             # (or by direct-continue paths that bypassed the body writeback above).
             for var_name, init_val in loop_vars.items():
+                if isinstance(init_val.ty, StructTy):
+                    continue  # struct sentinels carry no value — per-field scalars handle writeback
                 cur_val = self._variables.get(var_name)
-                if cur_val is not None and cur_val is not init_val and isinstance(cur_val, Value):
+                if cur_val is None or cur_val is init_val:
+                    continue
+                if isinstance(cur_val, Value) and isinstance(cur_val.ty, StructTy):
+                    continue  # current value is also a struct sentinel — skip
+                if isinstance(cur_val, Value):
                     self._emit(BinInst(init_val, BinOp.ADD, cur_val, Const(init_val.ty, 0)))
                     self._variables[var_name] = init_val
 
-            inc_bb.terminator = BrTerm(cond_bb.label)
+            # Use _cur_block (not inc_bb) so that if the increment expression
+            # contained a ternary, the BrTerm lands on the ternary's merge block.
+            self._cur_block.terminator = BrTerm(cond_bb.label)
             self._cur_block = exit_bb
 
             # Pop the for-loop init scope: restore outer bindings for any
