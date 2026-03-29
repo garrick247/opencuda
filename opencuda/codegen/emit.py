@@ -1126,6 +1126,9 @@ class PTXEmitter:
                 # - and/or/xor/exch require b32 (bitwise, no sign semantics)
                 # - add/min/max use typed (s32/u32/f32 — sign matters)
                 # Override to b32 for bitwise-only operations.
+                # atom.add: PTX has no s64 variant — use u64 for 64-bit integer add.
+                if inst.func == 'atomicAdd' and val_ty == 's64':
+                    val_ty = 'u64'
                 if inst.func in ('atomicAnd', 'atomicOr', 'atomicXor', 'atomicExch'):
                     # Keep bit width but strip sign: s32→b32, u32→b32, f32 stays f32
                     if val_ty in ('s32', 'u32'):
