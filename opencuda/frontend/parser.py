@@ -834,16 +834,24 @@ class Parser:
             operand = self._parse_unary_expr()
             # Include Const types: -1LL → dest should be INT64, not INT32
             ty = operand.ty if isinstance(operand, (Value, Const)) else INT32
-            dest = self._new_val("neg", ty)
             zero = Const(FLOAT, 0.0) if (isinstance(ty, ScalarTy) and ty.is_float) else Const(ty, 0)
+            # Fold -constant immediately so that case labels like `case -1:` never
+            # emit a BinInst into potentially-unreachable after_break stubs.
+            folded = self._const_fold(BinOp.SUB, zero, operand)
+            if folded is not None:
+                return folded
+            dest = self._new_val("neg", ty)
             self._emit(BinInst(dest, BinOp.SUB, zero, operand))
             return dest
         if self._match(TokKind.TILDE):
             operand = self._parse_unary_expr()
             ty = operand.ty if isinstance(operand, (Value, Const)) else INT32
-            dest = self._new_val("bnot", ty)
             # XOR with all-ones of the same width for correct NOT semantics
             all_ones = Const(ty, -1) if isinstance(ty, ScalarTy) else Const(INT32, -1)
+            folded = self._const_fold(BinOp.XOR, operand, all_ones)
+            if folded is not None:
+                return folded
+            dest = self._new_val("bnot", ty)
             self._emit(BinInst(dest, BinOp.XOR, operand, all_ones))
             return dest
         if self._match(TokKind.BANG):
@@ -2365,14 +2373,32 @@ class Parser:
                     self._variables[update_name] = rhs
                 else:
                     # Memory store through pointer: ptr[i] = val or *ptr = val
-                    # Coerce rhs to the pointer's pointee type if there's a mismatch
-                    if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
-                            and isinstance(lhs.ty.pointee, ScalarTy)
-                            and rhs.ty != lhs.ty.pointee):
-                        coerced = self._new_val("coerce", lhs.ty.pointee)
-                        self._emit(CvtInst(coerced, rhs))
-                        rhs = coerced
-                    self._emit(StoreInst(addr=lhs, value=rhs))
+                    # Struct store: ptr_to_struct = struct_val → expand to per-field stores
+                    if (isinstance(rhs, Value) and isinstance(rhs.ty, StructTy)
+                            and isinstance(lhs.ty.pointee, StructTy)):
+                        _sty = lhs.ty.pointee
+                        _fmap = self._inline_struct_return_fields.get(rhs.id, {})
+                        for _sf, _sft in _sty.fields:
+                            if not isinstance(_sft, ScalarTy):
+                                continue
+                            _fval = _fmap.get(_sf)
+                            if _fval is None:
+                                _fval = self._variables.get(f"{rhs.name}_{_sf}")
+                            if _fval is None:
+                                continue
+                            _off = _sty.field_offset(_sf)
+                            _faddr = self._new_val("faddr", PtrTy(_sft, lhs.ty.addr_space))
+                            self._emit(BinInst(_faddr, BinOp.ADD, lhs, Const(INT32, _off)))
+                            self._emit(StoreInst(addr=_faddr, value=_fval))
+                    else:
+                        # Coerce rhs to the pointer's pointee type if there's a mismatch
+                        if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
+                                and isinstance(lhs.ty.pointee, ScalarTy)
+                                and rhs.ty != lhs.ty.pointee):
+                            coerced = self._new_val("coerce", lhs.ty.pointee)
+                            self._emit(CvtInst(coerced, rhs))
+                            rhs = coerced
+                        self._emit(StoreInst(addr=lhs, value=rhs))
             elif isinstance(lhs, Value):
                 update_name = _stmt_lhs_name or lhs.name
                 if update_name in self._variables:
