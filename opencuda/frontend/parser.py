@@ -645,18 +645,49 @@ class Parser:
     def _parse_or_expr(self) -> Operand:
         lhs = self._parse_and_expr()
         while self._match(TokKind.OR):
+            # Short-circuit: if LHS is true, skip RHS evaluation.
+            # Generate control flow: if lhs { dest = 1 } else { dest = rhs }
+            dest = self._new_val("lor", INT32)
+            rhs_bb   = self._new_block("lor_rhs")
+            skip_bb  = self._new_block("lor_skip")
+            merge_bb = self._new_block("lor_merge")
+            # LHS true → skip to lor_skip (result = 1), else → lor_rhs
+            self._cur_block.terminator = CondBrTerm(lhs, skip_bb.label, rhs_bb.label)
+            # RHS block: evaluate RHS, store in dest
+            self._cur_block = rhs_bb
             rhs = self._parse_and_expr()
-            dest = self._new_val("or", INT32)
-            self._emit(BinInst(dest, BinOp.OR, lhs, rhs))
+            self._emit(BinInst(dest, BinOp.ADD, rhs, Const(INT32, 0)))
+            rhs_bb.terminator = BrTerm(merge_bb.label)
+            # Skip block: LHS was true, result is 1
+            self._cur_block = skip_bb
+            self._emit(BinInst(dest, BinOp.ADD, Const(INT32, 1), Const(INT32, 0)))
+            skip_bb.terminator = BrTerm(merge_bb.label)
+            self._cur_block = merge_bb
             lhs = dest
         return lhs
 
     def _parse_and_expr(self) -> Operand:
         lhs = self._parse_bitor_expr()
         while self._match(TokKind.AND):
+            # Short-circuit: if LHS is false, skip RHS evaluation.
+            # Generate control flow: if lhs { dest = rhs } else { dest = 0 }
+            # This prevents OOB memory loads when the LHS guards an array access.
+            dest = self._new_val("land", INT32)
+            rhs_bb   = self._new_block("land_rhs")
+            skip_bb  = self._new_block("land_skip")
+            merge_bb = self._new_block("land_merge")
+            # LHS true → land_rhs (eval RHS), LHS false → land_skip (result = 0)
+            self._cur_block.terminator = CondBrTerm(lhs, rhs_bb.label, skip_bb.label)
+            # RHS block: evaluate RHS, store in dest
+            self._cur_block = rhs_bb
             rhs = self._parse_bitor_expr()
-            dest = self._new_val("and", INT32)
-            self._emit(BinInst(dest, BinOp.AND, lhs, rhs))
+            self._emit(BinInst(dest, BinOp.ADD, rhs, Const(INT32, 0)))
+            rhs_bb.terminator = BrTerm(merge_bb.label)
+            # Skip block: LHS was false, result is 0
+            self._cur_block = skip_bb
+            self._emit(BinInst(dest, BinOp.ADD, Const(INT32, 0), Const(INT32, 0)))
+            skip_bb.terminator = BrTerm(merge_bb.label)
+            self._cur_block = merge_bb
             lhs = dest
         return lhs
 
