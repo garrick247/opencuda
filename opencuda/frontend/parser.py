@@ -161,21 +161,37 @@ class Parser:
         either operand is not Const or the operation is not constant-foldable."""
         if not isinstance(lhs, Const) or not isinstance(rhs, Const):
             return None
-        a, b = int(lhs.value), int(rhs.value)
+        a_is_float = isinstance(lhs.ty, ScalarTy) and lhs.ty.is_float
+        b_is_float = isinstance(rhs.ty, ScalarTy) and rhs.ty.is_float
+        is_float = a_is_float or b_is_float
+        # Result type: prefer float over int; use lhs type as primary
         ty = lhs.ty if isinstance(lhs.ty, ScalarTy) else INT32
+        if b_is_float and not a_is_float:
+            ty = rhs.ty
         try:
-            result = {
-                BinOp.ADD: a + b,
-                BinOp.SUB: a - b,
-                BinOp.MUL: a * b,
-                BinOp.DIV: a // b if b != 0 else 0,
-                BinOp.MOD: a % b if b != 0 else 0,
-                BinOp.OR:  a | b,
-                BinOp.AND: a & b,
-                BinOp.XOR: a ^ b,
-                BinOp.SHL: a << (b & 63),
-                BinOp.SHR: a >> (b & 63),
-            }.get(op)
+            if is_float:
+                a, b = float(lhs.value), float(rhs.value)
+                result = {
+                    BinOp.ADD: a + b,
+                    BinOp.SUB: a - b,
+                    BinOp.MUL: a * b,
+                    BinOp.DIV: a / b if b != 0.0 else 0.0,
+                    BinOp.MOD: a % b if b != 0.0 else 0.0,
+                }.get(op)
+            else:
+                a, b = int(lhs.value), int(rhs.value)
+                result = {
+                    BinOp.ADD: a + b,
+                    BinOp.SUB: a - b,
+                    BinOp.MUL: a * b,
+                    BinOp.DIV: a // b if b != 0 else 0,
+                    BinOp.MOD: a % b if b != 0 else 0,
+                    BinOp.OR:  a | b,
+                    BinOp.AND: a & b,
+                    BinOp.XOR: a ^ b,
+                    BinOp.SHL: a << (b & 63),
+                    BinOp.SHR: a >> (b & 63),
+                }.get(op)
         except Exception:
             return None
         if result is None:
