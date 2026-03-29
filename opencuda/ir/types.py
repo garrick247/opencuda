@@ -77,13 +77,15 @@ class AddrSpace(Enum):
 class PtrTy(Type):
     pointee: Type
     addr_space: AddrSpace = AddrSpace.GLOBAL
+    volatile: bool = False
 
     @property
     def size(self) -> int:
         return 8  # 64-bit pointers on SM_120
 
     def __str__(self) -> str:
-        return f"{self.pointee}*"
+        prefix = "volatile " if self.volatile else ""
+        return f"{prefix}{self.pointee}*"
 
 
 # Common type shorthands

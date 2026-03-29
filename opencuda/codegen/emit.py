@@ -903,12 +903,15 @@ class PTXEmitter:
             ptx_ty = _ptx_type(ty)
             addr_space = 'global'
             nc = False
+            is_volatile = False
             if isinstance(inst.addr, Value) and isinstance(inst.addr.ty, PtrTy):
-                if inst.addr.ty.addr_space == AddrSpace.SHARED:
+                ptr_ty = inst.addr.ty
+                is_volatile = ptr_ty.volatile
+                if ptr_ty.addr_space == AddrSpace.SHARED:
                     addr_space = 'shared'
-                elif inst.addr.ty.addr_space == AddrSpace.LOCAL:
+                elif ptr_ty.addr_space == AddrSpace.LOCAL:
                     addr_space = 'local'
-                elif inst.addr.ty.addr_space == AddrSpace.CONST:
+                elif ptr_ty.addr_space == AddrSpace.CONST:
                     addr_space = 'global'
                     nc = True
             elif isinstance(inst.addr, SymbolRef) and isinstance(inst.addr.ty, PtrTy):
@@ -919,7 +922,11 @@ class PTXEmitter:
             # PTX does not support ld.f16 — use b16 instead
             if ptx_ty == 'f16':
                 ptx_ty = 'b16'
-            if nc:
+            if is_volatile and addr_space == 'global':
+                self._lines.append(
+                    f'    ld.volatile.global.{ptx_ty} {self._reg(inst.dest)}, '
+                    f'[{self._operand(inst.addr)}];')
+            elif nc:
                 self._lines.append(
                     f'    ld.global.nc.{ptx_ty} {self._reg(inst.dest)}, '
                     f'[{self._operand(inst.addr)}];')
@@ -935,18 +942,25 @@ class PTXEmitter:
             if ptx_ty == 'f16':
                 ptx_ty = 'b16'
             addr_space = 'global'
+            is_volatile = False
             if isinstance(inst.addr, Value) and isinstance(inst.addr.ty, PtrTy):
-                if inst.addr.ty.addr_space == AddrSpace.SHARED:
+                ptr_ty = inst.addr.ty
+                is_volatile = ptr_ty.volatile
+                if ptr_ty.addr_space == AddrSpace.SHARED:
                     addr_space = 'shared'
-                elif inst.addr.ty.addr_space == AddrSpace.LOCAL:
+                elif ptr_ty.addr_space == AddrSpace.LOCAL:
                     addr_space = 'local'
             # Predicate registers cannot be stored directly — convert to 0/1 integer first.
             if isinstance(inst.value, Value) and inst.value.id in self._pred_ids:
                 val_str = self._pred_to_int(inst.value, ptx_ty, kernel)
             else:
                 val_str = self._operand(inst.value, ptx_ty)
-            self._lines.append(
-                f'    st.{addr_space}.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
+            if is_volatile and addr_space == 'global':
+                self._lines.append(
+                    f'    st.volatile.global.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
+            else:
+                self._lines.append(
+                    f'    st.{addr_space}.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
 
         elif isinstance(inst, PrintfInst):
             # Emit vprintf sequence

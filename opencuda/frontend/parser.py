@@ -444,23 +444,25 @@ class Parser:
         Both qualifiers must be present: const alone doesn't exclude aliasing,
         and __restrict__ alone doesn't make the data read-only.
         """
-        # Track const on the pointee (before or immediately after the base type).
-        # volatile/static/inline/register are silently consumed — no PTX semantics.
+        # Track const/volatile on the pointee (before or immediately after the base type).
         self._match(TokKind.KW_STATIC)    # static/inline/register before type
-        self._match(TokKind.KW_VOLATILE)  # volatile before type (e.g. volatile int *)
+        pointee_volatile = bool(self._match(TokKind.KW_VOLATILE))  # volatile before type
         pointee_const = self._match(TokKind.KW_CONST)
-        self._match(TokKind.KW_VOLATILE)  # volatile after const (e.g. const volatile T *)
+        if self._match(TokKind.KW_VOLATILE):  # volatile after const (e.g. const volatile T *)
+            pointee_volatile = True
         self._match(TokKind.KW_STATIC)
         base = self._parse_type()
         # "float const *" or "float volatile *" — qualifier after base type
         if self._match(TokKind.KW_CONST):
             pointee_const = True
-        self._match(TokKind.KW_VOLATILE)
+        if self._match(TokKind.KW_VOLATILE):
+            pointee_volatile = True
         while self._match(TokKind.STAR):
             # "float * const" — const AFTER star means pointer-const, not pointee-const
             ptr_const = self._match(TokKind.KW_CONST)  # noqa: F841 (consumed, not used)
             self._match(TokKind.KW_VOLATILE)            # "float * volatile" — skip
-            base = PtrTy(base, AddrSpace.GLOBAL)
+            base = PtrTy(base, AddrSpace.GLOBAL, volatile=pointee_volatile)
+            pointee_volatile = False  # volatile only applies to the innermost pointee
         # __restrict__ qualifier
         has_restrict = (self._at(TokKind.IDENT) and self._peek().value == '__restrict__')
         if has_restrict:
@@ -468,7 +470,7 @@ class Parser:
         # Upgrade to CONST addr space when programmer guarantees read-only + no aliasing.
         # This allows codegen to emit ld.global.nc (non-caching / read-only cache).
         if pointee_const and has_restrict and isinstance(base, PtrTy):
-            base = PtrTy(base.pointee, AddrSpace.CONST)
+            base = PtrTy(base.pointee, AddrSpace.CONST, volatile=base.volatile)
         return base
 
     # -- Expression parsing (precedence climbing) ----------------------------
@@ -2795,10 +2797,30 @@ class Parser:
                         self._advance()  # consume '->'
                         member = self._expect(TokKind.IDENT).value
                         sty = var.ty.pointee
-                        field_off = sty.field_offset(member)
-                        field_ty = sty.field_type(member)
-                        addr = self._new_val("faddr", PtrTy(field_ty, var.ty.addr_space))
-                        self._emit(BinInst(addr, BinOp.ADD, var, Const(INT32, field_off)))
+                        arr_info = self._struct_field_arrays.get(sty.name, {})
+                        if member in arr_info and self._at(TokKind.LBRACKET):
+                            # ptr->arr[i] — array member field; compute element address
+                            self._advance()  # consume '['
+                            idx_expr = self._parse_expr()
+                            self._expect(TokKind.RBRACKET)
+                            base_name = f"{member}_0"
+                            base_off = sty.field_offset(base_name)
+                            field_ty = sty.field_type(base_name)
+                            base_addr = self._new_val("faddr", PtrTy(field_ty, var.ty.addr_space))
+                            self._emit(BinInst(base_addr, BinOp.ADD, var, Const(INT32, base_off)))
+                            elem_size = field_ty.size
+                            if elem_size != 1:
+                                idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
+                                scaled = self._new_val("scale", idx_ty)
+                                self._emit(BinInst(scaled, BinOp.MUL, idx_expr, Const(idx_ty, elem_size)))
+                                idx_expr = scaled
+                            addr = self._new_val("faddr", PtrTy(field_ty, var.ty.addr_space))
+                            self._emit(BinInst(addr, BinOp.ADD, base_addr, idx_expr))
+                        else:
+                            field_off = sty.field_offset(member)
+                            field_ty = sty.field_type(member)
+                            addr = self._new_val("faddr", PtrTy(field_ty, var.ty.addr_space))
+                            self._emit(BinInst(addr, BinOp.ADD, var, Const(INT32, field_off)))
                         # Chain further ->field or .field accesses
                         while (self._at(TokKind.DOT) or self._at(TokKind.ARROW)):
                             self._advance()
