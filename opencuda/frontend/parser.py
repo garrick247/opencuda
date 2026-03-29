@@ -2148,12 +2148,25 @@ class Parser:
             if self._match(tok_kind):
                 rhs = self._parse_expr()
                 if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
-                    # Array compound: load current, compute, store back
-                    cur = self._new_val("cur", lhs.ty.pointee)
-                    self._emit(LoadInst(cur, lhs))
-                    result = self._new_val("compound", cur.ty)
-                    self._emit(BinInst(result, op, cur, rhs))
-                    self._emit(StoreInst(addr=lhs, value=result))
+                    # Distinguish pointer VARIABLE compound (p += n → advance pointer)
+                    # from memory compound (*p += n → load, modify, store).
+                    # _stmt_lhs_name is set when the statement started with a tracked IDENT.
+                    is_ptr_var = (bool(_stmt_lhs_name)
+                                  and _stmt_lhs_name in self._variables
+                                  and _stmt_lhs_name not in self._shared_scalars)
+                    if is_ptr_var and op in (BinOp.ADD, BinOp.SUB):
+                        # Pointer variable advance: scale integer offset by sizeof(*ptr).
+                        scaled = self._scale_ptr_arith_offset(lhs.ty, rhs)
+                        result = self._new_val("compound", lhs.ty)
+                        self._emit(BinInst(result, op, lhs, scaled))
+                        self._variables[_stmt_lhs_name] = result
+                    else:
+                        # Memory compound: load current value, compute, store back.
+                        cur = self._new_val("cur", lhs.ty.pointee)
+                        self._emit(LoadInst(cur, lhs))
+                        result = self._new_val("compound", cur.ty)
+                        self._emit(BinInst(result, op, cur, rhs))
+                        self._emit(StoreInst(addr=lhs, value=result))
                 else:
                     result = self._new_val("compound", lhs.ty if isinstance(lhs, Value) else INT32)
                     self._emit(BinInst(result, op, lhs, rhs))
