@@ -923,7 +923,13 @@ class Parser:
                         if isinstance(operand.ty, PtrTy) else Const(operand.ty, 1))
                 new_val = self._new_val(f"{operand.name}_preinc", operand.ty)
                 self._emit(BinInst(new_val, BinOp.ADD, operand, step))
-                update_name = (_pre_var if _pre_var and _pre_var in self._variables
+                # Use _pre_var only if it directly names the operand (not a struct
+                # sentinel whose field was resolved).  For ++s.count, _pre_var="s"
+                # but operand=_variables["s_count"]; using "s" would clobber the
+                # struct sentinel with a scalar Value, corrupting all further
+                # s.field accesses.  Check identity: _variables[_pre_var] is operand.
+                update_name = (_pre_var if (_pre_var and _pre_var in self._variables
+                                            and self._variables[_pre_var] is operand)
                                else operand.name)
                 self._variables[update_name] = new_val
                 return new_val  # pre-increment returns the new value
@@ -936,7 +942,8 @@ class Parser:
                         if isinstance(operand.ty, PtrTy) else Const(operand.ty, 1))
                 new_val = self._new_val(f"{operand.name}_predec", operand.ty)
                 self._emit(BinInst(new_val, BinOp.SUB, operand, step))
-                update_name = (_pre_var if _pre_var and _pre_var in self._variables
+                update_name = (_pre_var if (_pre_var and _pre_var in self._variables
+                                            and self._variables[_pre_var] is operand)
                                else operand.name)
                 self._variables[update_name] = new_val
                 return new_val  # pre-decrement returns the new value
