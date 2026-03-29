@@ -53,6 +53,7 @@ class TokKind(Enum):
     KW_BOOL     = auto()
     KW_TRUE     = auto()
     KW_FALSE    = auto()
+    KW_SIGNED   = auto()
 
     # Operators
     PLUS     = auto()
@@ -156,6 +157,8 @@ _KEYWORDS = {
     'register': TokKind.KW_STATIC,  # register hint is a no-op too
     'extern': TokKind.KW_STATIC,   # extern treated as ignorable qualifier
     'goto': TokKind.KW_GOTO,
+    'class': TokKind.KW_STRUCT,   # C++ class treated as struct
+    'signed': TokKind.KW_SIGNED,
     'bool': TokKind.KW_BOOL,
     '_Bool': TokKind.KW_BOOL,
     'true': TokKind.KW_TRUE,

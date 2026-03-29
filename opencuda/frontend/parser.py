@@ -245,6 +245,12 @@ class Parser:
             self._advance()
             self._match(TokKind.KW_INT)  # optional trailing 'int'
             return INT32  # treat 'short' as int32 (no sub-word PTX registers)
+        elif tok.kind == TokKind.KW_SIGNED:
+            self._advance()
+            # signed [int | char | long | short] — consume optional base type
+            self._match(TokKind.KW_INT) or self._match(TokKind.KW_CHAR) \
+                or self._match(TokKind.KW_SHORT) or self._match(TokKind.KW_LONG)
+            return INT32
         elif tok.kind == TokKind.KW_CHAR:
             self._advance()
             return INT32  # treat 'char' as int32 for simplicity
@@ -541,7 +547,7 @@ class Parser:
                 else:
                     dest = self._new_val("sub", self._result_type(lhs, rhs))
                     self._emit(BinInst(dest, BinOp.SUB, lhs, rhs))
-                lhs = dest
+                    lhs = dest
             else:
                 break
         return lhs
@@ -1278,10 +1284,11 @@ class Parser:
         # Variable declaration: type name [= expr] [, name2 [= expr2]] ...;
         # Handles both single and multiple comma-separated declarators.
         # Also handles typedef'd types (e.g. float3, int2, user typedefs).
-        if (tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_FLOAT,
-                         TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
-                         TokKind.KW_HALF, TokKind.KW_CHAR, TokKind.KW_SHORT,
-                         TokKind.KW_BOOL, TokKind.KW_STRUCT, TokKind.KW_UNION)
+        if (tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_SIGNED,
+                         TokKind.KW_FLOAT, TokKind.KW_DOUBLE, TokKind.KW_VOID,
+                         TokKind.KW_LONG, TokKind.KW_HALF, TokKind.KW_CHAR,
+                         TokKind.KW_SHORT, TokKind.KW_BOOL,
+                         TokKind.KW_STRUCT, TokKind.KW_UNION)
                 or (tok.kind == TokKind.IDENT and (tok.value in self._typedefs
                                                     or tok.value in self._struct_types))):
             ty = self._parse_type_with_ptr()
@@ -2139,6 +2146,14 @@ class Parser:
         fields = []
         field_arrays = {}  # base_name -> count for array members
         while not self._at(TokKind.RBRACE):
+            # Skip C++ access specifiers: public:, private:, protected:
+            if (self._at(TokKind.IDENT)
+                    and self._peek().value in ('public', 'private', 'protected')
+                    and self._pos + 1 < len(self._toks)
+                    and self._toks[self._pos + 1].kind == TokKind.COLON):
+                self._advance()  # consume 'public'/'private'/'protected'
+                self._advance()  # consume ':'
+                continue
             fty = self._parse_type_with_ptr()
             # Handle comma-separated field names: float x, y, z;
             while True:
