@@ -1777,6 +1777,27 @@ class Parser:
                         self._variables[update_name] = result
                 self._expect(TokKind.SEMI)
                 return
+        # Postfix ++/-- as statement: ptr++; ptr--; scalar++; scalar--;
+        for tok_kind, op in [(TokKind.PLUSPLUS, BinOp.ADD),
+                             (TokKind.MINUSMINUS, BinOp.SUB)]:
+            if self._match(tok_kind):
+                if isinstance(lhs, Value):
+                    if isinstance(lhs.ty, PtrTy):
+                        # Pointer advance: increment by element size
+                        step = lhs.ty.pointee.size if isinstance(lhs.ty.pointee, ScalarTy) else 1
+                        new_ptr = self._new_val(f"{lhs.name}_inc", lhs.ty)
+                        self._emit(BinInst(new_ptr, op, lhs, Const(UINT64, step)))
+                        update_name = _stmt_lhs_name or lhs.name
+                        if update_name in self._variables:
+                            self._variables[update_name] = new_ptr
+                    else:
+                        new_val = self._new_val(f"{lhs.name}_inc", lhs.ty)
+                        self._emit(BinInst(new_val, op, lhs, Const(lhs.ty, 1)))
+                        update_name = _stmt_lhs_name or lhs.name
+                        if update_name in self._variables:
+                            self._variables[update_name] = new_val
+                self._expect(TokKind.SEMI)
+                return
         self._expect(TokKind.SEMI)
 
     def _parse_lvalue_or_expr(self) -> Operand:
@@ -1928,6 +1949,9 @@ class Parser:
         # Parameters
         self._expect(TokKind.LPAREN)
         params = []
+        # (void) means no parameters
+        if self._at(TokKind.KW_VOID) and self._toks[self._pos + 1].kind == TokKind.RPAREN:
+            self._advance()  # consume 'void'
         if not self._at(TokKind.RPAREN):
             while True:
                 pty = self._parse_type_with_ptr()
@@ -1951,13 +1975,13 @@ class Parser:
             self._variables[p.name] = val
 
         # Inject module-level extern __shared__ declarations into this kernel's scope.
-        for shname, shty in self._module_shared_decls:
+        for shname, shty, shcount in self._module_shared_decls:
             smem_ty = PtrTy(shty, AddrSpace.SHARED)
             val = self._new_val(shname, smem_ty)
             self._variables[shname] = val
             if not hasattr(self._kernel, '_shared_decls'):
                 self._kernel._shared_decls = []
-            self._kernel._shared_decls.append((shname, shty, 0))
+            self._kernel._shared_decls.append((shname, shty, shcount))
 
         # Parse body
         self._expect(TokKind.LBRACE)
@@ -2119,6 +2143,9 @@ class Parser:
 
         self._expect(TokKind.LPAREN)
         params = []
+        # (void) means no parameters
+        if self._at(TokKind.KW_VOID) and self._toks[self._pos + 1].kind == TokKind.RPAREN:
+            self._advance()  # consume 'void'
         if not self._at(TokKind.RPAREN):
             while True:
                 pty = self._parse_type_with_ptr()
@@ -2257,9 +2284,13 @@ class Parser:
                 ty = self._parse_type()
                 name = self._expect(TokKind.IDENT).value
                 self._expect(TokKind.LBRACKET)
-                self._expect(TokKind.RBRACKET)  # always empty brackets for extern shared
+                count = 0  # 0 = dynamic shared (extern)
+                if not self._at(TokKind.RBRACKET):
+                    sz_op = self._parse_assign_expr()
+                    count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                self._expect(TokKind.RBRACKET)
                 self._match(TokKind.SEMI)
-                self._module_shared_decls.append((name, ty))
+                self._module_shared_decls.append((name, ty, count))
             elif self._at(TokKind.KW_STRUCT):
                 self._parse_struct_def()
             elif self._at(TokKind.KW_UNION):
