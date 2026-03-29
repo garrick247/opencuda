@@ -234,6 +234,11 @@ class Parser:
             self._advance()
             return self._typedefs[tok.value]
 
+        # Bare struct name (C++ style: Vec3 instead of struct Vec3)
+        if tok.kind == TokKind.IDENT and tok.value in self._struct_types:
+            self._advance()
+            return self._struct_types[tok.value]
+
         raise ParseError(f"Line {tok.line}: expected type, got '{tok.value}'")
 
     def _parse_type_with_ptr(self) -> Type:
@@ -1099,7 +1104,8 @@ class Parser:
                          TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
                          TokKind.KW_HALF, TokKind.KW_CHAR, TokKind.KW_SHORT,
                          TokKind.KW_STRUCT, TokKind.KW_UNION)
-                or (tok.kind == TokKind.IDENT and tok.value in self._typedefs)):
+                or (tok.kind == TokKind.IDENT and (tok.value in self._typedefs
+                                                    or tok.value in self._struct_types))):
             ty = self._parse_type_with_ptr()
             while True:
                 # Each declarator may have its own pointer stars: int *a, b, *c;
@@ -1945,6 +1951,28 @@ class Parser:
                 self._typedefs[sty.name] = sty
         else:
             ty = self._parse_type_with_ptr()
+            # Function pointer typedef: typedef ret_ty (*alias)(params...);
+            if self._at(TokKind.LPAREN):
+                self._advance()          # consume '('
+                self._match(TokKind.STAR)  # optional '*'
+                alias = self._advance().value if self._at(TokKind.IDENT) else None
+                self._match(TokKind.RPAREN)
+                # Skip parameter list
+                if self._at(TokKind.LPAREN):
+                    depth = 0
+                    while not self._at(TokKind.EOF):
+                        if self._peek().kind == TokKind.LPAREN:
+                            depth += 1; self._advance()
+                        elif self._peek().kind == TokKind.RPAREN:
+                            depth -= 1; self._advance()
+                            if depth == 0:
+                                break
+                        else:
+                            self._advance()
+                self._match(TokKind.SEMI)
+                if alias:
+                    self._typedefs[alias] = ty  # map alias → return type (approximate)
+                return
             alias = self._expect(TokKind.IDENT).value
             self._expect(TokKind.SEMI)
             self._typedefs[alias] = ty
