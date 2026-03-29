@@ -143,6 +143,21 @@ def _build_alloc_map(kernel: Kernel):
         for _lname, _lty, _lcount, lval in kernel._local_decls:
             _note_def(lval, 0)
 
+    # Register shared memory base-address Values at position 0 for the same
+    # reason: their mov.u64 initializer is emitted before entry_1, so any
+    # Value whose live range starts later (from its first in-block use) could
+    # be assigned the same physical register, corrupting the smem address.
+    if hasattr(kernel, '_shared_decls'):
+        _smem_names = {s[0] for s in kernel._shared_decls}
+        for bb in kernel.blocks:
+            for inst in bb.instructions:
+                for _attr in ('lhs', 'dest', 'addr'):
+                    _v = getattr(inst, _attr, None)
+                    if (isinstance(_v, Value)
+                            and _v.name in _smem_names
+                            and isinstance(_v.ty, PtrTy)):
+                        _note_def(_v, 0)
+
     for i, inst in enumerate(flat):
         if isinstance(inst, (BinInst, CmpInst, CvtInst)):
             _note_def(inst.dest, i)
