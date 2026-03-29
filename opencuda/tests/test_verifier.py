@@ -71,36 +71,10 @@ ALL_CU_FILES = sorted(f for f in TESTS_DIR.glob('*.cu') if not f.name.startswith
 # All files here still show verifier errors after full optimization (confirmed
 # by test_known_parser_bugs_detected).
 KNOWN_PARSER_BUGS = frozenset({
-    # Struct fields used in caller after device function modifies them via pointer
-    # — the caller's SSA values for those fields are never updated
-    'probe_an',            # Hit struct fields h.t / h.id undefined after inline return
-    'probe_ao',            # struct field after device fn inline
-    'probe_ar',            # struct field after device fn inline
-    'probe_bb',            # struct field (Matrix) after inline; mat_m_N undefined
-    'probe_bq',            # struct field after device fn inline
-    'probe_bu',            # Complex struct: missing terminator + struct fields undefined
-    'probe_cj',            # Config struct fields undefined after init_config(&cfg,...) inline
-    'probe_cl',            # struct field after device fn inline
-    'probe_cw',            # struct field after device fn inline
-    'probe_da',            # struct field after device fn inline
-    'probe_dc',            # struct field after device fn inline
-    'probe_dg',            # dominance violation: struct array field in nested loops
-    'probe_dr',            # struct field after device fn inline
-    'probe_dv',            # struct field after device fn inline
-    'probe_el',            # struct field after device fn inline
-    'probe_em',            # struct field after device fn inline
-    'probe_fe',            # struct field after device fn inline
-    'probe_fi',            # struct field after device fn inline
-    'probe_fu',            # struct field after device fn inline
-    'probe_fw',            # struct field after device fn inline
-    'probe_gd',            # struct field after device fn inline
-    'probe_gi',            # struct field after device fn inline
-    'probe_gj',            # struct field after device fn inline
-    'probe_gq',            # struct field after device fn inline
-    'probe_jv',            # struct field after device fn inline
-    'probe_lh',            # after_break/continue unreachable + dominance violation
-    'struct_multidim_field',  # struct array field access via pointer
-    'union_const_mem',     # union field aliasing not tracked in SSA
+    # Remaining unfixed parser/SSA bugs (3 of original 28):
+    'probe_bu',   # short-circuit && in while condition — CondBrTerm uses undefined %and
+    'probe_jv',   # struct assignment inside conditional branch — fields not propagated
+    'probe_lh',   # switch statement — undefined value in switch_next block
 })
 
 # Parser bugs that are ONLY visible before the full optimization pipeline runs.
@@ -108,6 +82,8 @@ KNOWN_PARSER_BUGS = frozenset({
 # eliminate the bad IR.  Group 5 does NOT check these.
 KNOWN_PREOPT_ONLY_BUGS = frozenset({
     'probe_di',     # missing terminator in dead inline-merge block (dead_block_elim fixes)
+    'probe_fi',     # multiple-return struct fn: dominance violation resolved by dead_block_elim
+    'probe_fu',     # multiple-return struct fn: unreachable after_inline_return blocks
     'probe_gn',     # missing terminator in dead ternary-merge block (dead_block_elim fixes)
     'probe_hs',     # struct return fields undefined — loop unrolling resolves them
     'typedef_union', # union field aliasing: dead_inst_elim eliminates the bad use

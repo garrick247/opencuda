@@ -48,6 +48,9 @@ class Parser:
         self._continue_targets: list[str] = []       # stack of continue target labels
         self._continue_snapshots: list[Optional[dict]] = []  # vars snapshot at continue scope entry
         self._inline_return_target = None  # (return_dest_val, return_merge_label) or None
+        # Maps return_dest.id → {field_name: Value} for struct-returning inlined functions.
+        # Populated by the return handler; read by the struct declaration/assignment handler.
+        self._inline_struct_return_fields: dict[int, dict] = {}
         # Multi-dimensional array row strides: maps var_name → row_stride_bytes.
         # For float tile[16][16], row_stride = 16*sizeof(float) = 64.
         # Used to compute tile[i][j] as *(tile + i*64 + j*4) rather than *(tile + i*4 + j*4).
@@ -737,6 +740,45 @@ class Parser:
                         # Store current value
                         self._emit(StoreInst(addr=spill_val, value=var))
                         return spill_val
+                    elif isinstance(var.ty, StructTy):
+                        # If followed by '.' or '->', fall through to the generic
+                        # handler so &struct.field is processed correctly.
+                        _next_pos_after_ident = self._pos + 1
+                        _has_member_access = (
+                            _next_pos_after_ident < len(self._toks)
+                            and self._toks[_next_pos_after_ident].kind in (
+                                TokKind.DOT, TokKind.ARROW))
+                        if not _has_member_access:
+                            # &struct_var — allocate a .local struct spill slot,
+                            # store current field values, return LOCAL pointer.
+                            # After the call the spilled_out reload reloads fields.
+                            self._advance()  # consume ident
+                            spill_name = f"_spill_{name}"
+                            local_ty = PtrTy(var.ty, AddrSpace.LOCAL)
+                            if spill_name not in self._variables:
+                                spill_val = self._new_val(spill_name, local_ty)
+                                self._variables[spill_name] = spill_val
+                                if not hasattr(self._kernel, '_local_decls'):
+                                    self._kernel._local_decls = []
+                                self._kernel._local_decls.append(
+                                    (spill_name, var.ty, 1, spill_val))
+                            else:
+                                spill_val = self._variables[spill_name]
+                            # Store current field values to their byte offsets
+                            for _sfname, _sfty in var.ty.fields:
+                                if isinstance(_sfty, ScalarTy):
+                                    _sfkey = f"{name}_{_sfname}"
+                                    _sfval = self._variables.get(_sfkey)
+                                    if _sfval is not None:
+                                        _sfoff = var.ty.field_offset(_sfname)
+                                        _sfaddr = self._new_val(
+                                            "faddr", PtrTy(_sfty, AddrSpace.LOCAL))
+                                        self._emit(BinInst(
+                                            _sfaddr, BinOp.ADD, spill_val,
+                                            Const(INT32, _sfoff)))
+                                        self._emit(StoreInst(
+                                            addr=_sfaddr, value=_sfval))
+                            return spill_val
             # Generic fallback: &expr where expr is a scalar (e.g. &b.min_x for struct field)
             operand = self._parse_unary_expr()
             if isinstance(operand, Value) and isinstance(operand.ty, PtrTy):
@@ -1281,11 +1323,37 @@ class Parser:
                     # The inlined function may have modified them through the
                     # spill slot — emit ld.local to pick up any changes.
                     for (orig_name, orig_ty, spill_ptr) in spilled_out:
-                        updated = self._new_val(orig_name, orig_ty)
-                        self._emit(LoadInst(updated, spill_ptr))
-                        self._variables[orig_name] = updated
+                        if isinstance(orig_ty, StructTy):
+                            # For struct-typed spill slots, reload each scalar
+                            # field individually using the field's byte offset.
+                            for _fname, _fty in orig_ty.fields:
+                                if not isinstance(_fty, ScalarTy):
+                                    continue
+                                _off = orig_ty.field_offset(_fname)
+                                _faddr = self._new_val(
+                                    "faddr", PtrTy(_fty, AddrSpace.LOCAL))
+                                self._emit(BinInst(
+                                    _faddr, BinOp.ADD, spill_ptr,
+                                    Const(INT32, _off)))
+                                _loaded = self._new_val(
+                                    f"{orig_name}_{_fname}", _fty)
+                                self._emit(LoadInst(_loaded, _faddr))
+                                self._variables[f"{orig_name}_{_fname}"] = _loaded
+                        else:
+                            updated = self._new_val(orig_name, orig_ty)
+                            self._emit(LoadInst(updated, spill_ptr))
+                            self._variables[orig_name] = updated
                     self._inline_return_target = saved_inline_target
                     self._scope_locals_stack = saved_scope_stack
+                    # Expose per-field return values in _variables so that
+                    # downstream member accesses (result.x) and chained inline
+                    # calls (f(g(x))) can resolve them without lazy-undefined
+                    # creation.  Keyed by "return_dest.name_fieldname" so the
+                    # normal field-lookup path finds them.
+                    if return_dest.id in self._inline_struct_return_fields:
+                        for _rfname, _rfval in self._inline_struct_return_fields[
+                                return_dest.id].items():
+                            self._variables[f"{return_dest.name}_{_rfname}"] = _rfval
                     return return_dest
                 else:
                     # Infer return type for known math intrinsics; fallback INT32.
@@ -1607,6 +1675,12 @@ class Parser:
                     for fname, fty in decl_ty.fields:
                         fval = self._new_val(f"{name}_{fname}", fty)
                         self._variables[f"{name}_{fname}"] = fval
+                        # Zero-init every scalar field so it has a defining
+                        # instruction.  Without this, any pre-call spill-store
+                        # for &struct_var would reference an undefined sentinel.
+                        if isinstance(fty, ScalarTy):
+                            _fzero = Const(fty, 0.0 if fty.is_float else 0)
+                            self._emit(BinInst(fval, BinOp.ADD, _fzero, _fzero))
                     # Handle initializer: Vec3 v = {1.0f, 2.0f, 3.0f}; or v = src_ptr[i];
                     if self._match(TokKind.ASSIGN):
                         if self._at(TokKind.LBRACE):
@@ -1638,14 +1712,50 @@ class Parser:
                             # rhs should be a PtrTy(StructTy) address pointing to the source
                             if isinstance(rhs, Value) and isinstance(rhs.ty, PtrTy) and isinstance(rhs.ty.pointee, StructTy):
                                 sty = rhs.ty.pointee
-                                for fname, fty in sty.fields:
-                                    if isinstance(fty, ScalarTy):
-                                        off = sty.field_offset(fname)
-                                        faddr = self._new_val("faddr", PtrTy(fty, rhs.ty.addr_space))
-                                        self._emit(BinInst(faddr, BinOp.ADD, rhs, Const(INT32, off)))
-                                        loaded = self._new_val(f"{name}_{fname}", fty)
-                                        self._emit(LoadInst(loaded, faddr))
-                                        self._variables[f"{name}_{fname}"] = loaded
+                                addr_space = rhs.ty.addr_space
+                                # Load all scalar sub-fields recursively (handles
+                                # nested structs like Particle.pos.x).
+                                def _load_struct_fields(base_ptr, base_sty,
+                                                        var_prefix, abs_off=0):
+                                    for _fn, _ft in base_sty.fields:
+                                        _off = base_sty.field_offset(_fn) + abs_off
+                                        if isinstance(_ft, ScalarTy):
+                                            _fa = self._new_val(
+                                                "faddr", PtrTy(_ft, addr_space))
+                                            self._emit(BinInst(
+                                                _fa, BinOp.ADD, base_ptr,
+                                                Const(INT32, _off)))
+                                            _lv = self._new_val(
+                                                f"{var_prefix}_{_fn}", _ft)
+                                            self._emit(LoadInst(_lv, _fa))
+                                            self._variables[f"{var_prefix}_{_fn}"] = _lv
+                                        elif isinstance(_ft, StructTy):
+                                            # Nested struct sentinel
+                                            _sfkey = f"{var_prefix}_{_fn}"
+                                            if _sfkey not in self._variables:
+                                                _sf_sent = self._new_val(
+                                                    _sfkey, _ft)
+                                                self._variables[_sfkey] = _sf_sent
+                                            _load_struct_fields(
+                                                base_ptr, _ft, _sfkey, _off)
+                                _load_struct_fields(rhs, sty, name)
+                            elif isinstance(rhs, Value) and isinstance(rhs.ty, StructTy):
+                                # Direct struct value — from inlined __device__ function return
+                                # or struct-to-struct copy.  Look up per-field values.
+                                field_map = self._inline_struct_return_fields.get(rhs.id, {})
+                                for fname, fty in decl_ty.fields:
+                                    if not isinstance(fty, ScalarTy):
+                                        continue
+                                    src = field_map.get(fname)
+                                    if src is None:
+                                        # Fall back: same-name source variable in scope
+                                        src = self._variables.get(f"{rhs.name}_{fname}")
+                                    if src is not None:
+                                        fval2 = self._new_val(f"{name}_{fname}", fty)
+                                        self._emit(BinInst(
+                                            fval2, BinOp.ADD, src,
+                                            Const(fty, 0.0 if fty.is_float else 0)))
+                                        self._variables[f"{name}_{fname}"] = fval2
                     if not self._match(TokKind.COMMA):
                         break
                     continue
@@ -2159,8 +2269,28 @@ class Parser:
                 # Inside inlined device function — store return value and branch to merge
                 return_dest, return_merge_label = self._inline_return_target
                 if ret_val is not None:
-                    zero = Const(return_dest.ty, 0.0 if (isinstance(return_dest.ty, ScalarTy) and return_dest.ty.is_float) else 0)
-                    self._emit(BinInst(return_dest, BinOp.ADD, ret_val, zero))
+                    if (isinstance(return_dest.ty, StructTy)
+                            and isinstance(ret_val, Value)
+                            and isinstance(ret_val.ty, StructTy)):
+                        # Struct return: copy each scalar field to a new named Value so
+                        # the caller can pick them up from _inline_struct_return_fields.
+                        field_vals: dict = {}
+                        for fname, fty in return_dest.ty.fields:
+                            if not isinstance(fty, ScalarTy):
+                                continue
+                            src_key = f"{ret_val.name}_{fname}"
+                            src = self._variables.get(src_key)
+                            if src is not None:
+                                dest_f = self._new_val(
+                                    f"{return_dest.name}_{fname}", fty)
+                                self._emit(BinInst(
+                                    dest_f, BinOp.ADD, src,
+                                    Const(fty, 0.0 if fty.is_float else 0)))
+                                field_vals[fname] = dest_f
+                        self._inline_struct_return_fields[return_dest.id] = field_vals
+                    else:
+                        zero = Const(return_dest.ty, 0.0 if (isinstance(return_dest.ty, ScalarTy) and return_dest.ty.is_float) else 0)
+                        self._emit(BinInst(return_dest, BinOp.ADD, ret_val, zero))
                 self._cur_block.terminator = BrTerm(return_merge_label)
                 # Create dead block for any code after this return
                 self._cur_block = self._new_block("after_inline_return")
@@ -2232,6 +2362,23 @@ class Parser:
                 update_name = _stmt_lhs_name or lhs.name
                 if update_name in self._variables:
                     self._variables[update_name] = rhs
+                    # For struct-to-struct assignment, propagate per-field values
+                    # so downstream field accesses (v.x, v.y, ...) see the new values.
+                    if isinstance(rhs, Value) and isinstance(rhs.ty, StructTy):
+                        field_map = self._inline_struct_return_fields.get(rhs.id, {})
+                        for _fname, _fty in rhs.ty.fields:
+                            if not isinstance(_fty, ScalarTy):
+                                continue
+                            _src_f = field_map.get(_fname)
+                            if _src_f is None:
+                                _src_f = self._variables.get(f"{rhs.name}_{_fname}")
+                            _dest_fkey = f"{update_name}_{_fname}"
+                            if _src_f is not None and _dest_fkey in self._variables:
+                                _new_fv = self._new_val(_dest_fkey, _fty)
+                                self._emit(BinInst(
+                                    _new_fv, BinOp.ADD, _src_f,
+                                    Const(_fty, 0.0 if _fty.is_float else 0)))
+                                self._variables[_dest_fkey] = _new_fv
             # Comma-separated assignments: a = 0, b = 0; (for-loop init style)
             while self._match(TokKind.COMMA):
                 lhs2_name = self._peek().value if self._at(TokKind.IDENT) else None
@@ -2512,6 +2659,16 @@ class Parser:
             val = self._new_val(p.name, p.ty)
             self._emit(ParamInst(val, i, p.name))
             self._variables[p.name] = val
+            # For struct-type parameters, also create per-field variables.
+            # PTX struct-by-value params are not natively supported; emit zero-init
+            # so the IR is valid (field reads won't be "undefined").
+            if isinstance(p.ty, StructTy):
+                for _pfname, _pfty in p.ty.fields:
+                    if isinstance(_pfty, ScalarTy):
+                        _pfval = self._new_val(f"{p.name}_{_pfname}", _pfty)
+                        _pzero = Const(_pfty, 0.0 if _pfty.is_float else 0)
+                        self._emit(BinInst(_pfval, BinOp.ADD, _pzero, _pzero))
+                        self._variables[f"{p.name}_{_pfname}"] = _pfval
 
         # Inject module-level extern __shared__ declarations into this kernel's scope.
         for shname, shty, shcount in self._module_shared_decls:
