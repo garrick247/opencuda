@@ -924,6 +924,22 @@ class Parser:
                         self._advance()  # consume ident
                         addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
                         self._emit(GlobalAddrInst(addr_val, cv.sym_name, cv.ty.addr_space))
+                        # &global_arr[idx] — compute element address
+                        if self._match(TokKind.LBRACKET):
+                            index = self._parse_expr()
+                            self._expect(TokKind.RBRACKET)
+                            elem_size = (cv.ty.pointee.size
+                                         if isinstance(cv.ty, PtrTy)
+                                         else 4)
+                            if elem_size != 1:
+                                idx_ty = index.ty if isinstance(index, Value) else INT32
+                                scaled = self._new_val("scale", idx_ty)
+                                self._emit(BinInst(scaled, BinOp.MUL, index,
+                                                   Const(idx_ty, elem_size)))
+                                index = scaled
+                            elem_addr = self._new_val("elem_addr", cv.ty)
+                            self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, index))
+                            return elem_addr
                         return addr_val
                 if name in self._variables:
                     var = self._variables[name]
