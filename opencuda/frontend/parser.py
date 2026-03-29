@@ -1766,6 +1766,18 @@ class Parser:
                     _int_ops      = ('__popc', '__popcll', '__clz', '__clzll',
                                      '__brev', '__brevll', '__ffs', '__ffsll')
                     _clock_ops    = ('clock64', '__clock64', 'clock')
+                    _pred_int     = ('isnan', 'isinf', 'isfinite',
+                                     '__isnan', '__isinf', '__isfinite',
+                                     '__isnanf', '__isinff', '__isfinitef')
+                    _float2int    = ('__float2int_rn', '__float2int_rd',
+                                     '__float2int_ru', '__float2int_rz',
+                                     '__float2ll_rn', '__float2ll_rd',
+                                     '__float2ll_ru', '__float2ll_rz',
+                                     '__double2int_rn', '__double2int_rz')
+                    _int2float    = ('__int2float_rn', '__int2float_rd',
+                                     '__int2float_ru', '__int2float_rz',
+                                     '__ll2float_rn', '__ll2float_rz',
+                                     '__int2double_rn', '__ll2double_rn')
                     if name in _void_stmts:
                         self._emit(CallInst(None, name, args))
                         return Const(VOID, 0)
@@ -1802,6 +1814,12 @@ class Parser:
                         dest = self._new_val(name, ret_ty)
                         self._emit(CallInst(dest, name, args))
                         return dest
+                    elif name in _pred_int:
+                        ret_ty = INT32
+                    elif name in _float2int:
+                        ret_ty = INT64 if ('ll' in name or 'longlong' in name) else INT32
+                    elif name in _int2float:
+                        ret_ty = DOUBLE if 'double' in name else FLOAT
                     elif name in _float_unary:
                         ret_ty = FLOAT
                     elif name in _float_binary:

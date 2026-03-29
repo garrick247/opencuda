@@ -1402,6 +1402,58 @@ class PTXEmitter:
                     a = self._operand(inst.args[0], ptx_ty) if inst.args else '0'
                     b = self._operand(inst.args[1], ptx_ty) if len(inst.args) > 1 else '0'
                     self._lines.append(f'    {ptx_op}.{ptx_ty} {dest}, {a}, {b};')
+                elif inst.func in ('isnan', 'isinf', 'isfinite',
+                                   '__isnan', '__isinf', '__isfinite',
+                                   '__isnanf', '__isinff', '__isfinitef'):
+                    # testp.{property}.f32 pred, src; selp.s32 dest, 1, 0, pred
+                    _testp_map = {
+                        'isnan': 'notanumber', '__isnan': 'notanumber', '__isnanf': 'notanumber',
+                        'isinf': 'infinite',   '__isinf': 'infinite',   '__isinff': 'infinite',
+                        'isfinite': 'finite',  '__isfinite': 'finite',  '__isfinitef': 'finite',
+                    }
+                    prop = _testp_map[inst.func]
+                    src_arg = inst.args[0] if inst.args else None
+                    src_ty = src_arg.ty if isinstance(src_arg, (Value, Const)) else FLOAT
+                    ptx_float_ty = 'f64' if (isinstance(src_ty, ScalarTy) and src_ty.size == 8) else 'f32'
+                    src = self._operand(src_arg) if src_arg is not None else '0f00000000'
+                    p_tmp = kernel.new_value(f'_tp_{inst.dest.id if inst.dest else 0}',
+                                            ScalarTy(ScalarType.BOOL))
+                    self._pred_ids.add(p_tmp.id)
+                    self._lines.append(f'    testp.{prop}.{ptx_float_ty} {self._reg(p_tmp)}, {src};')
+                    self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
+                elif inst.func in ('__float2int_rn', '__float2int_rd',
+                                   '__float2int_ru', '__float2int_rz'):
+                    _rnd_map = {'__float2int_rn': 'rni', '__float2int_rd': 'rmi',
+                                '__float2int_ru': 'rpi', '__float2int_rz': 'rzi'}
+                    rnd = _rnd_map[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.{rnd}.s32.f32 {dest}, {src};')
+                elif inst.func in ('__float2ll_rn', '__float2ll_rd',
+                                   '__float2ll_ru', '__float2ll_rz'):
+                    _rnd_map = {'__float2ll_rn': 'rni', '__float2ll_rd': 'rmi',
+                                '__float2ll_ru': 'rpi', '__float2ll_rz': 'rzi'}
+                    rnd = _rnd_map[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.{rnd}.s64.f32 {dest}, {src};')
+                elif inst.func in ('__double2int_rn', '__double2int_rz'):
+                    rnd = 'rni' if inst.func == '__double2int_rn' else 'rzi'
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    self._lines.append(f'    cvt.{rnd}.s32.f64 {dest}, {src};')
+                elif inst.func in ('__int2float_rn', '__int2float_rd',
+                                   '__int2float_ru', '__int2float_rz'):
+                    _rnd_map = {'__int2float_rn': 'rn', '__int2float_rd': 'rm',
+                                '__int2float_ru': 'rp', '__int2float_rz': 'rz'}
+                    rnd = _rnd_map[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    cvt.{rnd}.f32.s32 {dest}, {src};')
+                elif inst.func in ('__ll2float_rn', '__ll2float_rz'):
+                    rnd = 'rn' if inst.func == '__ll2float_rn' else 'rz'
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    cvt.{rnd}.f32.s64 {dest}, {src};')
+                elif inst.func in ('__int2double_rn', '__ll2double_rn'):
+                    src_ty_str = 's64' if 'll' in inst.func else 's32'
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    cvt.rn.f64.{src_ty_str} {dest}, {src};')
 
     def _emit_term(self, term):
         if isinstance(term, RetTerm):
