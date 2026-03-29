@@ -129,7 +129,11 @@ def _build_alloc_map(kernel: Kernel):
     def _note_use(op, idx):
         if isinstance(op, Value):
             val_type_map.setdefault(op.id, op.ty)
-            live_end[op.id] = idx
+            # Extend live_start backwards: if an inline merge block is created
+            # before its inline body blocks in kernel.blocks, the use appears at
+            # a lower flat index than the def.  live_start must cover that use.
+            live_start[op.id] = min(live_start.get(op.id, idx), idx)
+            live_end[op.id] = max(live_end.get(op.id, idx), idx)
 
     for i, inst in enumerate(flat):
         if isinstance(inst, (BinInst, CmpInst, CvtInst)):
