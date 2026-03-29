@@ -1,0 +1,299 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .global .align 4 .s32 g_volatile_flag;
+.visible .global .align 4 .f32 g_volatile_val;
+.visible .global .align 4 .s32 g_ready;
+.visible .global .align 4 .f32 g_shared_val;
+
+.visible .entry set_volatile(
+    .param .s32 flag, .param .f32 val)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<2>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.s32 %r0, [flag];
+    ld.param.f32 %f0, [val];
+    mov.u32 %r1, %tid.x;
+    setp.eq.u32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.u64 %rd0, g_volatile_flag;
+    cvta.to.global.u64 %rd0, %rd0;
+    st.volatile.global.s32 [%rd0], %r0;
+    mov.u64 %rd0, g_volatile_val;
+    cvta.to.global.u64 %rd0, %rd0;
+    st.volatile.global.f32 [%rd0], %f0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry read_volatile(
+    .param .u64 out_flag, .param .u64 out_val)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<1>;
+    .reg .b64 %rd<2>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out_flag];
+    ld.param.u64 %rd1, [out_val];
+    mov.u32 %r0, %tid.x;
+    setp.eq.u32 %p0, %r0, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ld.volatile.global.s32 %r0, [g_volatile_flag];
+    st.global.s32 [%rd0], %r0;
+    ld.volatile.global.f32 %f0, [g_volatile_val];
+    st.global.f32 [%rd1], %f0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry restrict_add(
+    .param .u64 out, .param .u64 a, .param .u64 b, .param .s32 n)
+{
+    .reg .f32 %f<3>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.u64 %rd2, [b];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd0, %rd4;
+    add.u64 %rd0, %rd1, %rd4;
+    ld.global.nc.f32 %f0, [%rd0];
+    add.u64 %rd1, %rd2, %rd4;
+    ld.global.nc.f32 %f1, [%rd1];
+    add.f32 %f2, %f0, %f1;
+    st.global.f32 [%rd3], %f2;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry ldg_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<2>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.nc.f32 %f0, [%rd0];
+    mul.f32 %f1, %f0, 0f40000000;
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry producer(
+    .param .f32 val)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<1>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.f32 %f0, [val];
+    mov.u32 %r0, %tid.x;
+    setp.eq.u32 %p0, %r0, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.u64 %rd0, g_shared_val;
+    cvta.to.global.u64 %rd0, %rd0;
+    st.global.f32 [%rd0], %f0;
+    membar.gl;
+    mov.u64 %rd0, g_ready;
+    cvta.to.global.u64 %rd0, %rd0;
+    st.global.s32 [%rd0], 1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry consumer(
+    .param .u64 out)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<1>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    mov.u32 %r0, %tid.x;
+    setp.eq.u32 %p0, %r0, 0;
+    @%p0 bra while_cond_5;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+while_cond_5:
+    ld.global.s32 %r0, [g_ready];
+    setp.eq.s32 %p0, %r0, 0;
+    @%p0 bra while_cond_5;
+    bra while_exit_7;
+while_exit_7:
+    ld.global.f32 %f0, [g_shared_val];
+    st.global.f32 [%rd0], %f0;
+    bra if_merge_4;
+}
+
+.visible .entry timing_kernel(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.u32 %r1, %clock;
+    cvt.s32.u32 %r2, %r1;
+    mov.s32 %r1, 0;
+    mov.s32 %r3, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    shl.b32 %r4, %r3, 2;
+    cvt.s64.s32 %rd3, %r4;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r1, %r4;
+    mov.s32 %r1, %r5;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r4, %r3, 1;
+    mov.s32 %r3, %r4;
+    bra for_cond_5;
+for_exit_8:
+    mov.u32 %r5, %clock;
+    cvt.s32.u32 %r4, %r5;
+    st.global.s32 [%rd0], %r1;
+    add.u64 %rd2, %rd0, 4;
+    sub.s32 %r5, %r4, %r2;
+    st.global.s32 [%rd2], %r5;
+    bra if_merge_4;
+}
+
+.visible .entry fence_block(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .shared .f32 smem[32];
+    .reg .f32 %f<1>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<3>;
+
+    mov.u64 %rd0, smem;
+entry_1:
+    ld.param.u64 %rd1, [out];
+    ld.param.u64 %rd2, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, 32;
+    @%p0 bra land_rhs_2;
+    bra land_skip_3;
+land_rhs_2:
+    setp.lt.s32 %p0, %r2, %r0;
+    selp.s32 %r3, 1, 0, %p0;
+    mov.s32 %r1, %r3;
+    bra land_merge_4;
+land_skip_3:
+    mov.s32 %r1, 0;
+    bra land_merge_4;
+land_merge_4:
+    setp.ne.s32 %p1, %r1, 0;
+    @%p1 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd3, %rd0, %rd5;
+    add.u64 %rd4, %rd2, %rd5;
+    ld.global.f32 %f0, [%rd4];
+    st.shared.f32 [%rd3], %f0;
+    bra if_merge_7;
+if_merge_7:
+    membar.cta;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra land_rhs_8;
+    bra land_skip_9;
+land_rhs_8:
+    setp.lt.s32 %p0, %r2, 32;
+    selp.s32 %r4, 1, 0, %p0;
+    mov.s32 %r0, %r4;
+    bra land_merge_10;
+land_skip_9:
+    mov.s32 %r0, 0;
+    bra land_merge_10;
+land_merge_10:
+    setp.ne.s32 %p2, %r0, 0;
+    @%p2 bra if_true_11;
+    bra if_merge_13;
+if_true_11:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd6, %r1;
+    add.u64 %rd2, %rd1, %rd6;
+    add.s32 %r0, %r2, 1;
+    rem.s32 %r1, %r0, 32;
+    shl.b32 %r2, %r1, 2;
+    cvt.s64.s32 %rd7, %r2;
+    add.u64 %rd3, %rd0, %rd7;
+    ld.shared.f32 %f0, [%rd3];
+    st.global.f32 [%rd2], %f0;
+    bra if_merge_13;
+if_merge_13:
+    ret;
+}

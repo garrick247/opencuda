@@ -3582,12 +3582,23 @@ class Parser:
                     # Module-level __device__ variable: consume __device__ + qualifiers,
                     # parse the declaration, register as a global symbol ref.
                     is_const = False
+                    is_volatile = False
                     while self._at(TokKind.KW_DEVICE) or self._at(TokKind.KW_STATIC):
                         self._advance()
                     if self._at(TokKind.KW_CONSTANT):
                         is_const = True
                         self._advance()
+                    # Consume volatile before type so _parse_type_with_ptr sees a clean type.
+                    # For non-pointer vars (volatile int g_flag), volatile would otherwise
+                    # be consumed by _parse_type_with_ptr but never propagated to PtrTy.
+                    if self._at(TokKind.KW_VOLATILE):
+                        is_volatile = True
+                        self._advance()
                     ty = self._parse_type_with_ptr()
+                    # If _parse_type_with_ptr produced a PtrTy (volatile T * case), inherit
+                    # its volatile flag; otherwise use the is_volatile we captured above.
+                    if isinstance(ty, PtrTy) and ty.volatile:
+                        is_volatile = True
                     name = self._expect(TokKind.IDENT).value
                     # Optional array size [N]
                     count = 1
@@ -3611,7 +3622,7 @@ class Parser:
                                 self._advance()
                     self._match(TokKind.SEMI)
                     addr = AddrSpace.CONST if is_const else AddrSpace.GLOBAL
-                    ptr_ty = PtrTy(ty, addr)
+                    ptr_ty = PtrTy(ty, addr, volatile=is_volatile)
                     self._global_consts[name] = SymbolRef(name, ptr_ty)
                     mod.global_vars.append((name, ty, count, addr))
             elif self._at(TokKind.KW_SHARED):

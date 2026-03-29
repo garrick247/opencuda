@@ -944,6 +944,8 @@ class PTXEmitter:
                     addr_space = 'global'
                     nc = True
             elif isinstance(inst.addr, SymbolRef) and isinstance(inst.addr.ty, PtrTy):
+                if inst.addr.ty.volatile:
+                    is_volatile = True
                 if inst.addr.ty.addr_space == AddrSpace.CONST:
                     addr_space = 'const'
                 elif inst.addr.ty.addr_space == AddrSpace.SHARED:
