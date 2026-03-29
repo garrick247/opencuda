@@ -143,6 +143,17 @@ class Parser:
             raise ParseError(f"Line {tok.line}: expected {kind.name}, got {tok.kind.name} '{tok.value}'")
         return self._advance()
 
+    # Keywords that are not C reserved words but are used as type names in CUDA;
+    # they may legally appear as user-defined identifiers (variable/param names).
+    _SOFT_KW_AS_IDENT: set = frozenset({TokKind.KW_HALF})
+
+    def _expect_ident(self) -> Token:
+        """Like _expect(IDENT) but also accepts soft keywords used as identifiers."""
+        tok = self._peek()
+        if tok.kind == TokKind.IDENT or tok.kind in self._SOFT_KW_AS_IDENT:
+            return self._advance()
+        raise ParseError(f"Line {tok.line}: expected IDENT, got {tok.kind.name} '{tok.value}'")
+
     def _match(self, kind: TokKind) -> Optional[Token]:
         if self._peek().kind == kind:
             return self._advance()
@@ -1476,7 +1487,7 @@ class Parser:
             val = float(tok.value.rstrip('fF'))
             return Const(FLOAT, val)
 
-        if tok.kind == TokKind.IDENT:
+        if tok.kind == TokKind.IDENT or tok.kind in self._SOFT_KW_AS_IDENT:
             name = tok.value
             self._advance()
 
@@ -2158,7 +2169,7 @@ class Parser:
                 decl_ty = ty
                 while self._match(TokKind.STAR):
                     decl_ty = PtrTy(decl_ty, AddrSpace.GLOBAL)
-                name = self._expect(TokKind.IDENT).value
+                name = self._expect_ident().value
 
                 # Struct / vector type variable (e.g. float3 v;).
                 # Decompose into per-field scalar variables: v_x, v_y, v_z.
@@ -3350,7 +3361,7 @@ class Parser:
         if not self._at(TokKind.RPAREN):
             while True:
                 pty = self._parse_type_with_ptr()
-                pname = self._expect(TokKind.IDENT).value
+                pname = self._expect_ident().value
                 params.append(KernelParam(pname, pty))
                 if not self._match(TokKind.COMMA):
                     break
@@ -3588,7 +3599,7 @@ class Parser:
         if not self._at(TokKind.RPAREN):
             while True:
                 pty = self._parse_type_with_ptr()
-                pname = self._expect(TokKind.IDENT).value
+                pname = self._expect_ident().value
                 params.append((pname, pty))
                 if not self._match(TokKind.COMMA):
                     break
