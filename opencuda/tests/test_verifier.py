@@ -73,7 +73,6 @@ ALL_CU_FILES = sorted(f for f in TESTS_DIR.glob('*.cu') if not f.name.startswith
 KNOWN_PARSER_BUGS = frozenset({
     # Struct fields used in caller after device function modifies them via pointer
     # — the caller's SSA values for those fields are never updated
-    'addr_of_local',       # uninitialized scalar used in initial spill StoreInst
     'probe_an',            # Hit struct fields h.t / h.id undefined after inline return
     'probe_ao',            # struct field after device fn inline
     'probe_ar',            # struct field after device fn inline
@@ -86,7 +85,6 @@ KNOWN_PARSER_BUGS = frozenset({
     'probe_da',            # struct field after device fn inline
     'probe_dc',            # struct field after device fn inline
     'probe_dg',            # dominance violation: struct array field in nested loops
-    'probe_dh',            # struct field after device fn inline
     'probe_dr',            # struct field after device fn inline
     'probe_dv',            # struct field after device fn inline
     'probe_el',            # struct field after device fn inline
@@ -99,7 +97,6 @@ KNOWN_PARSER_BUGS = frozenset({
     'probe_gi',            # struct field after device fn inline
     'probe_gj',            # struct field after device fn inline
     'probe_gq',            # struct field after device fn inline
-    'probe_jo',            # struct field after device fn inline
     'probe_jv',            # struct field after device fn inline
     'probe_lh',            # after_break/continue unreachable + dominance violation
     'struct_multidim_field',  # struct array field access via pointer

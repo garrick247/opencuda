@@ -1739,6 +1739,16 @@ class Parser:
                             # causing the outer loop to exit after one iteration.
                             self._emit(BinInst(val, BinOp.ADD, rhs, Const(decl_ty, 0)))
                             self._variables[name] = val
+                else:
+                    # Uninitialized declaration: emit a zero-init so `val` has a
+                    # defining instruction.  Without this, any use of val before
+                    # assignment (e.g. the initial spill-store when &val is taken)
+                    # would be flagged as "use of undefined value" by the verifier.
+                    # C semantics allow undefined initial values; the zero here is
+                    # dead if the variable is assigned before use, and correct if
+                    # only written through a pointer (e.g. float lo; set(&lo, ...)).
+                    _zero = Const(decl_ty, 0.0 if isinstance(decl_ty, ScalarTy) and decl_ty.is_float else 0)
+                    self._emit(BinInst(val, BinOp.ADD, _zero, _zero))
 
                 if not self._match(TokKind.COMMA):
                     break
