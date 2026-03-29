@@ -1721,7 +1721,7 @@ class Parser:
             self._pos = body_resume
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
-            self._break_snapshots.append(None)
+            self._break_snapshots.append(loop_vars)  # for writeback on break
             self._continue_targets.append(inc_bb.label)
             self._parse_stmt_or_block()
             self._break_targets.pop()
@@ -1781,7 +1781,7 @@ class Parser:
 
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
-            self._break_snapshots.append(None)
+            self._break_snapshots.append(while_entry_vars)  # for writeback on break
             self._continue_targets.append(cond_bb.label)
             self._parse_stmt_or_block()
             self._break_targets.pop()
@@ -1814,7 +1814,7 @@ class Parser:
             self._cur_block.terminator = BrTerm(body_bb.label)
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
-            self._break_snapshots.append(None)
+            self._break_snapshots.append(do_entry_vars)  # for writeback on break
             self._continue_targets.append(cond_bb.label)
             self._parse_stmt_or_block()
             self._break_targets.pop()
