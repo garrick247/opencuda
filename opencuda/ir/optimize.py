@@ -147,23 +147,24 @@ def constant_fold(kernel: Kernel) -> int:
                 # Full constant fold (both operands are Const)
                 result = _fold_bin(inst.op, lv, rv, is_float)
                 if result is not None:
-                    # DON'T put in replacements — the dest Value might be
-                    # read in another block. Just emit a materialization.
-                    # Actually: we CAN fold if we emit the constant inline
-                    # wherever dest is used. But that's complex. Instead:
-                    # emit a simpler instruction (mov-like: add dest, const, 0)
-                    # with the folded value.
+                    # Emit a simpler instruction (mov-like: add dest, const, 0).
+                    # ALSO add to per-block replacements so subsequent instructions
+                    # in the same block can chain-fold (e.g. 4-term constant sum).
+                    # Per-block replacements don't leak to other blocks so this is safe.
                     if is_float:
-                        inst.lhs = Const(inst.dest.ty, result)
+                        folded_const = Const(inst.dest.ty, result)
+                        inst.lhs = folded_const
                         inst.rhs = Const(inst.dest.ty, 0.0)
                         inst.op = BinOp.ADD
                     else:
                         # Mask to type width: Python ints are unbounded but PTX
                         # types are not (e.g. 1 << 31 = 2147483648, out of s32 range).
                         masked = _mask_int(result, inst.dest.ty)
-                        inst.lhs = Const(inst.dest.ty, masked)
+                        folded_const = Const(inst.dest.ty, masked)
+                        inst.lhs = folded_const
                         inst.rhs = Const(inst.dest.ty, 0)
                         inst.op = BinOp.ADD
+                    replacements[inst.dest.id] = folded_const
                     folded += 1
                     # Keep the instruction (it's now simpler but still writes dest)
 

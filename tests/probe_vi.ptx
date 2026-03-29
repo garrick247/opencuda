@@ -21,9 +21,7 @@ if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd2, %r0;
     add.u64 %rd1, %rd0, %rd2;
-    mov.s32 %r1, 16;
-    add.s32 %r2, %r1, 8;
-    st.global.s32 [%rd1], %r2;
+    st.global.s32 [%rd1], 24;
     bra if_merge_4;
 if_merge_4:
     ret;
