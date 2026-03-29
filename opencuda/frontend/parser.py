@@ -1951,6 +1951,10 @@ class Parser:
                     break
         self._expect(TokKind.RPAREN)
 
+        # Forward declaration (prototype): __device__ float f(int x); — no body.
+        if self._match(TokKind.SEMI):
+            return  # nothing to register yet; definition will follow
+
         # Save token range for the body to replay during inlining
         body_start = self._pos
         # Skip the body
