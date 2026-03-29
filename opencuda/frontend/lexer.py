@@ -13,6 +13,7 @@ class TokKind(Enum):
     INT_LIT    = auto()
     FLOAT_LIT  = auto()
     STRING_LIT = auto()
+    CHAR_LIT   = auto()
     IDENT      = auto()
 
     # Keywords
@@ -49,6 +50,9 @@ class TokKind(Enum):
     KW_ENUM     = auto()
     KW_STATIC   = auto()
     KW_GOTO     = auto()
+    KW_BOOL     = auto()
+    KW_TRUE     = auto()
+    KW_FALSE    = auto()
 
     # Operators
     PLUS     = auto()
@@ -152,12 +156,17 @@ _KEYWORDS = {
     'register': TokKind.KW_STATIC,  # register hint is a no-op too
     'extern': TokKind.KW_STATIC,   # extern treated as ignorable qualifier
     'goto': TokKind.KW_GOTO,
+    'bool': TokKind.KW_BOOL,
+    '_Bool': TokKind.KW_BOOL,
+    'true': TokKind.KW_TRUE,
+    'false': TokKind.KW_FALSE,
 }
 
 _TOKEN_RE = re.compile(r"""
     (?P<COMMENT_LINE>   //[^\n]*            ) |
     (?P<COMMENT_BLOCK>  /\*.*?\*/           ) |
     (?P<STRING_LIT>     "(?:[^"\\]|\\.)*"   ) |
+    (?P<CHAR_LIT>       '(?:[^'\\]|\\.)'    ) |
     (?P<FLOAT_LIT>      [0-9]+\.[0-9]*(?:[eE][+-]?[0-9]+)?[fF]?
                       | [0-9]*\.[0-9]+(?:[eE][+-]?[0-9]+)?[fF]?
                       | [0-9]+[eE][+-]?[0-9]+[fF]?
@@ -237,6 +246,7 @@ _GROUP_TO_KIND = {
     'QUESTION': TokKind.QUESTION, 'COLON': TokKind.COLON,
     'ARROW': TokKind.ARROW,
     'PLUSPLUS': TokKind.PLUSPLUS, 'MINUSMINUS': TokKind.MINUSMINUS,
+    'CHAR_LIT': TokKind.CHAR_LIT,
 }
 
 

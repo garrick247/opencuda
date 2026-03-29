@@ -248,6 +248,9 @@ class Parser:
         elif tok.kind == TokKind.KW_CHAR:
             self._advance()
             return INT32  # treat 'char' as int32 for simplicity
+        elif tok.kind == TokKind.KW_BOOL:
+            self._advance()
+            return INT32  # treat 'bool' as int32
 
         # Struct or union type
         if tok.kind in (TokKind.KW_STRUCT, TokKind.KW_UNION):
@@ -869,6 +872,24 @@ class Parser:
     def _parse_primary_expr(self) -> Operand:
         tok = self._peek()
 
+        if tok.kind == TokKind.CHAR_LIT:
+            self._advance()
+            raw = tok.value[1:-1]  # strip quotes
+            _ESCAPE = {'n': 10, 't': 9, 'r': 13, '0': 0, '\\': 92, "'": 39, '"': 34}
+            if len(raw) >= 2 and raw[0] == '\\':
+                ival = _ESCAPE.get(raw[1], ord(raw[1]))
+            else:
+                ival = ord(raw[0]) if raw else 0
+            return Const(INT32, ival)
+
+        if tok.kind == TokKind.KW_TRUE:
+            self._advance()
+            return Const(INT32, 1)
+
+        if tok.kind == TokKind.KW_FALSE:
+            self._advance()
+            return Const(INT32, 0)
+
         if tok.kind == TokKind.INT_LIT:
             self._advance()
             raw = tok.value
@@ -904,6 +925,27 @@ class Parser:
         if tok.kind == TokKind.IDENT:
             name = tok.value
             self._advance()
+
+            # C++ nullptr → null pointer constant (UINT64 0)
+            if name == 'nullptr':
+                return Const(UINT64, 0)
+
+            # C++ static_cast<Type>(expr) → cast expression
+            if name in ('static_cast', 'reinterpret_cast', 'const_cast') and self._at(TokKind.LT):
+                self._advance()  # consume '<'
+                try:
+                    cast_ty = self._parse_type()
+                    while self._match(TokKind.STAR):
+                        cast_ty = PtrTy(cast_ty, AddrSpace.GLOBAL)
+                except Exception:
+                    cast_ty = INT32
+                self._expect(TokKind.GT)
+                self._expect(TokKind.LPAREN)
+                operand = self._parse_assign_expr()
+                self._expect(TokKind.RPAREN)
+                dest = self._new_val("cast", cast_ty)
+                self._emit(CvtInst(dest, operand))
+                return dest
 
             # Check for function call
             if self._match(TokKind.LPAREN):
@@ -1239,7 +1281,7 @@ class Parser:
         if (tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_FLOAT,
                          TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
                          TokKind.KW_HALF, TokKind.KW_CHAR, TokKind.KW_SHORT,
-                         TokKind.KW_STRUCT, TokKind.KW_UNION)
+                         TokKind.KW_BOOL, TokKind.KW_STRUCT, TokKind.KW_UNION)
                 or (tok.kind == TokKind.IDENT and (tok.value in self._typedefs
                                                     or tok.value in self._struct_types))):
             ty = self._parse_type_with_ptr()
