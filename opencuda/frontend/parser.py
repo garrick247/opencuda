@@ -792,7 +792,10 @@ class Parser:
         for tok_kind, cmp_op in cmp_ops.items():
             if self._match(tok_kind):
                 rhs = self._parse_add_expr()
-                dest = self._new_val("cmp", INT32)
+                # Return BOOL type so 'int x = (a > b)' triggers CvtInst (selp.s32),
+                # not a BinInst copy that identity_fold would propagate back to the
+                # raw predicate register.
+                dest = self._new_val("cmp", ScalarTy(ScalarType.BOOL))
                 self._emit(CmpInst(dest, cmp_op, lhs, rhs))
                 return dest
         return lhs
@@ -801,6 +804,12 @@ class Parser:
         """Determine result type with promotion (wider float wins, float > int)."""
         a_ty = a.ty if isinstance(a, (Value, Const)) else FLOAT
         b_ty = b.ty if isinstance(b, (Value, Const)) else FLOAT
+        # BOOL undergoes integer promotion to INT32 in arithmetic (C §6.3.1.1).
+        _bool_ty = ScalarTy(ScalarType.BOOL)
+        if a_ty == _bool_ty:
+            a_ty = INT32
+        if b_ty == _bool_ty:
+            b_ty = INT32
         a_is_float = isinstance(a_ty, ScalarTy) and a_ty.is_float
         b_is_float = isinstance(b_ty, ScalarTy) and b_ty.is_float
         # Float promotion: use the wider float type (double > float > half)
