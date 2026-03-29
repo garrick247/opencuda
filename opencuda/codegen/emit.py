@@ -13,7 +13,7 @@ from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
                          BinOp, CmpOp,
                          RetTerm, BrTerm, CondBrTerm)
 from ..ir.types import (Type, ScalarTy, PtrTy, ScalarType, AddrSpace,
-                         INT32, UINT32, FLOAT, VOID, DOUBLE, HALF)
+                         INT32, UINT32, INT64, UINT64, FLOAT, VOID, DOUBLE, HALF)
 
 
 def _ptx_type(ty: Type) -> str:
@@ -731,9 +731,24 @@ class PTXEmitter:
             }
             cmp_str = op_map[inst.op]
             pred = self._reg(inst.dest)
+            # If the chosen comparison type is 64-bit but an operand is a 32-bit
+            # Value, widen it first — PTX setp requires both operands to have the
+            # same register width as the type qualifier.
+            def _cmp_operand(op, tgt_ty: str) -> str:
+                if isinstance(op, Value) and tgt_ty in ('u64', 's64') and not _is_64bit(op.ty):
+                    wid = self._widen_cache.get(op.id)
+                    if wid is None:
+                        is_signed = isinstance(op.ty, ScalarTy) and op.ty.is_signed
+                        widen_op = 'cvt.s64.s32' if is_signed else 'cvt.u64.u32'
+                        wid = kernel.new_value(f'_cmp_wide', INT64 if is_signed else UINT64)
+                        self._lines.append(
+                            f'    {widen_op} {self._reg(wid)}, {self._reg(op)};')
+                        self._widen_cache[op.id] = wid
+                    return self._reg(wid)
+                return self._operand(op, tgt_ty)
             self._lines.append(
                 f'    setp.{cmp_str}.{ptx_ty} {pred}, '
-                f'{self._operand(inst.lhs, ptx_ty)}, {self._operand(inst.rhs, ptx_ty)};')
+                f'{_cmp_operand(inst.lhs, ptx_ty)}, {_cmp_operand(inst.rhs, ptx_ty)};')
 
         elif isinstance(inst, CvtInst):
             # Use Const's declared type when src is a Const — e.g., CvtInst(f32, Const(UINT32, val))

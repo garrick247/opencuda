@@ -46,6 +46,23 @@ class Parser:
         # Module-level compile-time constants (enum values, etc.)
         # These are visible in all kernels as Const operands without IR instructions.
         self._global_consts: dict[str, Const] = {}
+        # Register C/CUDA scalar aliases not covered by keyword tokens
+        self._typedefs['bool'] = INT32        # _Bool / bool → i32 (0 or 1)
+        self._typedefs['size_t'] = UINT64     # pointer-sized unsigned
+        self._typedefs['ptrdiff_t'] = INT64
+        self._typedefs['intptr_t'] = INT64
+        self._typedefs['uintptr_t'] = UINT64
+        self._typedefs['int8_t'] = INT32
+        self._typedefs['int16_t'] = INT32
+        self._typedefs['int32_t'] = INT32
+        self._typedefs['int64_t'] = INT64
+        self._typedefs['uint8_t'] = UINT32
+        self._typedefs['uint16_t'] = UINT32
+        self._typedefs['uint32_t'] = UINT32
+        self._typedefs['uint64_t'] = UINT64
+        self._global_consts['true'] = Const(INT32, 1)
+        self._global_consts['false'] = Const(INT32, 0)
+        self._global_consts['NULL'] = Const(UINT64, 0)
 
     def _register_builtin_vector_types(self):
         """Pre-register CUDA built-in vector types as StructTy.
@@ -1001,17 +1018,18 @@ class Parser:
                         self._emit(BinInst(val, BinOp.ADD, rhs, Const(decl_ty, 0)))
                         self._variables[name] = val
                     elif isinstance(rhs, Value) and rhs != val:
-                        # If rhs type matches declared type, use rhs directly (no copy).
-                        # If there is a same-width signedness mismatch (e.g. int x = uint_expr),
-                        # insert a CvtInst so that the variable carries the declared type.
-                        # This ensures pointer arithmetic uses cvt.s64.s32 (sign-extending)
-                        # rather than cvt.u64.u32 (zero-extending) for int-typed indices.
+                        # Insert a CvtInst when the declared type differs from rhs:
+                        #   - same-width signedness mismatch:  int x = uint_expr
+                        #   - widening:                        long long v = int_expr
+                        #   - int→float:                       float f = int_expr
+                        # In all other cases, use rhs directly (no copy).
                         rhs_ty = rhs.ty
-                        if (isinstance(decl_ty, ScalarTy) and isinstance(rhs_ty, ScalarTy)
-                                and decl_ty != rhs_ty
-                                and decl_ty.size == rhs_ty.size
-                                and not decl_ty.is_float and not rhs_ty.is_float):
-                            # Same-width integer type mismatch: coerce to declared type
+                        need_cvt = False
+                        if isinstance(decl_ty, ScalarTy) and isinstance(rhs_ty, ScalarTy):
+                            if decl_ty != rhs_ty:
+                                # Any scalar type mismatch: coerce to declared type
+                                need_cvt = True
+                        if need_cvt:
                             self._emit(CvtInst(val, rhs))
                             self._variables[name] = val
                         else:
