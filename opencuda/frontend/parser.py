@@ -1822,6 +1822,15 @@ class Parser:
     def _parse_typedef(self):
         """Parse: typedef struct [Name] { ... } Alias;  or  typedef type name;"""
         self._expect(TokKind.KW_TYPEDEF)
+        if self._at(TokKind.KW_ENUM):
+            # typedef enum [Tag] { ... } Alias;
+            self._parse_enum_def()     # registers enumerators as global consts
+            # Alias is just another name for INT32
+            if self._at(TokKind.IDENT):
+                alias = self._advance().value
+                self._typedefs[alias] = INT32
+            self._match(TokKind.SEMI)
+            return
         if self._at(TokKind.KW_STRUCT):
             sty = self._parse_struct_def()
             # _parse_struct_def may or may not have consumed the ';'.
