@@ -325,7 +325,7 @@ if_merge_16:
     @%p0 bra if_true_18;
     bra if_merge_20;
 if_true_18:
-    setp.ne.f32 %p0, %f1, 0f00000000;
+    setp.neu.f32 %p0, %f1, 0f00000000;
     div.approx.f32 %f3, %f0, %f1;
     @%p0 bra tern_true_21;
     bra tern_false_22;

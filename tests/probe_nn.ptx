@@ -40,7 +40,7 @@ for_body_6:
     ld.global.f32 %f4, [%rd3];
     add.u64 %rd3, %rd2, %rd4;
     ld.global.f32 %f5, [%rd3];
-    setp.ne.f32 %p1, %f0, 0f00000000;
+    setp.neu.f32 %p1, %f0, 0f00000000;
     div.approx.f32 %f6, %f4, %f0;
     @%p1 bra tern_true_11;
     bra tern_false_12;
@@ -60,7 +60,7 @@ inline_norm_range_merge_9:
     mov.f32 %f3, %f8;
     bra for_inc_7;
 inline_safe_ratio_merge_10:
-    setp.ne.f32 %p1, %f0, 0f00000000;
+    setp.neu.f32 %p1, %f0, 0f00000000;
     div.approx.f32 %f8, %f5, %f0;
     @%p1 bra tern_true_16;
     bra tern_false_17;

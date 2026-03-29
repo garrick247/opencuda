@@ -130,7 +130,7 @@ if_true_9:
     mov.s32 %r0, 100;
     bra inline_validate_merge_5;
 if_merge_11:
-    setp.ne.f32 %p0, %f0, %f0;
+    setp.neu.f32 %p0, %f0, %f0;
     @%p0 bra if_true_13;
     bra if_merge_15;
 if_true_13:

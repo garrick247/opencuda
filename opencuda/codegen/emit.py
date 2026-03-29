@@ -895,9 +895,13 @@ class PTXEmitter:
             # Promote to 32-bit — values in 32-bit registers, semantics preserved.
             if ptx_ty in ('s8', 'u8', 's16', 'u16'):
                 ptx_ty = 's32' if ptx_ty in ('s8', 's16') else 'u32'
+            # Float != must use unordered NE (neu) to match C/IEEE 754 semantics:
+            # NaN != x is true for all x. Ordered NE (ne) returns false for NaN.
+            is_float_ty = isinstance(ty, ScalarTy) and ty.is_float
             op_map = {
                 CmpOp.LT: 'lt', CmpOp.LE: 'le', CmpOp.GT: 'gt',
-                CmpOp.GE: 'ge', CmpOp.EQ: 'eq', CmpOp.NE: 'ne',
+                CmpOp.GE: 'ge', CmpOp.EQ: 'eq',
+                CmpOp.NE: 'neu' if is_float_ty else 'ne',
             }
             cmp_str = op_map[inst.op]
             pred = self._reg(inst.dest)

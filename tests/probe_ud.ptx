@@ -300,7 +300,7 @@ if_true_2:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
-    setp.ne.f32 %p0, %f0, 0f00000000;
+    setp.neu.f32 %p0, %f0, 0f00000000;
     div.approx.f32 %f1, 0f3F800000, %f0;
     @%p0 bra tern_true_5;
     bra tern_false_6;
