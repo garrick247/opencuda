@@ -1794,11 +1794,27 @@ class Parser:
                                      '__int_as_float', '__uint_as_float',
                                      '__longlong_as_double', '__ulonglong_as_double')
                     _sad_ops      = ('__sad', '__usad')
-                    _int_binary2  = ('__mul24', '__mulhi', '__hadd')
+                    _int_binary2  = ('__mul24', '__mulhi')
                     _uint_binary2 = ('__umul24', '__umulhi', '__rhadd',
                                      '__byte_perm',
                                      '__funnelshift_l', '__funnelshift_r',
                                      '__funnelshift_lc', '__funnelshift_rc')
+                    # Half-precision (__half) intrinsics
+                    _half_unary   = ('__habs', '__hneg', '__hsqrt', '__hrcp',
+                                     '__hrsqrt', '__hexp', '__hlog',
+                                     '__half2float', '__low2float', '__high2float')
+                    _half_binary  = ('__hmul', '__hmul_rn', '__hmul_sat',
+                                     '__hadd_rn', '__hsub', '__hsub_rn',
+                                     '__hdiv', '__hfmin', '__hfmax')
+                    _half_ternary = ('__hfma', '__hfma_sat', '__hfma_relu')
+                    _half_cmp_int = ('__hgt', '__hlt', '__hge', '__hle',
+                                     '__heq', '__hne', '__hisnan', '__hisinf')
+                    _half_cvt     = ('__float2half', '__float2half_rn',
+                                     '__float2half_rd', '__float2half_ru',
+                                     '__float2half_rz',
+                                     '__ushort_as_half', '__short_as_half')
+                    _half_to_bits = ('__half_as_ushort', '__half_as_short')
+                    _hadd_fp16    = ('__hadd', '__hadd_sat')  # overloaded: half add when HALF, else int halving
                     if name in _void_stmts:
                         self._emit(CallInst(None, name, args))
                         return Const(VOID, 0)
@@ -1847,6 +1863,25 @@ class Parser:
                         ret_ty = INT32
                     elif name in _uint_binary2:
                         ret_ty = UINT32
+                    elif name in _half_unary:
+                        ret_ty = HALF if name != '__half2float' and 'float' not in name else FLOAT
+                    elif name in _half_binary:
+                        ret_ty = HALF
+                    elif name in _half_ternary:
+                        ret_ty = HALF
+                    elif name in _half_cmp_int:
+                        ret_ty = INT32
+                    elif name in _half_cvt:
+                        ret_ty = HALF
+                    elif name in _half_to_bits:
+                        ret_ty = UINT16
+                    elif name in _hadd_fp16:
+                        # __hadd: half add when arg is HALF, else integer halving add
+                        a_ty = args[0].ty if args and isinstance(args[0], Value) else INT32
+                        if isinstance(a_ty, ScalarTy) and a_ty.scalar == ScalarType.HALF:
+                            ret_ty = HALF
+                        else:
+                            ret_ty = INT32
                     elif name in _float_unary:
                         ret_ty = FLOAT
                     elif name in _float_binary:

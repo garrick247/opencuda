@@ -1503,14 +1503,22 @@ class PTXEmitter:
                     a = self._operand(inst.args[0]) if inst.args else '0'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
                     self._lines.append(f'    mul.hi.u32 {dest}, {a}, {b};')
-                elif inst.func in ('__hadd',):
-                    # Halving add (no overflow): (a + b) >> 1 (signed arithmetic shift)
-                    a = self._operand(inst.args[0]) if inst.args else '0'
-                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
-                    n = inst.dest.id if inst.dest else 0
-                    tmp = kernel.new_value(f'_hadd_tmp_{n}', INT32)
-                    self._lines.append(f'    add.s32 {self._reg(tmp)}, {a}, {b};')
-                    self._lines.append(f'    shr.s32 {dest}, {self._reg(tmp)}, 1;')
+                elif inst.func in ('__hadd', '__hadd_rn', '__hadd_sat'):
+                    # Dispatch: __hadd with HALF result → fp16 add; otherwise integer halving.
+                    dest_ty = inst.dest.ty if inst.dest else INT32
+                    if isinstance(dest_ty, ScalarTy) and dest_ty.scalar == ScalarType.HALF:
+                        a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                        b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                        sat = '.sat' if inst.func.endswith('_sat') else ''
+                        self._lines.append(f'    add.rn{sat}.f16 {dest}, {a}, {b};')
+                    else:
+                        # Halving add (no overflow): (a + b) >> 1 (signed arithmetic shift)
+                        a = self._operand(inst.args[0]) if inst.args else '0'
+                        b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                        n = inst.dest.id if inst.dest else 0
+                        tmp = kernel.new_value(f'_hadd_tmp_{n}', INT32)
+                        self._lines.append(f'    add.s32 {self._reg(tmp)}, {a}, {b};')
+                        self._lines.append(f'    shr.s32 {dest}, {self._reg(tmp)}, 1;')
                 elif inst.func in ('__rhadd',):
                     # Rounding halving add: (a + b + 1) >> 1 (unsigned)
                     a = self._operand(inst.args[0]) if inst.args else '0'
@@ -1540,6 +1548,90 @@ class PTXEmitter:
                     sh = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
                     clamp = 'clamp' if inst.func.endswith('c') else 'wrap'
                     self._lines.append(f'    shf.r.{clamp}.b32 {dest}, {lo}, {hi}, {sh};')
+                elif inst.func in ('__ushort_as_half', '__short_as_half'):
+                    # Bit-reinterpret u16/s16 → f16: mov.b16 %h, %r
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    mov.b16 {dest}, {src};')
+                elif inst.func in ('__half_as_ushort', '__half_as_short'):
+                    # Bit-reinterpret f16 → u16/s16: mov.b16 %r, %h
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    self._lines.append(f'    mov.b16 {dest}, {src};')
+                elif inst.func in ('__float2half', '__float2half_rn'):
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.rn.f16.f32 {dest}, {src};')
+                elif inst.func in ('__float2half_rd',):
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.rm.f16.f32 {dest}, {src};')
+                elif inst.func in ('__float2half_ru',):
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.rp.f16.f32 {dest}, {src};')
+                elif inst.func in ('__float2half_rz',):
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.rz.f16.f32 {dest}, {src};')
+                elif inst.func in ('__half2float', '__low2float', '__high2float'):
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    self._lines.append(f'    cvt.f32.f16 {dest}, {src};')
+                elif inst.func in ('__hmul', '__hmul_rn'):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    self._lines.append(f'    mul.rn.f16 {dest}, {a}, {b};')
+                elif inst.func in ('__hmul_sat',):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    self._lines.append(f'    mul.rn.sat.f16 {dest}, {a}, {b};')
+                elif inst.func in ('__hsub', '__hsub_rn'):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    self._lines.append(f'    sub.rn.f16 {dest}, {a}, {b};')
+                elif inst.func in ('__hdiv',):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h3C00'
+                    self._lines.append(f'    div.rn.f16 {dest}, {a}, {b};')
+                elif inst.func in ('__hfmin',):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    self._lines.append(f'    min.f16 {dest}, {a}, {b};')
+                elif inst.func in ('__hfmax',):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    self._lines.append(f'    max.f16 {dest}, {a}, {b};')
+                elif inst.func in ('__hfma', '__hfma_sat'):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    c = self._operand(inst.args[2]) if len(inst.args) > 2 else '0h0000'
+                    sat = '.sat' if inst.func.endswith('_sat') else ''
+                    self._lines.append(f'    fma.rn{sat}.f16 {dest}, {a}, {b}, {c};')
+                elif inst.func in ('__hfma_relu',):
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    c = self._operand(inst.args[2]) if len(inst.args) > 2 else '0h0000'
+                    self._lines.append(f'    fma.rn.relu.f16 {dest}, {a}, {b}, {c};')
+                elif inst.func in ('__habs',):
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    self._lines.append(f'    abs.f16 {dest}, {src};')
+                elif inst.func in ('__hneg',):
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    self._lines.append(f'    neg.f16 {dest}, {src};')
+                elif inst.func in ('__hgt', '__hlt', '__hge', '__hle', '__heq', '__hne'):
+                    _hcmp_map = {
+                        '__hgt': 'gt', '__hlt': 'lt', '__hge': 'ge',
+                        '__hle': 'le', '__heq': 'eq', '__hne': 'ne',
+                    }
+                    cmp_op = _hcmp_map[inst.func]
+                    a = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
+                    n = inst.dest.id if inst.dest else 0
+                    p_tmp = kernel.new_value(f'_hcmp_{n}', ScalarTy(ScalarType.BOOL))
+                    self._pred_ids.add(p_tmp.id)
+                    self._lines.append(f'    setp.{cmp_op}.f16 {self._reg(p_tmp)}, {a}, {b};')
+                    self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
+                elif inst.func in ('__hisnan',):
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    n = inst.dest.id if inst.dest else 0
+                    p_tmp = kernel.new_value(f'_hnan_{n}', ScalarTy(ScalarType.BOOL))
+                    self._pred_ids.add(p_tmp.id)
+                    self._lines.append(f'    testp.notanumber.f16 {self._reg(p_tmp)}, {src};')
+                    self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
 
     def _emit_term(self, term):
         if isinstance(term, RetTerm):
