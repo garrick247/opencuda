@@ -97,12 +97,37 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
                         if isinstance(inst.rhs, Value):
                             carried_vars[inst.dest.id] = (inst.dest, inst.rhs)
 
+        # Determine the initial value of the induction variable by scanning
+        # all blocks outside the loop for the canonical writeback that seeds it.
+        # Pattern: BinInst(dest=induction_var, op=ADD, lhs=Const(init), rhs=Const(0))
+        # If init != 0, the trip count is bound - init and i = init + iteration.
+        loop_labels = {cond_bb.label, body_bb.label, inc_bb.label}
+        init_val = 0
+        for scan_bb in kernel.blocks:
+            if scan_bb.label in loop_labels:
+                continue
+            for inst in scan_bb.instructions:
+                if (isinstance(inst, BinInst) and inst.op == BinOp.ADD
+                        and inst.dest.id == induction_var.id):
+                    if isinstance(inst.rhs, Const) and int(inst.rhs.value) == 0:
+                        if isinstance(inst.lhs, Const):
+                            init_val = int(inst.lhs.value)
+                    elif isinstance(inst.lhs, Const) and int(inst.lhs.value) == 0:
+                        if isinstance(inst.rhs, Const):
+                            init_val = int(inst.rhs.value)
+
+        trip_count = bound - init_val
+        if trip_count <= 0 or trip_count > 64:
+            continue
+
         loops.append({
             'cond_bb': cond_bb,
             'body_bb': body_bb,
             'inc_bb': inc_bb,
             'exit_bb': exit_bb,
             'bound': bound,
+            'init_val': init_val,
+            'trip_count': trip_count,
             'induction_var': induction_var,
             'carried_vars': carried_vars,
         })
@@ -116,8 +141,8 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
     unrolled_count = 0
 
     for loop in loops:
-        bound = loop['bound']
-        if bound > max_unroll:
+        trip_count = loop['trip_count']
+        if trip_count > max_unroll:
             continue
 
         cond_bb = loop['cond_bb']
@@ -126,9 +151,10 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
         exit_bb = loop['exit_bb']
         induction_var = loop['induction_var']
         carried_vars = loop['carried_vars']
+        init_val = loop['init_val']
 
         # Build the value mapping for each iteration.
-        # Start: induction_var → Const(0), carried vars → their canonical Values
+        # Start: induction_var → Const(init_val), carried vars → their canonical Values
         # Each iteration: create new Values, chain carried vars from prev output.
 
         all_unrolled_insts = []
@@ -136,10 +162,11 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
         # Persistent remap across iterations for loop-carried variables
         carried_remap = {}  # canonical_id → current Value (chains across iterations)
 
-        for iteration in range(bound):
+        for iteration in range(trip_count):
             # Build replacement map: start from carried state + induction var
             remap = dict(carried_remap)  # inherit carried var chain
-            remap[induction_var.id] = Const(induction_var.ty, iteration)
+            # i_value = init_val + iteration (correct for non-zero start loops)
+            remap[induction_var.id] = Const(induction_var.ty, init_val + iteration)
 
             # Carried variables: for iteration 0, use the canonical (entry) value.
             # For iteration N>0, use the output from iteration N-1.
