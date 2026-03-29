@@ -1672,6 +1672,16 @@ class Parser:
         For other expressions, falls through to _parse_expr (returns a value).
         """
         tok = self._peek()
+        # *ptr lvalue: *name = value; — return pointer for StoreInst
+        if tok.kind == TokKind.STAR:
+            next_tok = self._toks[self._pos + 1] if self._pos + 1 < len(self._toks) else None
+            if (next_tok and next_tok.kind == TokKind.IDENT
+                    and next_tok.value in self._variables):
+                var = self._variables[next_tok.value]
+                if isinstance(var.ty, PtrTy):
+                    self._advance()  # consume '*'
+                    self._advance()  # consume ident
+                    return var  # return pointer; StoreInst will be emitted by caller
         if tok.kind == TokKind.IDENT:
             name = tok.value
             if name in self._variables:
