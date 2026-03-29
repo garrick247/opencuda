@@ -280,6 +280,14 @@ class PTXEmitter:
         self._pred_ids: set[int] = set()
         self._val_type_map: dict[int, Type] = {}
 
+    def _alloc_pred(self) -> str:
+        """Allocate a scratch predicate register for emission-time temporaries."""
+        base = self._alloc_max.get('p', 0)
+        idx = base + self._fallback_count.get('p', 0)
+        self._fallback_count['p'] = self._fallback_count.get('p', 0) + 1
+        self._reg_counts['p'] = max(self._reg_counts.get('p', 0), idx + 1)
+        return f'%p{idx}'
+
     def _reg(self, v: Value) -> str:
         prefix = 'p' if v.id in self._pred_ids else _ptx_reg_prefix(v.ty)
         if v.id in self._alloc:
@@ -1014,12 +1022,34 @@ class PTXEmitter:
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
                 self._lines.append(
                     f'    shfl.sync.{mode}.b32 {dest}, {val}, {delta}, 31, {mask};')
-            elif inst.func == '__ballot_sync':
+            elif inst.func in ('__ballot_sync', '__all_sync', '__any_sync'):
+                # PTX vote.sync.* requires a predicate register for the condition arg.
+                # If the condition is already a predicate (from CmpInst), use it directly;
+                # otherwise emit setp.ne.s32 to convert an integer condition.
                 mask = self._operand(inst.args[0]) if inst.args else '0xFFFFFFFF'
-                pred_val = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                cond_arg = inst.args[1] if len(inst.args) > 1 else None
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
-                self._lines.append(
-                    f'    vote.sync.ballot.b32 {dest}, {pred_val}, {mask};')
+                # Check if condition is a predicate Value
+                cond_is_pred = (isinstance(cond_arg, Value) and cond_arg.id in self._pred_ids)
+                if cond_is_pred:
+                    tmp_pred = self._operand(cond_arg)
+                else:
+                    cond_val = self._operand(cond_arg) if cond_arg is not None else '0'
+                    tmp_pred = self._alloc_pred()
+                    self._lines.append(f'    setp.ne.s32 {tmp_pred}, {cond_val}, 0;')
+                if inst.func == '__ballot_sync':
+                    self._lines.append(
+                        f'    vote.sync.ballot.b32 {dest}, {tmp_pred}, {mask};')
+                elif inst.func == '__all_sync':
+                    tmp_pred2 = self._alloc_pred()
+                    self._lines.append(
+                        f'    vote.sync.all.pred {tmp_pred2}, {tmp_pred}, {mask};')
+                    self._lines.append(f'    selp.s32 {dest}, 1, 0, {tmp_pred2};')
+                elif inst.func == '__any_sync':
+                    tmp_pred2 = self._alloc_pred()
+                    self._lines.append(
+                        f'    vote.sync.any.pred {tmp_pred2}, {tmp_pred}, {mask};')
+                    self._lines.append(f'    selp.s32 {dest}, 1, 0, {tmp_pred2};')
             elif inst.func == '__syncthreads':
                 self._lines.append('    bar.sync 0;')
             elif inst.func in ('threadIdx.x', 'threadIdx.y', 'threadIdx.z'):

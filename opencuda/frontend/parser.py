@@ -802,6 +802,12 @@ class Parser:
                 if name == '__syncthreads':
                     self._emit(CallInst(None, '__syncthreads', args))
                     return Const(VOID, 0)
+                elif name in ('__all_sync', '__any_sync'):
+                    # __all_sync(mask, pred) → 1 if all lanes have pred set
+                    # __any_sync(mask, pred) → 1 if any lane has pred set
+                    dest = self._new_val(name.replace('__', ''), INT32)
+                    self._emit(CallInst(dest, name, args))
+                    return dest
                 elif name in ('__shfl_sync', '__shfl_up_sync', '__shfl_down_sync',
                               '__shfl_xor_sync', '__ballot_sync'):
                     # __ballot_sync returns a u32 lane mask (bitmask of active lanes).
