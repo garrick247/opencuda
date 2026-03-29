@@ -440,6 +440,13 @@ class Parser:
                 return self._struct_types[sname]
             raise ParseError(f"Line {kw.line}: undefined struct/union '{sname}'")
 
+        # Enum type used as variable/parameter type: treat as INT32
+        if tok.kind == TokKind.KW_ENUM:
+            self._advance()  # consume 'enum'
+            if self._at(TokKind.IDENT):
+                self._advance()  # consume enum tag name (optional)
+            return INT32
+
         # Typedef'd type
         if tok.kind == TokKind.IDENT and tok.value in self._typedefs:
             self._advance()
@@ -2162,7 +2169,7 @@ class Parser:
                          TokKind.KW_FLOAT, TokKind.KW_DOUBLE, TokKind.KW_VOID,
                          TokKind.KW_LONG, TokKind.KW_HALF, TokKind.KW_CHAR,
                          TokKind.KW_SHORT, TokKind.KW_BOOL,
-                         TokKind.KW_STRUCT, TokKind.KW_UNION)
+                         TokKind.KW_STRUCT, TokKind.KW_UNION, TokKind.KW_ENUM)
                 or (tok.kind == TokKind.IDENT and (tok.value in self._typedefs
                                                     or tok.value in self._struct_types))):
             ty = self._parse_type_with_ptr()
