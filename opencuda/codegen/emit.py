@@ -1343,10 +1343,14 @@ class PTXEmitter:
                     src = self._reg(term.cond)
                     self._lines.append(
                         f'    setp.ne.{ptx_ty} {pred}, {src}, 0;')
+                self._lines.append(f'    @{pred} bra {term.true_bb};')
+                self._lines.append(f'    bra {term.false_bb};')
+            elif isinstance(term.cond, Const) and term.cond.value != 0:
+                # Constant-true condition (e.g. for(;;)): unconditional branch
+                self._lines.append(f'    bra {term.true_bb};')
             else:
-                pred = '%p0'
-            self._lines.append(f'    @{pred} bra {term.true_bb};')
-            self._lines.append(f'    bra {term.false_bb};')
+                # Constant-false (unreachable true branch) or other constant
+                self._lines.append(f'    bra {term.false_bb};')
 
 
 def ir_to_ptx(module: Module) -> dict[str, str]:
