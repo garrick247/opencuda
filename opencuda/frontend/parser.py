@@ -16,7 +16,7 @@ from .lexer import Token, TokKind, lex  # noqa: F401 (TokKind members used throu
 from ..ir.types import (Type, ScalarTy, PtrTy, AddrSpace, ScalarType, StructTy,
                          INT32, UINT32, FLOAT, VOID, INT64, UINT64, DOUBLE, HALF)
 from ..ir.nodes import (Module, Kernel, KernelParam, BasicBlock,
-                         Value, Const, Operand,
+                         Value, Const, Operand, SymbolRef, GlobalAddrInst,
                          BinInst, CmpInst, LoadInst, StoreInst,
                          CvtInst, CallInst, ParamInst, PrintfInst,
                          BinOp, CmpOp,
@@ -506,6 +506,14 @@ class Parser:
             # Peek: if it's ident[expr], parse as lvalue to get the address
             if self._at(TokKind.IDENT):
                 name = self._peek().value
+                # &global_sym → materialize the symbol's address into a register
+                if name in self._global_consts:
+                    cv = self._global_consts[name]
+                    if isinstance(cv, SymbolRef):
+                        self._advance()  # consume ident
+                        addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
+                        self._emit(GlobalAddrInst(addr_val, cv.sym_name, cv.ty.addr_space))
+                        return addr_val
                 if name in self._variables:
                     var = self._variables[name]
                     if isinstance(var.ty, PtrTy):
@@ -906,7 +914,26 @@ class Parser:
 
             # Module-level compile-time constants (enum values, etc.)
             if name in self._global_consts:
-                return self._global_consts[name]
+                cv = self._global_consts[name]
+                if isinstance(cv, SymbolRef):
+                    # Device/constant global: materialize to a register.
+                    # If followed by '[', the caller will do array indexing so
+                    # we need a PtrTy Value (emit GlobalAddrInst).
+                    # Otherwise auto-load scalar values.
+                    if self._at(TokKind.LBRACKET):
+                        addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
+                        self._emit(GlobalAddrInst(addr_val, cv.sym_name, cv.ty.addr_space))
+                        return addr_val
+                    elif isinstance(cv.ty.pointee, ScalarTy):
+                        # Scalar global used as rvalue: emit load directly.
+                        dest = self._new_val(cv.sym_name, cv.ty.pointee)
+                        self._emit(LoadInst(dest, cv))
+                        return dest
+                    else:
+                        addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
+                        self._emit(GlobalAddrInst(addr_val, cv.sym_name, cv.ty.addr_space))
+                        return addr_val
+                return cv
 
             # Built-in names (threadIdx, blockIdx, blockDim)
             if name in ('threadIdx', 'blockIdx', 'blockDim', 'gridDim'):
@@ -1714,18 +1741,9 @@ class Parser:
         self._match(TokKind.SEMI)
         # Register as a module-level constant pointer (AddrSpace.CONST or GLOBAL)
         # Kernels that reference this name get a pointer Value they can index into.
-        if not hasattr(mod, '_const_decls'):
-            mod._const_decls = []
-        mod._const_decls.append((name, ty, size))
-        # Register in global_consts so kernels can resolve the name.
-        # We create a placeholder Const(UINT64, 0) — codegen emits a proper
-        # .const symbol reference instead of this numeric placeholder.
-        # For correctness, kernels will see this as a ld.param.u64 of the symbol.
-        # Since we don't yet have full constant-memory codegen, store name as a
-        # sentinel so at least the variable lookup doesn't fail.
-        ptr_ty = PtrTy(ty, AddrSpace.GLOBAL)
-        # Expose as a module-level variable for kernel parsers.
-        self._global_consts[name] = Const(ptr_ty, 0)
+        ptr_ty = PtrTy(ty, AddrSpace.CONST)
+        self._global_consts[name] = SymbolRef(name, ptr_ty)
+        mod.global_vars.append((name, ty, size, AddrSpace.CONST))
 
     def parse_module(self) -> Module:
         mod = Module()
@@ -1738,7 +1756,37 @@ class Parser:
             if self._at(TokKind.KW_GLOBAL):
                 mod.kernels.append(self._parse_kernel())
             elif self._at(TokKind.KW_DEVICE):
-                self._parse_device_func()
+                # Peek ahead: if '(' appears before ';' it's a function; otherwise
+                # it's a global device variable (__device__ int counter;).
+                lookahead = self._pos + 1
+                is_func = False
+                while lookahead < len(self._toks):
+                    k = self._toks[lookahead].kind
+                    if k == TokKind.LPAREN:
+                        is_func = True
+                        break
+                    if k in (TokKind.SEMI, TokKind.EOF):
+                        break
+                    lookahead += 1
+                if is_func:
+                    self._parse_device_func()
+                else:
+                    # Module-level __device__ variable: consume __device__ + qualifiers,
+                    # parse the declaration, register as a global symbol ref.
+                    while self._at(TokKind.KW_DEVICE) or self._at(TokKind.KW_STATIC):
+                        self._advance()
+                    ty = self._parse_type_with_ptr()
+                    name = self._expect(TokKind.IDENT).value
+                    # Optional array size [N]
+                    count = 1
+                    if self._match(TokKind.LBRACKET):
+                        sz_op = self._parse_assign_expr()
+                        count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                        self._expect(TokKind.RBRACKET)
+                    self._match(TokKind.SEMI)
+                    ptr_ty = PtrTy(ty, AddrSpace.GLOBAL)
+                    self._global_consts[name] = SymbolRef(name, ptr_ty)
+                    mod.global_vars.append((name, ty, count, AddrSpace.GLOBAL))
             elif self._at(TokKind.KW_STRUCT):
                 self._parse_struct_def()
             elif self._at(TokKind.KW_UNION):

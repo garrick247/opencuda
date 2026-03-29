@@ -8,6 +8,7 @@ This reuses OpenPTXas's full backend (parser, regalloc, isel, scoreboard, emitte
 from __future__ import annotations
 import struct
 from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
+                         SymbolRef, GlobalAddrInst,
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst,
                          BinOp, CmpOp,
@@ -147,6 +148,8 @@ def _build_alloc_map(kernel: Kernel):
             if inst.dest:
                 _note_def(inst.dest, i)
         if isinstance(inst, (ParamInst,)):
+            _note_def(inst.dest, i)
+        if isinstance(inst, GlobalAddrInst):
             _note_def(inst.dest, i)
 
         # Uses
@@ -303,6 +306,10 @@ class PTXEmitter:
                     and force_type not in (None, 'pred')):
                 return self._pred_to_int(op, force_type if force_type else 's32', kernel)
             return self._reg(op)
+        if isinstance(op, SymbolRef):
+            # Symbol reference: the symbol name serves as a generic address.
+            # Used in [sym_name] address context for ld/st/atom instructions.
+            return op.sym_name
         if isinstance(op, Const):
             is_f64 = (force_type == 'f64') or (
                 force_type is None and isinstance(op.ty, ScalarTy)
@@ -524,6 +531,16 @@ class PTXEmitter:
 
     def _emit_inst(self, inst, kernel: Kernel,
                    printf_strings=None, printf_idx=None):
+        if isinstance(inst, GlobalAddrInst):
+            dest = self._reg(inst.dest)
+            # cvta.to.{space} requires a register source, not a symbol name.
+            # Use mov.u64 to load the generic address, then convert to state space.
+            self._lines.append(f'    mov.u64 {dest}, {inst.sym_name};')
+            if inst.addr_space == AddrSpace.CONST:
+                self._lines.append(f'    cvta.to.const.u64 {dest}, {dest};')
+            else:
+                self._lines.append(f'    cvta.to.global.u64 {dest}, {dest};')
+            return
         if isinstance(inst, ParamInst):
             ty = kernel.params[inst.param_index].ty
             ptx_ty = _ptx_type(ty)
@@ -1186,7 +1203,22 @@ def ir_to_ptx(module: Module) -> dict[str, str]:
     for kernel in module.kernels:
         result[kernel.name] = emitter.emit_kernel(kernel)
 
-    # Collect module-level preamble (printf globals, vprintf extern)
+    # Emit module-level global/constant variable declarations
+    if module.global_vars:
+        decl_lines = []
+        for (sym_name, elem_ty, count, addr_space) in module.global_vars:
+            ptx_ty = _ptx_type(elem_ty)
+            align = elem_ty.size if isinstance(elem_ty, ScalarTy) else 8
+            space = 'const' if addr_space == AddrSpace.CONST else 'global'
+            if count > 1:
+                decl_lines.append(
+                    f'.visible .{space} .align {align} .{ptx_ty} {sym_name}[{count}];')
+            else:
+                decl_lines.append(
+                    f'.visible .{space} .align {align} .{ptx_ty} {sym_name};')
+        emitter._module_preamble = decl_lines + emitter._module_preamble
+
+    # Collect module-level preamble (global var decls, printf globals, vprintf extern)
     if emitter._module_preamble:
         result['__preamble__'] = '\n'.join(emitter._module_preamble)
 

@@ -41,7 +41,22 @@ class Const:
         return str(self.value)
 
 
-Operand = Union[Value, Const]
+@dataclass(frozen=True)
+class SymbolRef:
+    """Reference to a named module-level PTX symbol (__device__ / __constant__).
+
+    Carries the PTX symbol name and its pointer type. Used as an address operand
+    in LoadInst/StoreInst/AtomInst for direct symbol access (e.g. [sym_name]).
+    """
+    sym_name: str
+    ty: object  # PtrTy
+
+    @property
+    def name(self) -> str:
+        return self.sym_name
+
+
+Operand = Union[Value, Const, 'SymbolRef']
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +154,21 @@ class PrintfInst:
     args: list[Operand] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class GlobalAddrInst:
+    """Materialize the address of a named module-level symbol into a u64 register.
+
+    PTX emission:
+      .global symbol → cvta.to.global.u64 dest, sym_name;
+      .const  symbol → cvta.to.const.u64  dest, sym_name;
+    """
+    dest: Value
+    sym_name: str
+    addr_space: object  # AddrSpace
+
+
 Instruction = Union[BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
-                    CallInst, PhiInst, ParamInst, PrintfInst]
+                    CallInst, PhiInst, ParamInst, PrintfInst, GlobalAddrInst]
 
 
 # ---------------------------------------------------------------------------
@@ -209,3 +237,6 @@ class Kernel:
 class Module:
     """A compilation unit (one .cu file)."""
     kernels: list[Kernel] = field(default_factory=list)
+    # Module-level global/constant variable declarations:
+    # each entry is (name: str, elem_ty: Type, count: int, addr_space: AddrSpace)
+    global_vars: list = field(default_factory=list)
