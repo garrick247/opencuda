@@ -332,14 +332,31 @@ class Parser:
         if self._at(TokKind.IDENT):
             cand = self._peek().value
             next_pos = self._pos + 1
+            _assign_op_kinds = (
+                TokKind.ASSIGN, TokKind.PLUS_EQ, TokKind.MINUS_EQ,
+                TokKind.STAR_EQ, TokKind.SLASH_EQ, TokKind.PERCENT_EQ,
+                TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
+                TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ)
             if (next_pos < len(self._toks)
-                    and self._toks[next_pos].kind in (
-                        TokKind.ASSIGN, TokKind.PLUS_EQ, TokKind.MINUS_EQ,
-                        TokKind.STAR_EQ, TokKind.SLASH_EQ, TokKind.PERCENT_EQ,
-                        TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
-                        TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ)
+                    and self._toks[next_pos].kind in _assign_op_kinds
                     and cand in self._variables):
                 _lhs_orig_name = cand
+            elif (next_pos < len(self._toks)
+                    and self._toks[next_pos].kind == TokKind.DOT
+                    and cand in self._variables
+                    and isinstance(self._variables[cand].ty, StructTy)):
+                # struct.field = val — map lhs to the per-field variable so the
+                # assignment updates the variable binding instead of emitting a
+                # StoreInst through the field's pointer value.
+                field_pos = next_pos + 1
+                if field_pos < len(self._toks) and self._toks[field_pos].kind == TokKind.IDENT:
+                    field_name = self._toks[field_pos].value
+                    assign_pos = field_pos + 1
+                    if (assign_pos < len(self._toks)
+                            and self._toks[assign_pos].kind in _assign_op_kinds):
+                        compound_name = f"{cand}_{field_name}"
+                        if compound_name in self._variables:
+                            _lhs_orig_name = compound_name
 
         lhs = self._parse_or_expr()
         # Ternary: cond ? true_expr : false_expr
@@ -370,6 +387,13 @@ class Parser:
         if self._match(TokKind.ASSIGN):
             rhs = self._parse_assign_expr()
             if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
+                # If _lhs_orig_name is set it means the LHS came from a struct
+                # field access (struct.field = val). In that case update the
+                # per-field variable binding — do NOT emit a StoreInst through
+                # the pointer value, which would be semantically wrong.
+                if _lhs_orig_name and _lhs_orig_name in self._variables:
+                    self._variables[_lhs_orig_name] = rhs
+                    return rhs
                 # Coerce rhs to pointee type on scalar type mismatch (e.g. half → float*)
                 if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
                         and isinstance(lhs.ty.pointee, ScalarTy)
@@ -1925,6 +1949,26 @@ class Parser:
                         TokKind.STAR_EQ)
                     and cand in self._variables):
                 _stmt_lhs_name = cand
+            elif (next_pos < len(self._toks)
+                    and self._toks[next_pos].kind == TokKind.DOT
+                    and cand in self._variables
+                    and isinstance(self._variables[cand].ty, StructTy)):
+                # struct.field = ... — detect the compound per-field variable name
+                # so that the assignment handler updates the variable instead of
+                # emitting a store-through-pointer (which is wrong for PtrTy fields).
+                field_pos = next_pos + 1
+                if field_pos < len(self._toks) and self._toks[field_pos].kind == TokKind.IDENT:
+                    field_name = self._toks[field_pos].value
+                    assign_pos = field_pos + 1
+                    _assign_ops = (TokKind.ASSIGN, TokKind.PLUS_EQ, TokKind.MINUS_EQ,
+                                   TokKind.STAR_EQ, TokKind.SLASH_EQ, TokKind.PERCENT_EQ,
+                                   TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
+                                   TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ)
+                    if (assign_pos < len(self._toks)
+                            and self._toks[assign_pos].kind in _assign_ops):
+                        compound_name = f"{cand}_{field_name}"
+                        if compound_name in self._variables:
+                            _stmt_lhs_name = compound_name
         saved_pos = self._pos
         lhs = self._parse_lvalue_or_expr()
         if self._match(TokKind.ASSIGN):
