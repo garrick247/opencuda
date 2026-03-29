@@ -1,0 +1,127 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry const_chain(
+    .param .u64 out, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 4;
+    sub.s32 %r1, %r0, 1;
+    add.s32 %r3, %r1, 1;
+    shl.b32 %r1, %r3, 1;
+    sub.s32 %r3, %r1, %r0;
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd0, %rd2;
+    st.global.s32 [%rd1], %r3;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry dead_branch(
+    .param .u64 out, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    setp.gt.s32 %p0, 5, 3;
+    @%p0 bra if_true_5;
+    bra if_false_6;
+if_merge_4:
+    ret;
+if_true_5:
+    mov.s32 %r0, 8;
+    bra if_merge_7;
+if_false_6:
+    mov.s32 %r0, 2;
+    bra if_merge_7;
+if_merge_7:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd2, %r1;
+    add.u64 %rd1, %rd0, %rd2;
+    st.global.s32 [%rd1], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry loop_const_fold(
+    .param .u64 out, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    add.s32 %r1, %r0, 7;
+    add.s32 %r2, %r1, 14;
+    add.s32 %r1, %r2, 21;
+    mov.s32 %r0, %r1;
+    bra for_exit_8;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry float_const(
+    .param .u64 out, .param .s32 n)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.f32 %f0, 0f4096CBDC;
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd0, %rd2;
+    st.global.f32 [%rd1], %f0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

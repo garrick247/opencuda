@@ -1638,6 +1638,66 @@ class PTXEmitter:
                 elif inst.func == 'warpSize':
                     # CUDA warp size is always 32 (SM constant).
                     self._lines.append(f'    mov.u32 {dest}, 32;')
+                elif inst.func in ('__dp4a', '__dp4a_u', '__dp4a_su', '__dp4a_us'):
+                    # Byte dot-product accumulate: dp4a.TYPE.TYPE dest, a, b, c
+                    # __dp4a → s32.s32; __dp4a_u → u32.u32; _su → s32.u32; _us → u32.s32
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    c = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                    if inst.func == '__dp4a_u':
+                        self._lines.append(f'    dp4a.u32.u32 {dest}, {a}, {b}, {c};')
+                    elif inst.func == '__dp4a_su':
+                        self._lines.append(f'    dp4a.s32.u32 {dest}, {a}, {b}, {c};')
+                    elif inst.func == '__dp4a_us':
+                        self._lines.append(f'    dp4a.u32.s32 {dest}, {a}, {b}, {c};')
+                    else:
+                        self._lines.append(f'    dp4a.s32.s32 {dest}, {a}, {b}, {c};')
+                elif inst.func in ('__reduce_add_sync',):
+                    # redux.sync.add.s32 dest, val, mask
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.add.s32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_min_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.min.s32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_max_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.max.s32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_and_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.and.b32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_or_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.or.b32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_xor_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.xor.b32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_umin_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.min.u32 {dest}, {val}, {mask};')
+                elif inst.func in ('__reduce_umax_sync',):
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    redux.sync.max.u32 {dest}, {val}, {mask};')
+                elif inst.func in ('__match_any_sync',):
+                    # match.any.sync.b32 dest, val, mask
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    match.any.sync.b32 {dest}, {val}, {mask};')
+                elif inst.func in ('__match_all_sync',):
+                    # match.all.sync.b32 dest, val, mask
+                    # 3rd arg (&pred) is an output pointer — not representable in our IR;
+                    # omit the predicate output and just return the match mask.
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    val  = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(
+                        f'    match.all.sync.b32 {dest}, {val}, {mask};')
                 elif inst.func in ('__mul24',):
                     a = self._operand(inst.args[0]) if inst.args else '0'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
@@ -1700,13 +1760,38 @@ class PTXEmitter:
                     clamp = 'clamp' if inst.func.endswith('c') else 'wrap'
                     self._lines.append(f'    shf.r.{clamp}.b32 {dest}, {lo}, {hi}, {sh};')
                 elif inst.func in ('__ushort_as_half', '__short_as_half'):
-                    # Bit-reinterpret u16/s16 → f16: mov.b16 %h, %r
-                    src = self._operand(inst.args[0]) if inst.args else '0'
-                    self._lines.append(f'    mov.b16 {dest}, {src};')
+                    # Bit-reinterpret u16/s16 → f16.
+                    # Source is typically a b32 register (ld.global.u16 zero-extends to
+                    # b32).  PTX mov.b16 requires same-width operands, so use vector
+                    # unpack: mov.b32 {h_dest, h_discard}, r_src — lower 16 bits → dest.
+                    if inst.args:
+                        src = self._operand(inst.args[0])
+                        if src.startswith('%r') or src.startswith('%rd'):
+                            discard = kernel.new_value(
+                                f'_half_discard_{inst.dest.id}', HALF)
+                            self._lines.append(
+                                f'    mov.b32 {{{dest}, {self._reg(discard)}}}, {src};')
+                        else:
+                            self._lines.append(f'    mov.b16 {dest}, {src};')
+                    else:
+                        self._lines.append(f'    mov.b16 {dest}, 0;')
                 elif inst.func in ('__half_as_ushort', '__half_as_short'):
-                    # Bit-reinterpret f16 → u16/s16: mov.b16 %r, %h
-                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
-                    self._lines.append(f'    mov.b16 {dest}, {src};')
+                    # Bit-reinterpret f16 → u32 (zero-extended).
+                    # Destination is b32 register; PTX mov.b16 requires same-width
+                    # operands.  Use vector pack: mov.b32 r_dest, {h_src, h_zero}.
+                    if inst.args:
+                        src = self._operand(inst.args[0])
+                        if src.startswith('%h'):
+                            zero_h = kernel.new_value(
+                                f'_half_zero_{inst.dest.id}', HALF)
+                            self._lines.append(
+                                f'    mov.b16 {self._reg(zero_h)}, 0;')
+                            self._lines.append(
+                                f'    mov.b32 {dest}, {{{src}, {self._reg(zero_h)}}};')
+                        else:
+                            self._lines.append(f'    mov.b16 {dest}, {src};')
+                    else:
+                        self._lines.append(f'    mov.b32 {dest}, 0;')
                 elif inst.func in ('__float2half', '__float2half_rn'):
                     src = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     self._lines.append(f'    cvt.rn.f16.f32 {dest}, {src};')

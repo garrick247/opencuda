@@ -5,7 +5,7 @@
 .visible .entry color_extract(
     .param .u64 out, .param .u64 colors, .param .s32 mode, .param .s32 n)
 {
-    .reg .f32 %f<2>;
+    .reg .f32 %f<5>;
     .reg .b32 %r<4>;
     .reg .b64 %rd<5>;
     .reg .pred %p<1>;
@@ -27,40 +27,40 @@ if_true_2:
     shl.b32 %r2, %r3, 4;
     cvt.s64.s32 %rd4, %r2;
     add.u64 %rd0, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd1, %rd0, 4;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd1, %rd0, 8;
+    ld.global.f32 %f2, [%rd1];
+    add.u64 %rd1, %rd0, 12;
+    ld.global.f32 %f3, [%rd1];
     setp.eq.s32 %p0, %r0, 0;
     @%p0 bra if_true_6;
     bra if_merge_8;
 if_merge_4:
     ret;
 inline_extract_channel_merge_5:
-    st.global.f32 [%rd2], %f1;
+    st.global.f32 [%rd2], %f4;
     bra if_merge_4;
 if_true_6:
-    ld.global.f32 %f0, [%rd0];
-    mov.f32 %f1, %f0;
+    mov.f32 %f4, %f0;
     bra inline_extract_channel_merge_5;
 if_merge_8:
     setp.eq.s32 %p0, %r0, 1;
     @%p0 bra if_true_10;
     bra if_merge_12;
 if_true_10:
-    add.u64 %rd1, %rd0, 4;
-    ld.global.f32 %f0, [%rd1];
-    mov.f32 %f1, %f0;
+    mov.f32 %f4, %f1;
     bra inline_extract_channel_merge_5;
 if_merge_12:
     setp.eq.s32 %p0, %r0, 2;
     @%p0 bra if_true_14;
     bra if_merge_16;
 if_true_14:
-    add.u64 %rd1, %rd0, 8;
-    ld.global.f32 %f0, [%rd1];
-    mov.f32 %f1, %f0;
+    mov.f32 %f4, %f2;
     bra inline_extract_channel_merge_5;
 if_merge_16:
-    add.u64 %rd1, %rd0, 12;
-    ld.global.f32 %f0, [%rd1];
-    mov.f32 %f1, %f0;
+    mov.f32 %f4, %f3;
     bra inline_extract_channel_merge_5;
 }
 

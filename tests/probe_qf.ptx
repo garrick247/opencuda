@@ -2,12 +2,12 @@
 .target sm_120
 .address_size 64
 
-.visible .global .align 8 .u32 g_config;
-.visible .global .align 8 .u32 g_large;
+.visible .global .align 4 .b8 g_config[12];
+.visible .global .align 8 .b8 g_large[20];
 .visible .global .align 4 .s32 g_max_val;
 .visible .global .align 4 .s32 g_max_idx;
-.visible .global .align 8 .u32 g_max_entry;
-.visible .global .align 8 .u32 g_cnt;
+.visible .global .align 4 .b8 g_max_entry[8];
+.visible .global .align 4 .b8 g_cnt[8];
 
 .visible .entry write_config(
     .param .s32 w, .param .s32 h, .param .f32 s)

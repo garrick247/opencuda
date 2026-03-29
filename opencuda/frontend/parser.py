@@ -1870,6 +1870,13 @@ class Parser:
                                      '__int_as_float', '__uint_as_float',
                                      '__longlong_as_double', '__ulonglong_as_double')
                     _sad_ops      = ('__sad', '__usad')
+                    _dp4a_ops     = ('__dp4a', '__dp4a_u', '__dp4a_su', '__dp4a_us')
+                    _warp_reduce_int = ('__reduce_add_sync', '__reduce_min_sync',
+                                        '__reduce_max_sync')
+                    _warp_reduce_uint = ('__reduce_and_sync', '__reduce_or_sync',
+                                         '__reduce_xor_sync', '__reduce_umin_sync',
+                                         '__reduce_umax_sync')
+                    _warp_match   = ('__match_any_sync', '__match_all_sync')
                     _int_binary2  = ('__mul24', '__mulhi')
                     _uint_binary2 = ('__umul24', '__umulhi', '__rhadd',
                                      '__byte_perm',
@@ -1935,6 +1942,14 @@ class Parser:
                         ret_ty = DOUBLE if 'double' in name else FLOAT
                     elif name in _sad_ops:
                         ret_ty = UINT32 if name == '__usad' else INT32
+                    elif name in _dp4a_ops:
+                        ret_ty = INT32
+                    elif name in _warp_reduce_int:
+                        ret_ty = INT32
+                    elif name in _warp_reduce_uint:
+                        ret_ty = UINT32
+                    elif name in _warp_match:
+                        ret_ty = UINT32
                     elif name in _int_binary2:
                         ret_ty = INT32
                     elif name in _uint_binary2:

@@ -1,0 +1,333 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry classify_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd0];
+    setp.lt.s32 %p0, %r1, 0;
+    @%p0 bra if_true_6;
+    bra if_merge_8;
+if_merge_4:
+    ret;
+inline_classify_merge_5:
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
+if_true_6:
+    mov.s32 %r2, -1;
+    bra inline_classify_merge_5;
+if_merge_8:
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_10;
+    bra if_merge_12;
+if_true_10:
+    mov.s32 %r2, 0;
+    bra inline_classify_merge_5;
+if_merge_12:
+    setp.lt.s32 %p0, %r1, 10;
+    @%p0 bra if_true_14;
+    bra if_merge_16;
+if_true_14:
+    mov.s32 %r2, 1;
+    bra inline_classify_merge_5;
+if_merge_16:
+    setp.lt.s32 %p0, %r1, 100;
+    @%p0 bra if_true_18;
+    bra if_merge_20;
+if_true_18:
+    mov.s32 %r2, 2;
+    bra inline_classify_merge_5;
+if_merge_20:
+    mov.s32 %r2, 3;
+    bra inline_classify_merge_5;
+}
+
+.visible .entry safe_div_kernel(
+    .param .u64 out, .param .u64 a, .param .u64 b, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.u64 %rd2, [b];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd0, %rd4;
+    add.u64 %rd0, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd1, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd1];
+    setp.eq.f32 %p0, %f1, 0f00000000;
+    @%p0 bra if_true_6;
+    bra if_merge_8;
+if_merge_4:
+    ret;
+inline_safe_div_merge_5:
+    st.global.f32 [%rd3], %f2;
+    bra if_merge_4;
+if_true_6:
+    mov.f32 %f2, 0f00000000;
+    bra inline_safe_div_merge_5;
+if_merge_8:
+    div.approx.f32 %f3, %f0, %f1;
+    mov.f32 %f2, %f3;
+    bra inline_safe_div_merge_5;
+}
+
+.visible .entry switch_calls(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<7>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<4>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    mov.s32 %r0, 0;
+    rem.s32 %r3, %r1, 4;
+    bra switch_dispatch_44;
+if_merge_4:
+    ret;
+switch_exit_5:
+    shl.b32 %r4, %r2, 2;
+    cvt.s64.s32 %rd4, %r4;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.s32 [%rd1], %r0;
+    bra if_merge_4;
+case_6:
+    setp.eq.s32 %p0, 0, 0;
+    @%p0 bra if_true_8;
+    bra if_merge_10;
+inline_score_merge_7:
+    mov.s32 %r0, %r5;
+    bra switch_exit_5;
+if_true_8:
+    mov.s32 %r5, %r1;
+    bra inline_score_merge_7;
+if_merge_10:
+    setp.eq.s32 %p1, 0, 1;
+    @%p1 bra if_true_12;
+    bra if_merge_14;
+if_true_12:
+    shl.b32 %r6, %r1, 1;
+    mov.s32 %r5, %r6;
+    bra inline_score_merge_7;
+if_merge_14:
+    div.s32 %r6, %r1, 2;
+    mov.s32 %r5, %r6;
+    bra inline_score_merge_7;
+case_18:
+    setp.eq.s32 %p1, 1, 0;
+    @%p1 bra if_true_20;
+    bra if_merge_22;
+inline_score_merge_19:
+    mov.s32 %r0, %r5;
+    bra switch_exit_5;
+if_true_20:
+    mov.s32 %r5, %r1;
+    bra inline_score_merge_19;
+if_merge_22:
+    setp.eq.s32 %p2, 1, 1;
+    @%p2 bra if_true_24;
+    bra if_merge_26;
+if_true_24:
+    shl.b32 %r6, %r1, 1;
+    mov.s32 %r5, %r6;
+    bra inline_score_merge_19;
+if_merge_26:
+    div.s32 %r6, %r1, 2;
+    mov.s32 %r5, %r6;
+    bra inline_score_merge_19;
+case_30:
+    setp.eq.s32 %p2, 2, 0;
+    @%p2 bra if_true_32;
+    bra if_merge_34;
+inline_score_merge_31:
+    mov.s32 %r0, %r5;
+    bra switch_exit_5;
+if_true_32:
+    mov.s32 %r5, %r1;
+    bra inline_score_merge_31;
+if_merge_34:
+    setp.eq.s32 %p3, 2, 1;
+    @%p3 bra if_true_36;
+    bra if_merge_38;
+if_true_36:
+    shl.b32 %r6, %r1, 1;
+    mov.s32 %r5, %r6;
+    bra inline_score_merge_31;
+if_merge_38:
+    div.s32 %r6, %r1, 2;
+    mov.s32 %r5, %r6;
+    bra inline_score_merge_31;
+default_42:
+    mov.s32 %r0, 0;
+    bra switch_exit_5;
+switch_dispatch_44:
+    setp.eq.s32 %p3, %r3, 0;
+    @%p3 bra case_6;
+    bra switch_next_45;
+switch_next_45:
+    setp.eq.s32 %p3, %r3, 1;
+    @%p3 bra case_18;
+    bra switch_next_46;
+switch_next_46:
+    setp.eq.s32 %p3, %r3, 2;
+    @%p3 bra case_30;
+    bra default_42;
+}
+
+.visible .entry normalize_kernel(
+    .param .u64 out, .param .u64 in, .param .f32 mn, .param .f32 mx, .param .s32 n)
+{
+    .reg .f32 %f<6>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.f32 %f0, [mn];
+    ld.param.f32 %f1, [mx];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.f32 %f2, [%rd0];
+    sub.f32 %f3, %f1, %f0;
+    setp.eq.f32 %p0, %f3, 0f00000000;
+    @%p0 bra if_true_6;
+    bra if_merge_8;
+if_merge_4:
+    ret;
+inline_normalize_merge_5:
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+if_true_6:
+    mov.f32 %f1, 0f3F000000;
+    bra inline_normalize_merge_5;
+if_merge_8:
+    sub.f32 %f4, %f2, %f0;
+    div.approx.f32 %f5, %f4, %f3;
+    setp.lt.f32 %p0, %f5, 0f00000000;
+    @%p0 bra if_true_11;
+    bra if_merge_13;
+inline_clamp_merge_10:
+    mov.f32 %f1, %f4;
+    bra inline_normalize_merge_5;
+if_true_11:
+    mov.f32 %f4, 0f00000000;
+    bra inline_clamp_merge_10;
+if_merge_13:
+    setp.gt.f32 %p0, %f5, 0f3F800000;
+    @%p0 bra if_true_15;
+    bra if_merge_17;
+if_true_15:
+    mov.f32 %f4, 0f3F800000;
+    bra inline_clamp_merge_10;
+if_merge_17:
+    mov.f32 %f4, %f5;
+    bra inline_clamp_merge_10;
+}
+
+.visible .entry first_pos_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r1, 0;
+    bra for_cond_6;
+if_merge_4:
+    ret;
+inline_first_positive_merge_5:
+    st.global.s32 [%rd0], %r2;
+    bra if_merge_4;
+for_cond_6:
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra for_body_7;
+    bra for_exit_9;
+for_body_7:
+    shl.b32 %r3, %r1, 2;
+    cvt.s64.s32 %rd3, %r3;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r3, [%rd2];
+    setp.gt.s32 %p1, %r3, 0;
+    @%p1 bra if_true_10;
+    bra for_inc_8;
+for_inc_8:
+    add.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
+    bra for_cond_6;
+for_exit_9:
+    mov.s32 %r2, -1;
+    bra inline_first_positive_merge_5;
+if_true_10:
+    shl.b32 %r3, %r1, 2;
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.s32 %r3, [%rd2];
+    mov.s32 %r2, %r3;
+    bra inline_first_positive_merge_5;
+}

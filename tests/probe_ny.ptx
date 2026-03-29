@@ -11,9 +11,9 @@
     .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, _local_11;
+    mov.u64 %rd0, _local_11;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [out];
     ld.param.f32 %f0, [dx];
     ld.param.f32 %f1, [dy];
     mov.u32 %r0, %tid.x;
@@ -22,12 +22,12 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    st.local.f32 [%rd1], 0f3F800000;
-    add.u64 %rd2, %rd1, 4;
+    st.local.f32 [%rd0], 0f3F800000;
+    add.u64 %rd2, %rd0, 4;
     st.local.f32 [%rd2], 0f40000000;
-    ld.local.f32 %f2, [%rd1];
+    ld.local.f32 %f2, [%rd0];
     add.f32 %f3, %f2, %f0;
-    st.local.f32 [%rd1], %f3;
+    st.local.f32 [%rd0], %f3;
     ld.local.f32 %f0, [%rd2];
     add.f32 %f2, %f0, %f1;
     st.local.f32 [%rd2], %f2;
@@ -35,11 +35,11 @@ if_true_2:
 if_merge_4:
     ret;
 inline_update_vec_merge_5:
-    ld.local.f32 %f3, [%rd1];
-    add.u64 %rd2, %rd1, 4;
-    ld.local.f32 %f1, [%rd2];
-    st.global.f32 [%rd0], %f3;
+    ld.local.f32 %f3, [%rd0];
     add.u64 %rd2, %rd0, 4;
+    ld.local.f32 %f1, [%rd2];
+    st.global.f32 [%rd1], %f3;
+    add.u64 %rd2, %rd1, 4;
     st.global.f32 [%rd2], %f1;
     bra if_merge_4;
 }
