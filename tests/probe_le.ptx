@@ -176,7 +176,7 @@ for_cond_9:
 .visible .entry multi_carry(
     .param .u64 out)
 {
-    .reg .b32 %r<4>;
+    .reg .b32 %r<5>;
     .reg .b64 %rd<2>;
     .reg .pred %p<1>;
 
@@ -195,14 +195,14 @@ if_merge_4:
     ret;
 for_cond_5:
     add.s32 %r2, %r0, %r1;
-    add.s32 %r3, %r2, %r2;
-    add.s32 %r2, %r3, %r3;
-    add.s32 %r3, %r2, %r2;
-    add.s32 %r2, %r3, %r3;
-    add.s32 %r3, %r2, %r2;
-    add.s32 %r2, %r3, %r3;
-    add.s32 %r3, %r2, %r2;
-    mov.s32 %r0, %r3;
+    add.s32 %r3, %r1, %r2;
+    add.s32 %r4, %r2, %r3;
+    add.s32 %r2, %r3, %r4;
+    add.s32 %r3, %r4, %r2;
+    add.s32 %r4, %r2, %r3;
+    add.s32 %r2, %r3, %r4;
+    add.s32 %r3, %r4, %r2;
+    mov.s32 %r0, %r2;
     mov.s32 %r1, %r3;
     bra for_exit_8;
 for_exit_8:

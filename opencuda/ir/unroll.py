@@ -185,9 +185,16 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
                         iter_new_vals[inst.dest.id] = new_inst.dest
 
             # After processing body: update carried variable mapping for NEXT iteration.
+            # Use the canonical's OWN writeback result (iter_new_vals[canonical_id]),
+            # NOT iter_new_vals[new_val.id].  The difference matters when new_val is
+            # itself a carried variable that got updated in this same iteration —
+            # chasing new_val would give the post-update value instead of the pre-update
+            # value that the writeback correctly captured.  Example: Fibonacci
+            # `a = b; b = tmp` — a's writeback captures old-b; if we looked up b's
+            # iter_new_val we'd get new-b (= a+b), doubling instead of stepping.
             for canonical_id, (canonical_val, new_val) in carried_vars.items():
-                if new_val.id in iter_new_vals:
-                    carried_remap[canonical_id] = iter_new_vals[new_val.id]
+                if canonical_id in iter_new_vals:
+                    carried_remap[canonical_id] = iter_new_vals[canonical_id]
 
         # After all iterations: write back carried variables to canonical registers
         for canonical_id, (canonical_val, new_val) in carried_vars.items():
