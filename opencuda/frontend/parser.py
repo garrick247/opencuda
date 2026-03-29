@@ -61,6 +61,10 @@ class Parser:
         # These are PtrTy(SHARED) variables that must be auto-dereferenced on rvalue use
         # and must use StoreInst (not variable reassignment) on plain assignment.
         self._shared_scalars: set = set()
+        # Block-scope tracking for variable shadowing: each entry is the set of
+        # variable names declared in that block.  Push on '{', pop on '}'.
+        # Used to restore outer bindings when an inner block re-declares a name.
+        self._scope_locals_stack: list[set] = []
         # Register C/CUDA scalar aliases not covered by keyword tokens
         self._typedefs['bool'] = INT32        # _Bool / bool → i32 (0 or 1)
         self._typedefs['size_t'] = UINT64     # pointer-sized unsigned
@@ -1484,6 +1488,7 @@ class Parser:
             smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED)
             val = self._new_val(name, smem_ty)
             self._variables[name] = val
+            self._declare_local(name)
             # Store smem info for codegen (size in bytes)
             if not hasattr(self._kernel, '_shared_decls'):
                 self._kernel._shared_decls = []
@@ -1522,6 +1527,7 @@ class Parser:
                         arr_ty = PtrTy(decl_ty, AddrSpace.LOCAL)
                         arr_val = self._new_val(name, arr_ty)
                         self._variables[name] = arr_val
+                        self._declare_local(name)
                         if not hasattr(self._kernel, '_local_decls'):
                             self._kernel._local_decls = []
                         self._kernel._local_decls.append((name, decl_ty, count, arr_val))
@@ -1530,6 +1536,7 @@ class Parser:
                         continue
                     sentinel = self._new_val(name, decl_ty)
                     self._variables[name] = sentinel
+                    self._declare_local(name)
                     for fname, fty in decl_ty.fields:
                         fval = self._new_val(f"{name}_{fname}", fty)
                         self._variables[f"{name}_{fname}"] = fval
@@ -1601,6 +1608,7 @@ class Parser:
                     arr_ty = PtrTy(decl_ty, AddrSpace.LOCAL)
                     val = self._new_val(name, arr_ty)
                     self._variables[name] = val
+                    self._declare_local(name)
                     # Store local array info for codegen
                     if not hasattr(self._kernel, '_local_decls'):
                         self._kernel._local_decls = []
@@ -1630,6 +1638,7 @@ class Parser:
 
                 val = self._new_val(name, decl_ty)
                 self._variables[name] = val
+                self._declare_local(name)
 
                 if self._match(TokKind.ASSIGN):
                     rhs = self._parse_assign_expr()
@@ -2330,10 +2339,35 @@ class Parser:
         # Fall back to normal expression parsing
         return self._parse_expr()
 
+    def _declare_local(self, name: str) -> None:
+        """Register 'name' as declared in the current block scope (if inside one).
+
+        Called at every variable-declaration site.  When the enclosing block
+        ends, any name recorded here is either restored to its outer binding
+        (if it shadowed an outer variable) or removed from _variables (if it
+        was brand-new).  This prevents inner-scope declarations from corrupting
+        outer-scope / loop-carried variables via the loop writeback mechanism.
+        """
+        if self._scope_locals_stack:
+            self._scope_locals_stack[-1].add(name)
+
     def _parse_stmt_or_block(self):
         if self._match(TokKind.LBRACE):
+            # Save outer bindings so we can restore shadowed names on exit.
+            outer_bindings = dict(self._variables)
+            self._scope_locals_stack.append(set())
             while not self._match(TokKind.RBRACE):
                 self._parse_stmt()
+            inner_decls = self._scope_locals_stack.pop()
+            for name in inner_decls:
+                if name in outer_bindings:
+                    # Re-declaration (shadowing): restore the outer binding so
+                    # the loop writeback doesn't mistake the inner Value for a
+                    # modification of the outer variable.
+                    self._variables[name] = outer_bindings[name]
+                elif name in self._variables:
+                    # Purely inner-scope variable: remove when scope ends.
+                    del self._variables[name]
         else:
             self._parse_stmt()
 
