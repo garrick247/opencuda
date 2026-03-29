@@ -37,6 +37,9 @@ class Parser:
         self._block_count = 0
         self._struct_types: dict[str, StructTy] = {}  # struct name → StructTy
         self._typedefs: dict[str, Type] = {}  # typedef name → Type
+        # For struct array members: maps struct_name → {field_base_name → array_count}
+        # e.g. Vec4 with "float data[4]" → {'Vec4': {'data': 4}}
+        self._struct_field_arrays: dict[str, dict[str, int]] = {}
         # Pre-register CUDA built-in vector types (float2, int3, etc.)
         self._register_builtin_vector_types()
         self._break_targets: list[str] = []          # stack of break target labels
@@ -692,15 +695,40 @@ class Parser:
                 # Each field is a separate scalar variable: _variables['v_x'], etc.
                 elif isinstance(lhs, Value) and isinstance(lhs.ty, StructTy):
                     sty = lhs.ty
-                    field_ty = sty.field_type(member)
-                    field_key = f"{lhs.name}_{member}"
-                    if field_key in self._variables:
-                        lhs = self._variables[field_key]
+                    var_name = lhs.name
+                    # Check for inline array member: float data[N] expanded as data_0..data_{N-1}
+                    arr_info = self._struct_field_arrays.get(sty.name, {})
+                    if member in arr_info and self._at(TokKind.LBRACKET):
+                        # v.data[i] where data is an array member
+                        self._advance()  # consume '['
+                        idx_expr = self._parse_expr()
+                        self._expect(TokKind.RBRACKET)
+                        elem_ty = sty.field_type(f"{member}_0")
+                        n = arr_info[member]
+                        if isinstance(idx_expr, Const):
+                            k = int(idx_expr.value) % n
+                            key = f"{var_name}_{member}_{k}"
+                            if key not in self._variables:
+                                fval = self._new_val(key, elem_ty)
+                                self._variables[key] = fval
+                            lhs = self._variables[key]
+                        else:
+                            # Dynamic index into struct array member: return field_0 as fallback
+                            key0 = f"{var_name}_{member}_0"
+                            if key0 not in self._variables:
+                                fval = self._new_val(key0, elem_ty)
+                                self._variables[key0] = fval
+                            lhs = self._variables[key0]
                     else:
-                        # Field not yet created — create it lazily
-                        dest = self._new_val(field_key, field_ty)
-                        self._variables[field_key] = dest
-                        lhs = dest
+                        field_ty = sty.field_type(member)
+                        field_key = f"{lhs.name}_{member}"
+                        if field_key in self._variables:
+                            lhs = self._variables[field_key]
+                        else:
+                            # Field not yet created — create it lazily
+                            dest = self._new_val(field_key, field_ty)
+                            self._variables[field_key] = dest
+                            lhs = dest
                 elif isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy) and isinstance(lhs.ty.pointee, StructTy):
                     sty = lhs.ty.pointee
                     field_off = sty.field_offset(member)
@@ -1670,14 +1698,31 @@ class Parser:
             raise ParseError(f"Line {self._peek().line}: undefined struct '{name}'")
         self._expect(TokKind.LBRACE)
         fields = []
+        field_arrays = {}  # base_name -> count for array members
         while not self._at(TokKind.RBRACE):
             fty = self._parse_type_with_ptr()
             fname = self._expect(TokKind.IDENT).value
+            # Inline array member: float data[N] — expand to N scalar fields
+            # so struct layout (field_offset) accounts for the full byte span.
+            array_count = 1
+            if self._match(TokKind.LBRACKET):
+                sz_op = self._parse_assign_expr()
+                array_count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                self._expect(TokKind.RBRACKET)
             self._expect(TokKind.SEMI)
-            fields.append((fname, fty))
+            if array_count > 1:
+                # Expand: field_0, field_1, ..., field_{N-1} as scalars.
+                # This ensures correct byte offsets for subsequent fields.
+                for k in range(array_count):
+                    fields.append((f"{fname}_{k}", fty))
+                field_arrays[fname] = array_count
+            else:
+                fields.append((fname, fty))
         self._expect(TokKind.RBRACE)
         sty = StructTy(name, tuple(fields))
         self._struct_types[name] = sty
+        if field_arrays:
+            self._struct_field_arrays[name] = field_arrays
         # Only consume the trailing semicolon if not in a typedef context
         # (typedef will consume its own trailing ident + semi).
         # Check: if next token is SEMI or EOF, consume.
