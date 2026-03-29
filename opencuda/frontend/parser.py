@@ -45,6 +45,7 @@ class Parser:
         self._break_targets: list[str] = []          # stack of break target labels
         self._break_snapshots: list[Optional[dict]] = []  # vars snapshot at break scope entry
         self._continue_targets: list[str] = []       # stack of continue target labels
+        self._continue_snapshots: list[Optional[dict]] = []  # vars snapshot at continue scope entry
         self._inline_return_target = None  # (return_dest_val, return_merge_label) or None
         # Multi-dimensional array row strides: maps var_name → row_stride_bytes.
         # For float tile[16][16], row_stride = 16*sizeof(float) = 64.
@@ -1723,10 +1724,14 @@ class Parser:
             self._break_targets.append(exit_bb.label)
             self._break_snapshots.append(loop_vars)  # for writeback on break
             self._continue_targets.append(inc_bb.label)
+            # For-loop continue target is inc_bb which does its own writeback;
+            # use None here to avoid double writeback.
+            self._continue_snapshots.append(None)
             self._parse_stmt_or_block()
             self._break_targets.pop()
             self._break_snapshots.pop()
             self._continue_targets.pop()
+            self._continue_snapshots.pop()
             if self._cur_block.terminator is None:
                 # Natural fall-through from the body's last block to inc_bb.
                 # Emit writebacks for body-modified variables HERE, while still
@@ -1783,10 +1788,12 @@ class Parser:
             self._break_targets.append(exit_bb.label)
             self._break_snapshots.append(while_entry_vars)  # for writeback on break
             self._continue_targets.append(cond_bb.label)
+            self._continue_snapshots.append(while_entry_vars)  # for writeback on continue
             self._parse_stmt_or_block()
             self._break_targets.pop()
             self._break_snapshots.pop()
             self._continue_targets.pop()
+            self._continue_snapshots.pop()
 
             # Write back any variables modified in the body to their canonical
             # cond-entry Values, then restore _variables to canonical state so
@@ -1816,10 +1823,12 @@ class Parser:
             self._break_targets.append(exit_bb.label)
             self._break_snapshots.append(do_entry_vars)  # for writeback on break
             self._continue_targets.append(cond_bb.label)
+            self._continue_snapshots.append(do_entry_vars)  # for writeback on continue
             self._parse_stmt_or_block()
             self._break_targets.pop()
             self._break_snapshots.pop()
             self._continue_targets.pop()
+            self._continue_snapshots.pop()
 
             # Write back modified variables before parsing the condition so
             # that cond_bb's CmpInst references the canonical (writeback)
@@ -1861,6 +1870,10 @@ class Parser:
             self._expect(TokKind.SEMI)
             if not self._continue_targets:
                 raise ParseError("continue outside of loop")
+            # Write back any variables modified before the continue so the
+            # continue target (cond_bb for while/do-while) sees updated values.
+            if self._continue_snapshots and self._continue_snapshots[-1] is not None:
+                self._loop_writeback(self._continue_snapshots[-1])
             self._cur_block.terminator = BrTerm(self._continue_targets[-1])
             self._cur_block = self._new_block("after_continue")
             return

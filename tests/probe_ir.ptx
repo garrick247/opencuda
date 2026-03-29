@@ -99,11 +99,14 @@ while_body_6:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r4, [%rd2];
     setp.lt.s32 %p1, %r4, 0;
-    @%p1 bra while_cond_5;
+    @%p1 bra if_true_8;
     bra if_merge_10;
 while_exit_7:
     st.global.s32 [%rd0], %r2;
     bra if_merge_4;
+if_true_8:
+    mov.s32 %r1, %r3;
+    bra while_cond_5;
 if_merge_10:
     sub.s32 %r5, %r3, 1;
     shl.b32 %r4, %r5, 2;
