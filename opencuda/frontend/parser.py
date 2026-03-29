@@ -1135,6 +1135,11 @@ class Parser:
             self._advance()
             tok = self._peek()  # re-read after consuming qualifier(s)
 
+        # Empty statement: ; (null statement, e.g. from macro expanding to nothing)
+        if tok.kind == TokKind.SEMI:
+            self._advance()
+            return
+
         # Bare block: { stmt; stmt; ... }  — anonymous compound statement
         if tok.kind == TokKind.LBRACE:
             self._parse_stmt_or_block()
@@ -1458,7 +1463,11 @@ class Parser:
             # Emit condition — must read current loop variable values
             self._cur_block = cond_bb
             self._pos = cond_start
-            cond = self._parse_expr()
+            # Empty condition: for(;;) — always true, loop exits only via break
+            if self._toks[cond_start].kind == TokKind.SEMI:
+                cond = Const(INT32, 1)
+            else:
+                cond = self._parse_expr()
             cond_bb.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
 
             # Emit body (with break → exit_bb, continue → inc_bb)
