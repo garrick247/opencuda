@@ -1847,15 +1847,26 @@ class Parser:
                                      '__isnanf', '__isinff', '__isfinitef')
                     _float2int    = ('__float2int_rn', '__float2int_rd',
                                      '__float2int_ru', '__float2int_rz',
+                                     '__float2uint_rn', '__float2uint_rd',
+                                     '__float2uint_ru', '__float2uint_rz',
                                      '__float2ll_rn', '__float2ll_rd',
                                      '__float2ll_ru', '__float2ll_rz',
+                                     '__float2ull_rn', '__float2ull_rd',
+                                     '__float2ull_ru', '__float2ull_rz',
                                      '__double2int_rn', '__double2int_rz',
+                                     '__double2uint_rn', '__double2uint_rz',
+                                     '__double2ll_rn', '__double2ll_rz',
+                                     '__double2ull_rn', '__double2ull_rz',
                                      '__float_as_int', '__float_as_uint',
                                      '__double_as_longlong', '__double_as_ulonglong')
                     _int2float    = ('__int2float_rn', '__int2float_rd',
                                      '__int2float_ru', '__int2float_rz',
+                                     '__uint2float_rn', '__uint2float_rd',
+                                     '__uint2float_ru', '__uint2float_rz',
                                      '__ll2float_rn', '__ll2float_rz',
+                                     '__ull2float_rn', '__ull2float_rz',
                                      '__int2double_rn', '__ll2double_rn',
+                                     '__uint2double_rn', '__ull2double_rn',
                                      '__int_as_float', '__uint_as_float',
                                      '__longlong_as_double', '__ulonglong_as_double')
                     _sad_ops      = ('__sad', '__usad')

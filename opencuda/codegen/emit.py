@@ -1160,14 +1160,21 @@ class PTXEmitter:
                         self._lines.append(
                             f'    atom.{_atom_space}.add.{val_ty} {dest}, [{addr}], {self._reg(neg_tmp)};')
                 elif inst.func == 'atomicCAS':
-                    # atomicCAS(addr, compare, val) — 3-arg: PTX atom.cas.b32
-                    # atom.{space}.cas.b32 dest, [addr], compare, val;
+                    # atomicCAS(addr, compare, val) — 3-arg: PTX atom.cas.b32/b64
+                    # atom.{space}.cas.bN dest, [addr], compare, val;
                     cmp_arg = inst.args[1] if len(inst.args) > 1 else Const(INT32, 0)
                     new_arg = inst.args[2] if len(inst.args) > 2 else Const(INT32, 0)
-                    # CAS uses b32 type (bitwise comparison)
+                    # Select b32 or b64 based on compare arg type
+                    _cas_ty = 'b32'
+                    if isinstance(cmp_arg, Value):
+                        _ptx = _ptx_type(cmp_arg.ty)
+                        if _ptx in ('s64', 'u64', 'b64'):
+                            _cas_ty = 'b64'
+                    elif isinstance(cmp_arg, Const) and _ptx_type(cmp_arg.ty) in ('s64', 'u64'):
+                        _cas_ty = 'b64'
                     self._lines.append(
-                        f'    atom.{_atom_space}.cas.b32 {dest}, [{addr}], '
-                        f'{self._operand(cmp_arg, "b32")}, {self._operand(new_arg, "b32")};')
+                        f'    atom.{_atom_space}.cas.{_cas_ty} {dest}, [{addr}], '
+                        f'{self._operand(cmp_arg, _cas_ty)}, {self._operand(new_arg, _cas_ty)};')
                 else:
                     ptx_op = atomic_ops.get(inst.func, 'add')
                     self._lines.append(
@@ -1538,6 +1545,13 @@ class PTXEmitter:
                     rnd = _rnd_map[inst.func]
                     src = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     self._lines.append(f'    cvt.{rnd}.s32.f32 {dest}, {src};')
+                elif inst.func in ('__float2uint_rn', '__float2uint_rd',
+                                   '__float2uint_ru', '__float2uint_rz'):
+                    _rnd_map = {'__float2uint_rn': 'rni', '__float2uint_rd': 'rmi',
+                                '__float2uint_ru': 'rpi', '__float2uint_rz': 'rzi'}
+                    rnd = _rnd_map[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.{rnd}.u32.f32 {dest}, {src};')
                 elif inst.func in ('__float2ll_rn', '__float2ll_rd',
                                    '__float2ll_ru', '__float2ll_rz'):
                     _rnd_map = {'__float2ll_rn': 'rni', '__float2ll_rd': 'rmi',
@@ -1545,10 +1559,29 @@ class PTXEmitter:
                     rnd = _rnd_map[inst.func]
                     src = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     self._lines.append(f'    cvt.{rnd}.s64.f32 {dest}, {src};')
+                elif inst.func in ('__float2ull_rn', '__float2ull_rd',
+                                   '__float2ull_ru', '__float2ull_rz'):
+                    _rnd_map = {'__float2ull_rn': 'rni', '__float2ull_rd': 'rmi',
+                                '__float2ull_ru': 'rpi', '__float2ull_rz': 'rzi'}
+                    rnd = _rnd_map[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    cvt.{rnd}.u64.f32 {dest}, {src};')
                 elif inst.func in ('__double2int_rn', '__double2int_rz'):
                     rnd = 'rni' if inst.func == '__double2int_rn' else 'rzi'
                     src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
                     self._lines.append(f'    cvt.{rnd}.s32.f64 {dest}, {src};')
+                elif inst.func in ('__double2uint_rn', '__double2uint_rz'):
+                    rnd = 'rni' if inst.func.endswith('rn') else 'rzi'
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    self._lines.append(f'    cvt.{rnd}.u32.f64 {dest}, {src};')
+                elif inst.func in ('__double2ll_rn', '__double2ll_rz'):
+                    rnd = 'rni' if inst.func.endswith('rn') else 'rzi'
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    self._lines.append(f'    cvt.{rnd}.s64.f64 {dest}, {src};')
+                elif inst.func in ('__double2ull_rn', '__double2ull_rz'):
+                    rnd = 'rni' if inst.func.endswith('rn') else 'rzi'
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    self._lines.append(f'    cvt.{rnd}.u64.f64 {dest}, {src};')
                 elif inst.func in ('__int2float_rn', '__int2float_rd',
                                    '__int2float_ru', '__int2float_rz'):
                     _rnd_map = {'__int2float_rn': 'rn', '__int2float_rd': 'rm',
@@ -1556,12 +1589,27 @@ class PTXEmitter:
                     rnd = _rnd_map[inst.func]
                     src = self._operand(inst.args[0]) if inst.args else '0'
                     self._lines.append(f'    cvt.{rnd}.f32.s32 {dest}, {src};')
+                elif inst.func in ('__uint2float_rn', '__uint2float_rd',
+                                   '__uint2float_ru', '__uint2float_rz'):
+                    _rnd_map = {'__uint2float_rn': 'rn', '__uint2float_rd': 'rm',
+                                '__uint2float_ru': 'rp', '__uint2float_rz': 'rz'}
+                    rnd = _rnd_map[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    cvt.{rnd}.f32.u32 {dest}, {src};')
                 elif inst.func in ('__ll2float_rn', '__ll2float_rz'):
                     rnd = 'rn' if inst.func == '__ll2float_rn' else 'rz'
                     src = self._operand(inst.args[0]) if inst.args else '0'
                     self._lines.append(f'    cvt.{rnd}.f32.s64 {dest}, {src};')
-                elif inst.func in ('__int2double_rn', '__ll2double_rn'):
-                    src_ty_str = 's64' if 'll' in inst.func else 's32'
+                elif inst.func in ('__ull2float_rn', '__ull2float_rz'):
+                    rnd = 'rn' if inst.func.endswith('rn') else 'rz'
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    cvt.{rnd}.f32.u64 {dest}, {src};')
+                elif inst.func in ('__int2double_rn', '__ll2double_rn',
+                                   '__uint2double_rn', '__ull2double_rn'):
+                    if 'ull' in inst.func: src_ty_str = 'u64'
+                    elif 'll' in inst.func: src_ty_str = 's64'
+                    elif 'uint' in inst.func: src_ty_str = 'u32'
+                    else: src_ty_str = 's32'
                     src = self._operand(inst.args[0]) if inst.args else '0'
                     self._lines.append(f'    cvt.rn.f64.{src_ty_str} {dest}, {src};')
                 elif inst.func in ('__float_as_int', '__float_as_uint'):
