@@ -2334,9 +2334,12 @@ class Parser:
         No IR instructions are emitted — enum values are folded at parse time.
         """
         self._expect(TokKind.KW_ENUM)
-        # Optional tag name
+        # Optional tag name — register as INT32 typedef so it can be used in
+        # variable declarations and casts: Direction d; (Direction)(val)
         if self._at(TokKind.IDENT) and not self._at(TokKind.LBRACE):
-            self._advance()  # consume tag, ignored
+            enum_tag = self._peek().value
+            self._advance()
+            self._typedefs[enum_tag] = INT32
         self._expect(TokKind.LBRACE)
         counter = 0
         while not self._at(TokKind.RBRACE):
