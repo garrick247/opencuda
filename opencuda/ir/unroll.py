@@ -116,8 +116,31 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
                         if isinstance(inst.rhs, Const):
                             init_val = int(inst.rhs.value)
 
-        trip_count = bound - init_val
-        if trip_count <= 0 or trip_count > 64:
+        # Detect the induction step from inc_bb.
+        # Pattern: BinInst(op=ADD, lhs=induction_var, rhs=Const(step)) → step != 1
+        # Default step = 1 (simple i++ loops).
+        step = 1
+        for inst in inc_bb.instructions:
+            if (isinstance(inst, BinInst) and inst.op == BinOp.ADD):
+                if (isinstance(inst.lhs, Value) and inst.lhs.id == induction_var.id
+                        and isinstance(inst.rhs, Const)):
+                    s = int(inst.rhs.value)
+                    if s > 0:
+                        step = s
+                elif (isinstance(inst.rhs, Value) and inst.rhs.id == induction_var.id
+                        and isinstance(inst.lhs, Const)):
+                    s = int(inst.lhs.value)
+                    if s > 0:
+                        step = s
+
+        span = bound - init_val
+        if span <= 0:
+            continue
+        # trip_count = ceil(span / step) — only unroll if it divides evenly
+        if span % step != 0:
+            continue
+        trip_count = span // step
+        if trip_count > 64:
             continue
 
         loops.append({
@@ -127,6 +150,7 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
             'exit_bb': exit_bb,
             'bound': bound,
             'init_val': init_val,
+            'step': step,
             'trip_count': trip_count,
             'induction_var': induction_var,
             'carried_vars': carried_vars,
@@ -152,6 +176,7 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
         induction_var = loop['induction_var']
         carried_vars = loop['carried_vars']
         init_val = loop['init_val']
+        step = loop['step']
 
         # Build the value mapping for each iteration.
         # Start: induction_var → Const(init_val), carried vars → their canonical Values
@@ -165,8 +190,8 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
         for iteration in range(trip_count):
             # Build replacement map: start from carried state + induction var
             remap = dict(carried_remap)  # inherit carried var chain
-            # i_value = init_val + iteration (correct for non-zero start loops)
-            remap[induction_var.id] = Const(induction_var.ty, init_val + iteration)
+            # i_value = init_val + step * iteration
+            remap[induction_var.id] = Const(induction_var.ty, init_val + step * iteration)
 
             # Carried variables: for iteration 0, use the canonical (entry) value.
             # For iteration N>0, use the output from iteration N-1.
@@ -181,7 +206,8 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
                 if new_inst is not None:
                     all_unrolled_insts.append(new_inst)
                     # Track the new dest for carried variable chaining
-                    if hasattr(new_inst, 'dest') and hasattr(inst, 'dest'):
+                    if (hasattr(new_inst, 'dest') and hasattr(inst, 'dest')
+                            and inst.dest is not None and new_inst.dest is not None):
                         iter_new_vals[inst.dest.id] = new_inst.dest
 
             # After processing body: update carried variable mapping for NEXT iteration.
