@@ -145,6 +145,33 @@ class Parser:
     def _new_val(self, name: str, ty: Type) -> Value:
         return self._kernel.new_value(name, ty)
 
+    @staticmethod
+    def _const_fold(op: 'BinOp', lhs: Operand, rhs: Operand) -> 'Const | None':
+        """Fold two compile-time constants into a single Const. Returns None if
+        either operand is not Const or the operation is not constant-foldable."""
+        if not isinstance(lhs, Const) or not isinstance(rhs, Const):
+            return None
+        a, b = int(lhs.value), int(rhs.value)
+        ty = lhs.ty if isinstance(lhs.ty, ScalarTy) else INT32
+        try:
+            result = {
+                BinOp.ADD: a + b,
+                BinOp.SUB: a - b,
+                BinOp.MUL: a * b,
+                BinOp.DIV: a // b if b != 0 else 0,
+                BinOp.MOD: a % b if b != 0 else 0,
+                BinOp.OR:  a | b,
+                BinOp.AND: a & b,
+                BinOp.XOR: a ^ b,
+                BinOp.SHL: a << (b & 63),
+                BinOp.SHR: a >> (b & 63),
+            }.get(op)
+        except Exception:
+            return None
+        if result is None:
+            return None
+        return Const(ty, result)
+
     def _loop_writeback(self, entry_vars: dict) -> None:
         """Write modified loop variables back to their canonical entry Values.
 
@@ -386,27 +413,39 @@ class Parser:
         lhs = self._parse_bitxor_expr()
         while self._match(TokKind.PIPE):
             rhs = self._parse_bitxor_expr()
-            dest = self._new_val("bitor", self._result_type(lhs, rhs))
-            self._emit(BinInst(dest, BinOp.OR, lhs, rhs))
-            lhs = dest
+            folded = self._const_fold(BinOp.OR, lhs, rhs)
+            if folded is not None:
+                lhs = folded
+            else:
+                dest = self._new_val("bitor", self._result_type(lhs, rhs))
+                self._emit(BinInst(dest, BinOp.OR, lhs, rhs))
+                lhs = dest
         return lhs
 
     def _parse_bitxor_expr(self) -> Operand:
         lhs = self._parse_bitand_expr()
         while self._match(TokKind.CARET):
             rhs = self._parse_bitand_expr()
-            dest = self._new_val("bitxor", self._result_type(lhs, rhs))
-            self._emit(BinInst(dest, BinOp.XOR, lhs, rhs))
-            lhs = dest
+            folded = self._const_fold(BinOp.XOR, lhs, rhs)
+            if folded is not None:
+                lhs = folded
+            else:
+                dest = self._new_val("bitxor", self._result_type(lhs, rhs))
+                self._emit(BinInst(dest, BinOp.XOR, lhs, rhs))
+                lhs = dest
         return lhs
 
     def _parse_bitand_expr(self) -> Operand:
         lhs = self._parse_cmp_expr()
         while self._match(TokKind.AMP):
             rhs = self._parse_cmp_expr()
-            dest = self._new_val("bitand", self._result_type(lhs, rhs))
-            self._emit(BinInst(dest, BinOp.AND, lhs, rhs))
-            lhs = dest
+            folded = self._const_fold(BinOp.AND, lhs, rhs)
+            if folded is not None:
+                lhs = folded
+            else:
+                dest = self._new_val("bitand", self._result_type(lhs, rhs))
+                self._emit(BinInst(dest, BinOp.AND, lhs, rhs))
+                lhs = dest
         return lhs
 
     def _parse_cmp_expr(self) -> Operand:
@@ -456,22 +495,24 @@ class Parser:
         while True:
             if self._match(TokKind.LSHIFT):
                 rhs = self._parse_add_expr()
-                # Shift result type is the left operand's type (C §6.5.7).
-                # The right operand's type does NOT affect the result type.
-                lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else INT32
-                dest = self._new_val("shl", lhs_ty)
-                self._emit(BinInst(dest, BinOp.SHL, lhs, rhs))
-                lhs = dest
+                folded = self._const_fold(BinOp.SHL, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else INT32
+                    dest = self._new_val("shl", lhs_ty)
+                    self._emit(BinInst(dest, BinOp.SHL, lhs, rhs))
+                    lhs = dest
             elif self._match(TokKind.RSHIFT):
                 rhs = self._parse_add_expr()
-                # Shift result type is the left operand's type (C §6.5.7).
-                # Critical: int x >> unsigned y must stay INT32 → shr.s32 (arithmetic).
-                # Using _result_type would incorrectly return UINT32 (unsigned wins),
-                # producing shr.b32 (logical) and giving wrong results for negative x.
-                lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else INT32
-                dest = self._new_val("shr", lhs_ty)
-                self._emit(BinInst(dest, BinOp.SHR, lhs, rhs))
-                lhs = dest
+                folded = self._const_fold(BinOp.SHR, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else INT32
+                    dest = self._new_val("shr", lhs_ty)
+                    self._emit(BinInst(dest, BinOp.SHR, lhs, rhs))
+                    lhs = dest
             else:
                 break
         return lhs
@@ -481,13 +522,21 @@ class Parser:
         while True:
             if self._match(TokKind.PLUS):
                 rhs = self._parse_mul_expr()
-                dest = self._new_val("add", self._result_type(lhs, rhs))
-                self._emit(BinInst(dest, BinOp.ADD, lhs, rhs))
-                lhs = dest
+                folded = self._const_fold(BinOp.ADD, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    dest = self._new_val("add", self._result_type(lhs, rhs))
+                    self._emit(BinInst(dest, BinOp.ADD, lhs, rhs))
+                    lhs = dest
             elif self._match(TokKind.MINUS):
                 rhs = self._parse_mul_expr()
-                dest = self._new_val("sub", self._result_type(lhs, rhs))
-                self._emit(BinInst(dest, BinOp.SUB, lhs, rhs))
+                folded = self._const_fold(BinOp.SUB, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    dest = self._new_val("sub", self._result_type(lhs, rhs))
+                    self._emit(BinInst(dest, BinOp.SUB, lhs, rhs))
                 lhs = dest
             else:
                 break
@@ -498,19 +547,31 @@ class Parser:
         while True:
             if self._match(TokKind.STAR):
                 rhs = self._parse_unary_expr()
-                dest = self._new_val("mul", self._result_type(lhs, rhs))
-                self._emit(BinInst(dest, BinOp.MUL, lhs, rhs))
-                lhs = dest
+                folded = self._const_fold(BinOp.MUL, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    dest = self._new_val("mul", self._result_type(lhs, rhs))
+                    self._emit(BinInst(dest, BinOp.MUL, lhs, rhs))
+                    lhs = dest
             elif self._match(TokKind.SLASH):
                 rhs = self._parse_unary_expr()
-                dest = self._new_val("div", self._result_type(lhs, rhs))
-                self._emit(BinInst(dest, BinOp.DIV, lhs, rhs))
-                lhs = dest
+                folded = self._const_fold(BinOp.DIV, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    dest = self._new_val("div", self._result_type(lhs, rhs))
+                    self._emit(BinInst(dest, BinOp.DIV, lhs, rhs))
+                    lhs = dest
             elif self._match(TokKind.PERCENT):
                 rhs = self._parse_unary_expr()
-                dest = self._new_val("mod", self._result_type(lhs, rhs))
-                self._emit(BinInst(dest, BinOp.MOD, lhs, rhs))
-                lhs = dest
+                folded = self._const_fold(BinOp.MOD, lhs, rhs)
+                if folded is not None:
+                    lhs = folded
+                else:
+                    dest = self._new_val("mod", self._result_type(lhs, rhs))
+                    self._emit(BinInst(dest, BinOp.MOD, lhs, rhs))
+                    lhs = dest
             else:
                 break
         return lhs
@@ -992,7 +1053,7 @@ class Parser:
                     return dest
 
             # Lazy param loading: emit ld.param on first use
-            if name in self._lazy_params and name not in self._variables:
+            if hasattr(self, '_lazy_params') and name in self._lazy_params and name not in self._variables:
                 idx, p = self._lazy_params[name]
                 val = self._new_val(p.name, p.ty)
                 self._emit(ParamInst(val, idx, p.name))
@@ -1924,12 +1985,13 @@ class Parser:
             # Handle comma-separated field names: float x, y, z;
             while True:
                 fname = self._expect(TokKind.IDENT).value
-                # Inline array member: float data[N] — expand to N scalar fields
-                # so struct layout (field_offset) accounts for the full byte span.
+                # Inline array member: float data[N] or float m[R][C] — expand to
+                # N (or R*C) scalar fields so struct layout accounts for full byte span.
                 array_count = 1
-                if self._match(TokKind.LBRACKET):
+                while self._match(TokKind.LBRACKET):
                     sz_op = self._parse_assign_expr()
-                    array_count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                    dim = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                    array_count *= dim
                     self._expect(TokKind.RBRACKET)
                 # Bitfield: field : width — consume and ignore width
                 if self._match(TokKind.COLON):
