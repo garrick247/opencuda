@@ -1724,9 +1724,14 @@ class Parser:
             self._break_targets.append(exit_bb.label)
             self._break_snapshots.append(loop_vars)  # for writeback on break
             self._continue_targets.append(inc_bb.label)
-            # For-loop continue target is inc_bb which does its own writeback;
-            # use None here to avoid double writeback.
-            self._continue_snapshots.append(None)
+            # Pass loop_vars so the continue handler writes back any variables
+            # modified before the continue INTO the live block (not the dead
+            # after_continue stub).  Without this, dead_block_elim removes the
+            # writeback instruction and identity_fold folds the canonical value
+            # to Const(0), silently zeroing variables like neg_count.
+            # inc_bb still does its own writeback for the increment expression;
+            # that write-back is idempotent (cur_val == init_val → skipped).
+            self._continue_snapshots.append(loop_vars)
             self._parse_stmt_or_block()
             self._break_targets.pop()
             self._break_snapshots.pop()

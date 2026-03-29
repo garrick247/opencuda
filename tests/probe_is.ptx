@@ -5,7 +5,7 @@
 .visible .entry for_continue_count(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .b32 %r<8>;
+    .reg .b32 %r<9>;
     .reg .b64 %rd<5>;
     .reg .pred %p<2>;
 
@@ -22,41 +22,46 @@ if_true_2:
     mov.s32 %r1, 0;
     mov.s32 %r2, 0;
     mov.s32 %r3, 0;
+    mov.s32 %r4, 0;
     bra for_cond_5;
 if_merge_4:
     ret;
 for_cond_5:
-    setp.lt.s32 %p0, %r3, %r0;
+    setp.lt.s32 %p0, %r4, %r0;
     @%p0 bra for_body_6;
     bra for_exit_8;
 for_body_6:
-    shl.b32 %r4, %r3, 2;
-    cvt.s64.s32 %rd3, %r4;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd3, %r5;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r4, [%rd2];
-    setp.lt.s32 %p1, %r4, 0;
-    @%p1 bra for_inc_7;
+    ld.global.s32 %r5, [%rd2];
+    setp.lt.s32 %p1, %r5, 0;
+    @%p1 bra if_true_9;
     bra if_merge_11;
 for_inc_7:
-    add.s32 %r4, %r3, 1;
-    mov.s32 %r3, %r4;
+    add.s32 %r5, %r4, 1;
+    mov.s32 %r4, %r5;
     bra for_cond_5;
 for_exit_8:
     st.global.s32 [%rd0], %r1;
     add.u64 %rd2, %rd0, 4;
-    st.global.s32 [%rd2], 0;
-    add.u64 %rd2, %rd0, 8;
     st.global.s32 [%rd2], %r2;
+    add.u64 %rd2, %rd0, 8;
+    st.global.s32 [%rd2], %r3;
     bra if_merge_4;
+if_true_9:
+    add.s32 %r6, %r2, 1;
+    mov.s32 %r2, %r6;
+    bra for_inc_7;
 if_merge_11:
-    add.s32 %r5, %r1, 1;
-    shl.b32 %r6, %r3, 2;
-    cvt.s64.s32 %rd4, %r6;
+    add.s32 %r6, %r1, 1;
+    shl.b32 %r7, %r4, 2;
+    cvt.s64.s32 %rd4, %r7;
     add.u64 %rd2, %rd1, %rd4;
-    ld.global.s32 %r6, [%rd2];
-    add.s32 %r7, %r2, %r6;
-    mov.s32 %r1, %r5;
-    mov.s32 %r2, %r7;
+    ld.global.s32 %r7, [%rd2];
+    add.s32 %r8, %r3, %r7;
+    mov.s32 %r1, %r6;
+    mov.s32 %r3, %r8;
     bra for_inc_7;
 }
 
