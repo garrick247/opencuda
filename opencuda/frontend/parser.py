@@ -242,11 +242,14 @@ class Parser:
         for var_name, entry_val in entry_vars.items():
             if not isinstance(entry_val, Value):
                 continue
-            # Struct sentinels (StructTy Values) are never-defined placeholders;
-            # their per-field scalars (name_x, name_y, ...) carry the actual values
-            # and are written back individually. Emitting a BinInst for the sentinel
-            # would reference an undefined operand.
             if isinstance(entry_val.ty, StructTy):
+                # Struct sentinels carry no data value — no BinInst needed.
+                # But we must restore _variables[var_name] to the canonical
+                # entry sentinel so that post-loop field lookups like acc.tx
+                # resolve via "acc_tx" (canonical) rather than "combine_ret_tx"
+                # (inline return field defined inside the loop body).
+                if self._variables.get(var_name) is not entry_val:
+                    self._variables[var_name] = entry_val
                 continue
             cur_val = self._variables.get(var_name)
             if cur_val is None or cur_val is entry_val:
@@ -1308,6 +1311,18 @@ class Parser:
                     return_dest = self._new_val(f"{name}_ret", ret_ty)
                     return_merge = self._new_block(f"inline_{name}_merge")
                     self._inline_return_target = (return_dest, return_merge.label)
+                    # Pre-allocate per-field return Values for struct-returning
+                    # functions so that every return path writes to the SAME
+                    # canonical field Values (multiple BinInst defs per Value).
+                    # The verifier skips dominance checks for multi-def Values,
+                    # exactly mirroring how scalar multi-return already works.
+                    if isinstance(ret_ty, StructTy):
+                        _pre_ret_fields: dict = {}
+                        for _rf, _rft in ret_ty.fields:
+                            if isinstance(_rft, ScalarTy):
+                                _pre_ret_fields[_rf] = self._new_val(
+                                    f"{return_dest.name}_{_rf}", _rft)
+                        self._inline_struct_return_fields[return_dest.id] = _pre_ret_fields
 
                     # Isolate the inlined body from the caller's scope stack.
                     # Without this, _declare_local() calls inside the inlined
@@ -2034,8 +2049,13 @@ class Parser:
             # Write back any variables modified by the increment expression
             # (or by direct-continue paths that bypassed the body writeback above).
             for var_name, init_val in loop_vars.items():
+                if not isinstance(init_val, Value):
+                    continue
                 if isinstance(init_val.ty, StructTy):
-                    continue  # struct sentinels carry no value — per-field scalars handle writeback
+                    # Restore canonical sentinel pointer (no BinInst needed).
+                    if self._variables.get(var_name) is not init_val:
+                        self._variables[var_name] = init_val
+                    continue
                 cur_val = self._variables.get(var_name)
                 if cur_val is None or cur_val is init_val:
                     continue
@@ -2303,22 +2323,33 @@ class Parser:
                     if (isinstance(return_dest.ty, StructTy)
                             and isinstance(ret_val, Value)
                             and isinstance(ret_val.ty, StructTy)):
-                        # Struct return: copy each scalar field to a new named Value so
-                        # the caller can pick them up from _inline_struct_return_fields.
-                        field_vals: dict = {}
+                        # Struct return: emit copies to pre-allocated canonical
+                        # field Values.  All return paths write to the same field
+                        # Values (multiple BinInst definitions), so the verifier
+                        # skips dominance checking — the same mechanism that makes
+                        # scalar multi-return correct (same return_dest, multi-def).
+                        _pre_ret = self._inline_struct_return_fields.get(
+                            return_dest.id, {})
+                        _src_fmap = self._inline_struct_return_fields.get(
+                            ret_val.id, {})
                         for fname, fty in return_dest.ty.fields:
                             if not isinstance(fty, ScalarTy):
                                 continue
-                            src_key = f"{ret_val.name}_{fname}"
-                            src = self._variables.get(src_key)
+                            src = _src_fmap.get(fname)
+                            if src is None:
+                                src = self._variables.get(
+                                    f"{ret_val.name}_{fname}")
                             if src is not None:
-                                dest_f = self._new_val(
-                                    f"{return_dest.name}_{fname}", fty)
+                                dest_f = _pre_ret.get(fname)
+                                if dest_f is None:
+                                    dest_f = self._new_val(
+                                        f"{return_dest.name}_{fname}", fty)
+                                    _pre_ret[fname] = dest_f
                                 self._emit(BinInst(
                                     dest_f, BinOp.ADD, src,
                                     Const(fty, 0.0 if fty.is_float else 0)))
-                                field_vals[fname] = dest_f
-                        self._inline_struct_return_fields[return_dest.id] = field_vals
+                        if _pre_ret:
+                            self._inline_struct_return_fields[return_dest.id] = _pre_ret
                     else:
                         zero = Const(return_dest.ty, 0.0 if (isinstance(return_dest.ty, ScalarTy) and return_dest.ty.is_float) else 0)
                         self._emit(BinInst(return_dest, BinOp.ADD, ret_val, zero))
