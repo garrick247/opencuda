@@ -2077,7 +2077,10 @@ class Parser:
 
         # const/volatile/static/inline/register declaration: skip the qualifier and parse as normal
         _ignorable_quals = (TokKind.KW_CONST, TokKind.KW_VOLATILE, TokKind.KW_STATIC)
+        _stmt_is_volatile = False
         while tok.kind in _ignorable_quals:
+            if tok.kind == TokKind.KW_VOLATILE:
+                _stmt_is_volatile = True
             self._advance()
             tok = self._peek()  # re-read after consuming qualifier(s)
 
@@ -2138,7 +2141,7 @@ class Parser:
             # (allocated in .shared, accessed as ptr[0]).
             # Also handles comma-separated: __shared__ int a, b;
             def _declare_shared_scalar(n):
-                smem_ty = PtrTy(ty, AddrSpace.SHARED)
+                smem_ty = PtrTy(ty, AddrSpace.SHARED, volatile=_stmt_is_volatile)
                 v = self._new_val(n, smem_ty)
                 self._variables[n] = v
                 self._shared_scalars.add(n)
@@ -2161,7 +2164,8 @@ class Parser:
             if self._at(TokKind.RBRACKET):
                 self._advance()
                 self._expect(TokKind.SEMI)
-                smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED)
+                smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED,
+                                volatile=_stmt_is_volatile)
                 val = self._new_val(name, smem_ty)
                 self._variables[name] = val
                 if not hasattr(self._kernel, '_shared_decls'):
@@ -2191,7 +2195,8 @@ class Parser:
                     for d in arr_inner_dims:
                         inner_prod *= d
                     self._array_row_strides[arr_name] = inner_prod * elem_size
-                smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if arr_ty == FLOAT else arr_ty, AddrSpace.SHARED)
+                smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if arr_ty == FLOAT else arr_ty, AddrSpace.SHARED,
+                                volatile=_stmt_is_volatile)
                 v2 = self._new_val(arr_name, smem_ty)
                 self._variables[arr_name] = v2
                 self._declare_local(arr_name)

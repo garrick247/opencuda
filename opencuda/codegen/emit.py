@@ -981,9 +981,9 @@ class PTXEmitter:
             # PTX does not support ld.f16 — use b16 instead
             if ptx_ty == 'f16':
                 ptx_ty = 'b16'
-            if is_volatile and addr_space == 'global':
+            if is_volatile and addr_space in ('global', 'shared'):
                 self._lines.append(
-                    f'    ld.volatile.global.{ptx_ty} {self._reg(inst.dest)}, '
+                    f'    ld.volatile.{addr_space}.{ptx_ty} {self._reg(inst.dest)}, '
                     f'[{self._operand(inst.addr)}];')
             elif nc:
                 self._lines.append(
@@ -1014,9 +1014,9 @@ class PTXEmitter:
                 val_str = self._pred_to_int(inst.value, ptx_ty, kernel)
             else:
                 val_str = self._operand(inst.value, ptx_ty)
-            if is_volatile and addr_space == 'global':
+            if is_volatile and addr_space in ('global', 'shared'):
                 self._lines.append(
-                    f'    st.volatile.global.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
+                    f'    st.volatile.{addr_space}.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
             else:
                 self._lines.append(
                     f'    st.{addr_space}.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
