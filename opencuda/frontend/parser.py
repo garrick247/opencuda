@@ -1526,7 +1526,9 @@ class Parser:
             saved_pos = self._pos
             self._pos = inc_start
             if self._toks[inc_start].kind != TokKind.RPAREN:
-                self._parse_expr()
+                self._parse_assign_expr()
+                while self._match(TokKind.COMMA):
+                    self._parse_assign_expr()
             self._pos = saved_pos
 
             # Write back any variables modified by the increment expression
@@ -1811,6 +1813,16 @@ class Parser:
                 update_name = _stmt_lhs_name or lhs.name
                 if update_name in self._variables:
                     self._variables[update_name] = rhs
+            # Comma-separated assignments: a = 0, b = 0; (for-loop init style)
+            while self._match(TokKind.COMMA):
+                lhs2_name = self._peek().value if self._at(TokKind.IDENT) else None
+                lhs2 = self._parse_lvalue_or_expr()
+                if self._match(TokKind.ASSIGN):
+                    rhs2 = self._parse_assign_expr()
+                    if isinstance(lhs2, Value) and not isinstance(lhs2.ty, PtrTy):
+                        uname2 = lhs2_name or lhs2.name
+                        if uname2 in self._variables:
+                            self._variables[uname2] = rhs2
             self._expect(TokKind.SEMI)
             return
         # Compound assignment: +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
@@ -1862,6 +1874,9 @@ class Parser:
                             self._variables[update_name] = new_val
                 self._expect(TokKind.SEMI)
                 return
+        # Comma-separated expression statements: a++, b += 2 or a = 0, b = 0
+        while self._match(TokKind.COMMA):
+            self._parse_assign_expr()
         self._expect(TokKind.SEMI)
 
     def _parse_lvalue_or_expr(self) -> Operand:
