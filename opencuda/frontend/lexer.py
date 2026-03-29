@@ -122,6 +122,8 @@ _KEYWORDS = {
     'float': TokKind.KW_FLOAT,
     'double': TokKind.KW_DOUBLE,
     'half': TokKind.KW_HALF,
+    '__half': TokKind.KW_HALF,
+    '__half2': TokKind.KW_HALF,
     'char': TokKind.KW_CHAR,
     'short': TokKind.KW_SHORT,
     'long': TokKind.KW_LONG,

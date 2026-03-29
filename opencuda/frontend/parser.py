@@ -1063,6 +1063,26 @@ class Parser:
             self._parse_stmt_or_block()
             return
 
+        # Inline assembly: asm(...); or __asm__(...); — skip entirely
+        if tok.kind == TokKind.IDENT and tok.value in ('asm', '__asm__', '__asm'):
+            # Consume tokens until the matching ';', balancing parentheses
+            self._advance()  # consume 'asm'
+            depth = 0
+            while not self._at(TokKind.EOF):
+                k = self._peek().kind
+                if k == TokKind.LPAREN:
+                    depth += 1; self._advance()
+                elif k == TokKind.RPAREN:
+                    depth -= 1; self._advance()
+                    if depth == 0:
+                        break
+                elif k == TokKind.SEMI and depth == 0:
+                    break
+                else:
+                    self._advance()
+            self._match(TokKind.SEMI)
+            return
+
         # __shared__ declaration: __shared__ type name[size], name[d0][d1]...,
         # or extern __shared__ type name[] (dynamic shared memory, size=0 sentinel).
         if tok.kind == TokKind.KW_SHARED:
@@ -1770,6 +1790,25 @@ class Parser:
                                 index = scaled
                             addr = self._new_val("addr", var.ty)
                             self._emit(BinInst(addr, BinOp.ADD, var, index))
+                            # Pointer-to-pointer: T**[i][j] — load row pointer then index
+                            if (self._at(TokKind.LBRACKET)
+                                    and isinstance(var.ty.pointee, PtrTy)):
+                                row_ptr_ty = var.ty.pointee  # PtrTy(element_ty, ...)
+                                row_ptr = self._new_val("rowptr", row_ptr_ty)
+                                self._emit(LoadInst(row_ptr, addr))
+                                self._advance()  # consume '['
+                                index2 = self._parse_expr()
+                                self._expect(TokKind.RBRACKET)
+                                elem2_size = row_ptr_ty.pointee.size
+                                if elem2_size != 1:
+                                    idx2_ty = index2.ty if isinstance(index2, Value) else INT32
+                                    scaled2 = self._new_val("scale", idx2_ty)
+                                    self._emit(BinInst(scaled2, BinOp.MUL, index2,
+                                                       Const(idx2_ty, elem2_size)))
+                                    index2 = scaled2
+                                final_addr = self._new_val("addr", row_ptr_ty)
+                                self._emit(BinInst(final_addr, BinOp.ADD, row_ptr, index2))
+                                addr = final_addr
                         # Follow chained .field access (e.g. p[tid].pos.x)
                         # keeping the result as a pointer (address) so that
                         # the caller can emit a StoreInst / compound read-modify-write.
