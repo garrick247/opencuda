@@ -89,6 +89,10 @@ class PtrTy(Type):
 # Common type shorthands
 VOID   = ScalarTy(ScalarType.VOID)
 BOOL   = ScalarTy(ScalarType.BOOL)
+INT8   = ScalarTy(ScalarType.INT8)
+UINT8  = ScalarTy(ScalarType.UINT8)
+INT16  = ScalarTy(ScalarType.INT16)
+UINT16 = ScalarTy(ScalarType.UINT16)
 INT32  = ScalarTy(ScalarType.INT32)
 UINT32 = ScalarTy(ScalarType.UINT32)
 INT64  = ScalarTy(ScalarType.INT64)

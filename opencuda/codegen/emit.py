@@ -24,6 +24,8 @@ def _ptx_type(ty: Type) -> str:
     if isinstance(ty, ScalarTy):
         mapping = {
             ScalarType.VOID: 'u32',
+            ScalarType.INT8:  's8',  ScalarType.UINT8:  'u8',
+            ScalarType.INT16: 's16', ScalarType.UINT16: 'u16',
             ScalarType.INT32: 's32', ScalarType.UINT32: 'u32',
             ScalarType.INT64: 's64', ScalarType.UINT64: 'u64',
             ScalarType.FLOAT: 'f32', ScalarType.DOUBLE: 'f64',
@@ -585,6 +587,10 @@ class PTXEmitter:
         elif isinstance(inst, BinInst):
             ty = inst.dest.ty
             ptx_ty = _ptx_type(ty)
+            # Sub-word arithmetic: PTX has no s8/u8/s16/u16 ALU instructions.
+            # Promote to 32-bit for arithmetic (loads/stores use the actual type).
+            if ptx_ty in ('s8', 'u8', 's16', 'u16'):
+                ptx_ty = 's32' if ptx_ty in ('s8', 's16') else 'u32'
 
             # Emit mov for add-zero copy patterns (loop writeback / initializers).
             # add D, V, 0  or  add D, 0, V  → mov D, V
@@ -827,6 +833,10 @@ class PTXEmitter:
             else:
                 ty = lhs_ty  # same signedness, use lhs
             ptx_ty = _ptx_type(ty)
+            # Sub-word comparison: setp.s8/u8/s16/u16 don't exist in PTX.
+            # Promote to 32-bit — values in 32-bit registers, semantics preserved.
+            if ptx_ty in ('s8', 'u8', 's16', 'u16'):
+                ptx_ty = 's32' if ptx_ty in ('s8', 's16') else 'u32'
             op_map = {
                 CmpOp.LT: 'lt', CmpOp.LE: 'le', CmpOp.GT: 'gt',
                 CmpOp.GE: 'ge', CmpOp.EQ: 'eq', CmpOp.NE: 'ne',
