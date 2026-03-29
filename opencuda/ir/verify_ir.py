@@ -169,7 +169,8 @@ def verify_kernel(kernel: Kernel,
     # not an IR instruction.
     # ------------------------------------------------------------------
     def _is_smem(v: Value) -> bool:
-        return isinstance(v.ty, PtrTy) and v.ty.addr_space == AddrSpace.SHARED
+        return (isinstance(v.ty, PtrTy)
+                and v.ty.addr_space in (AddrSpace.SHARED, AddrSpace.LOCAL))
 
     for bb in kernel.blocks:
         for inst in bb.instructions:

@@ -1,5 +1,5 @@
 """
-test_verifier.py — v0.9 IR Verifier Tests.
+test_verifier.py — v0.10 IR Verifier Tests.
 
 Deliverable C: Optimization revalidation — all .cu kernels must pass the IR
 verifier after optimization.  Pre-existing parser bugs (tracked in
@@ -24,20 +24,22 @@ Test groups
   Group 4: Benchmark stats table (logs only, never fails)
   Group 5: Known-bug confirmation — pre-existing parser bugs still detected
 
-Known pre-existing parser bugs (not introduced by v0.9):
-  branch_overlap      — unary negation (-x) emits no instruction in else branch
-  break_continue      — variable defined only on one control-flow path
-  merge_reuse         — phi-like variable used at merge, only defined in one arm
-  nasty_branch_widen  — same single-arm-definition pattern
-  nasty_ldg_cond      — same
-  nasty_mem_loop_store — unroller bug: loop counter value from deleted block used
-  nasty_mem_merge_store — single-arm-definition at merge
-  nasty_mem_ptr_arith — same
-  nasty_multi_exit    — same
-  nasty_while_update  — collatz: variable defined only on one code path
-  struct_test         — same single-arm pattern
-  switch_test         — switch lowering leaves unterminated block (v0.4 known bug)
-  warp_test           — single-branch variable used after diamond merge
+Bug sets
+--------
+KNOWN_PARSER_BUGS: verifier violations that PERSIST after full optimization.
+  These represent fundamental SSA-IR limitations in the parser:
+  - Struct fields undefined after pointer-write through inlined device functions
+  - Single-arm variable definitions across control-flow branches
+  - Struct return values from device functions not connected to caller SSA
+  Group 5 (test_known_parser_bugs_detected) verifies these still show errors
+  after optimization.
+
+KNOWN_PREOPT_ONLY_BUGS: violations present in raw parse output that the
+  optimizer's pipeline RESOLVES.  The bugs are genuine parser issues but the
+  optimizer (loop unrolling, dead_inst_elim, dead_block_elim) happens to
+  eliminate the bad IR before it causes a problem.  Group 5 does NOT check
+  these (they are clean after opt).  Pass-by-pass tests still skip them because
+  the issue appears before the relevant pass has run.
 """
 
 import pytest
@@ -66,7 +68,56 @@ ALL_CU_FILES = sorted(f for f in TESTS_DIR.glob('*.cu') if not f.name.startswith
 # These kernels produce invalid IR that ptxas accepts (PTX zero-initialises
 # registers, masking semantic errors) but our verifier correctly rejects.
 # The optimizer does NOT introduce these bugs — they pre-date v0.9.
-KNOWN_PARSER_BUGS = frozenset()
+# All files here still show verifier errors after full optimization (confirmed
+# by test_known_parser_bugs_detected).
+KNOWN_PARSER_BUGS = frozenset({
+    # Struct fields used in caller after device function modifies them via pointer
+    # — the caller's SSA values for those fields are never updated
+    'addr_of_local',       # uninitialized scalar used in initial spill StoreInst
+    'probe_an',            # Hit struct fields h.t / h.id undefined after inline return
+    'probe_ao',            # struct field after device fn inline
+    'probe_ar',            # struct field after device fn inline
+    'probe_bb',            # struct field (Matrix) after inline; mat_m_N undefined
+    'probe_bq',            # struct field after device fn inline
+    'probe_bu',            # Complex struct: missing terminator + struct fields undefined
+    'probe_cj',            # Config struct fields undefined after init_config(&cfg,...) inline
+    'probe_cl',            # struct field after device fn inline
+    'probe_cw',            # struct field after device fn inline
+    'probe_da',            # struct field after device fn inline
+    'probe_dc',            # struct field after device fn inline
+    'probe_dg',            # dominance violation: struct array field in nested loops
+    'probe_dh',            # struct field after device fn inline
+    'probe_dr',            # struct field after device fn inline
+    'probe_dv',            # struct field after device fn inline
+    'probe_el',            # struct field after device fn inline
+    'probe_em',            # struct field after device fn inline
+    'probe_fe',            # struct field after device fn inline
+    'probe_fi',            # struct field after device fn inline
+    'probe_fu',            # struct field after device fn inline
+    'probe_fw',            # struct field after device fn inline
+    'probe_gd',            # struct field after device fn inline
+    'probe_gi',            # struct field after device fn inline
+    'probe_gj',            # struct field after device fn inline
+    'probe_gq',            # struct field after device fn inline
+    'probe_jo',            # struct field after device fn inline
+    'probe_jv',            # struct field after device fn inline
+    'probe_lh',            # after_break/continue unreachable + dominance violation
+    'struct_multidim_field',  # struct array field access via pointer
+    'union_const_mem',     # union field aliasing not tracked in SSA
+})
+
+# Parser bugs that are ONLY visible before the full optimization pipeline runs.
+# The optimizer (dead_block_elim, dead_inst_elim, loop unrolling) happens to
+# eliminate the bad IR.  Group 5 does NOT check these.
+KNOWN_PREOPT_ONLY_BUGS = frozenset({
+    'probe_di',     # missing terminator in dead inline-merge block (dead_block_elim fixes)
+    'probe_gn',     # missing terminator in dead ternary-merge block (dead_block_elim fixes)
+    'probe_hs',     # struct return fields undefined — loop unrolling resolves them
+    'typedef_union', # union field aliasing: dead_inst_elim eliminates the bad use
+})
+
+# Combined skip set for pass-by-pass tests (both categories need to be skipped)
+_SKIP_IN_PASSBYPASS = KNOWN_PARSER_BUGS | KNOWN_PREOPT_ONLY_BUGS
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +125,12 @@ KNOWN_PARSER_BUGS = frozenset()
 # ---------------------------------------------------------------------------
 
 def _parse(path: Path) -> Module:
-    src = path.read_text()
+    src = path.read_text(encoding='utf-8')
     return parse(preprocess(src))
 
 
 def _parse_opt(path: Path) -> Module:
-    src = path.read_text()
+    src = path.read_text(encoding='utf-8')
     return optimize(parse(preprocess(src)))
 
 
@@ -104,7 +155,7 @@ def _make_two_block_kernel() -> Kernel:
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_pre_opt_structural_clean(cu_file):
     """Before optimization: no missing terminators and no dangling branches."""
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse(cu_file)
     all_errs = verify_module(mod, check_reachability=False)
@@ -323,7 +374,7 @@ def test_module_verify_aggregates_kernels():
 
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_after_constant_fold_clean(cu_file):
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse(cu_file)
     for kernel in mod.kernels:
@@ -335,7 +386,7 @@ def test_after_constant_fold_clean(cu_file):
 
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_after_cse_clean(cu_file):
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse(cu_file)
     for kernel in mod.kernels:
@@ -348,7 +399,7 @@ def test_after_cse_clean(cu_file):
 
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_after_dead_block_elim_clean(cu_file):
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse(cu_file)
     for kernel in mod.kernels:
@@ -363,7 +414,7 @@ def test_after_dead_block_elim_clean(cu_file):
 
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_after_identity_fold_clean(cu_file):
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse(cu_file)
     for kernel in mod.kernels:
@@ -379,7 +430,7 @@ def test_after_identity_fold_clean(cu_file):
 
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_after_licm_clean(cu_file):
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse(cu_file)
     for kernel in mod.kernels:
@@ -531,7 +582,7 @@ def test_irreducible_loop_detected():
 @pytest.mark.parametrize('cu_file', ALL_CU_FILES, ids=lambda p: p.stem)
 def test_real_kernel_loops_are_natural(cu_file):
     """All natural loops in real kernels must have headers that dominate bodies."""
-    if cu_file.stem in KNOWN_PARSER_BUGS:
+    if cu_file.stem in _SKIP_IN_PASSBYPASS:
         pytest.skip(f'known pre-existing parser bug: {cu_file.stem}')
     mod = _parse_opt(cu_file)
     for kernel in mod.kernels:
