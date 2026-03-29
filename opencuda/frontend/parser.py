@@ -37,6 +37,8 @@ class Parser:
         self._block_count = 0
         self._struct_types: dict[str, StructTy] = {}  # struct name → StructTy
         self._typedefs: dict[str, Type] = {}  # typedef name → Type
+        # Pre-register CUDA built-in vector types (float2, int3, etc.)
+        self._register_builtin_vector_types()
         self._break_targets: list[str] = []          # stack of break target labels
         self._break_snapshots: list[Optional[dict]] = []  # vars snapshot at break scope entry
         self._continue_targets: list[str] = []       # stack of continue target labels
@@ -44,6 +46,38 @@ class Parser:
         # Module-level compile-time constants (enum values, etc.)
         # These are visible in all kernels as Const operands without IR instructions.
         self._global_consts: dict[str, Const] = {}
+
+    def _register_builtin_vector_types(self):
+        """Pre-register CUDA built-in vector types as StructTy.
+
+        float2/float3/float4, int2/int3/int4, uint2/uint3/uint4,
+        double2, char2/char4, short2/short4, etc.
+        These are accessed via .x/.y/.z/.w member syntax.
+        """
+        def _vec(base_ty, names):
+            fields = tuple((n, base_ty) for n in names)
+            st = StructTy('__vec__', fields)
+            return st
+
+        _xy = ('x', 'y')
+        _xyz = ('x', 'y', 'z')
+        _xyzw = ('x', 'y', 'z', 'w')
+
+        for typename, base_ty, members in [
+            ('float2', FLOAT, _xy),   ('float3', FLOAT, _xyz),  ('float4', FLOAT, _xyzw),
+            ('double2', DOUBLE, _xy),
+            ('int2', INT32, _xy),     ('int3', INT32, _xyz),    ('int4', INT32, _xyzw),
+            ('uint2', UINT32, _xy),   ('uint3', UINT32, _xyz),  ('uint4', UINT32, _xyzw),
+            ('short2', INT32, _xy),   ('ushort2', UINT32, _xy),
+            ('char2', INT32, _xy),    ('uchar2', UINT32, _xy),
+            ('char4', INT32, _xyzw),  ('uchar4', UINT32, _xyzw),
+            ('long2', INT64, _xy),    ('ulong2', UINT64, _xy),
+            ('longlong2', INT64, _xy), ('ulonglong2', UINT64, _xy),
+        ]:
+            fields = tuple((n, base_ty) for n in members)
+            st = StructTy(typename, fields)
+            self._struct_types[typename] = st
+            self._typedefs[typename] = st
 
     # -- Token helpers -------------------------------------------------------
 
@@ -139,6 +173,10 @@ class Parser:
             self._advance()
             if self._match(TokKind.KW_INT):
                 pass
+            elif self._match(TokKind.KW_SHORT):
+                self._match(TokKind.KW_INT)
+            elif self._match(TokKind.KW_CHAR):
+                pass
             elif self._match(TokKind.KW_LONG):
                 if self._match(TokKind.KW_LONG):
                     return UINT64
@@ -148,6 +186,13 @@ class Parser:
             if self._match(TokKind.KW_LONG):
                 return INT64
             return INT32  # treat 'long' as int32 for simplicity
+        elif tok.kind == TokKind.KW_SHORT:
+            self._advance()
+            self._match(TokKind.KW_INT)  # optional trailing 'int'
+            return INT32  # treat 'short' as int32 (no sub-word PTX registers)
+        elif tok.kind == TokKind.KW_CHAR:
+            self._advance()
+            return INT32  # treat 'char' as int32 for simplicity
 
         # Struct type
         if tok.kind == TokKind.KW_STRUCT:
@@ -603,17 +648,19 @@ class Parser:
                     dest = self._new_val(builtin.replace('.', '_'), UINT32)
                     self._emit(CallInst(dest, builtin))
                     lhs = dest
-                # Struct member access
+                # Struct / vector variable member access (e.g. v.x where v is float3).
+                # Each field is a separate scalar variable: _variables['v_x'], etc.
                 elif isinstance(lhs, Value) and isinstance(lhs.ty, StructTy):
                     sty = lhs.ty
-                    field_off = sty.field_offset(member)
                     field_ty = sty.field_type(member)
-                    # Compute address: &lhs + field_offset
-                    # For now, emit as a load from a computed offset
-                    # (this assumes lhs is a pointer to the struct)
-                    dest = self._new_val(f"{lhs.name}_{member}", field_ty)
-                    # TODO: proper struct field access via pointer arithmetic
-                    lhs = dest
+                    field_key = f"{lhs.name}_{member}"
+                    if field_key in self._variables:
+                        lhs = self._variables[field_key]
+                    else:
+                        # Field not yet created — create it lazily
+                        dest = self._new_val(field_key, field_ty)
+                        self._variables[field_key] = dest
+                        lhs = dest
                 elif isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy) and isinstance(lhs.ty.pointee, StructTy):
                     sty = lhs.ty.pointee
                     field_off = sty.field_offset(member)
@@ -896,9 +943,12 @@ class Parser:
 
         # Variable declaration: type name [= expr] [, name2 [= expr2]] ...;
         # Handles both single and multiple comma-separated declarators.
-        if tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_FLOAT,
-                        TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
-                        TokKind.KW_HALF):
+        # Also handles typedef'd types (e.g. float3, int2, user typedefs).
+        if (tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_FLOAT,
+                         TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
+                         TokKind.KW_HALF, TokKind.KW_CHAR, TokKind.KW_SHORT,
+                         TokKind.KW_STRUCT)
+                or (tok.kind == TokKind.IDENT and tok.value in self._typedefs)):
             ty = self._parse_type_with_ptr()
             while True:
                 # Each declarator may have its own pointer stars: int *a, b, *c;
@@ -906,6 +956,20 @@ class Parser:
                 while self._match(TokKind.STAR):
                     decl_ty = PtrTy(decl_ty, AddrSpace.GLOBAL)
                 name = self._expect(TokKind.IDENT).value
+
+                # Struct / vector type variable (e.g. float3 v;).
+                # Decompose into per-field scalar variables: v_x, v_y, v_z.
+                # A sentinel Value with StructTy is kept for type resolution
+                # during member-access parsing (.x / .y / .z / .w).
+                if isinstance(decl_ty, StructTy):
+                    sentinel = self._new_val(name, decl_ty)
+                    self._variables[name] = sentinel
+                    for fname, fty in decl_ty.fields:
+                        fval = self._new_val(f"{name}_{fname}", fty)
+                        self._variables[f"{name}_{fname}"] = fval
+                    if not self._match(TokKind.COMMA):
+                        break
+                    continue
 
                 # Local array declaration: type name[N];
                 # Allocate in .local memory, expose as a pointer.
@@ -1464,9 +1528,21 @@ class Parser:
         return self._kernel
 
     def _parse_struct_def(self):
-        """Parse: struct Name { type field; ... };"""
+        """Parse: struct [Name] { type field; ... } [;]
+        Name is optional for anonymous structs used in typedefs.
+        """
         self._expect(TokKind.KW_STRUCT)
-        name = self._expect(TokKind.IDENT).value
+        # Optional tag name — anonymous structs have none
+        if self._at(TokKind.IDENT):
+            name = self._advance().value
+        else:
+            name = f'__anon_{self._block_count}'
+            self._block_count += 1
+        if not self._at(TokKind.LBRACE):
+            # Forward reference / usage without body: struct Name var;
+            if name in self._struct_types:
+                return self._struct_types[name]
+            raise ParseError(f"Line {self._peek().line}: undefined struct '{name}'")
         self._expect(TokKind.LBRACE)
         fields = []
         while not self._at(TokKind.RBRACE):
@@ -1475,9 +1551,13 @@ class Parser:
             self._expect(TokKind.SEMI)
             fields.append((fname, fty))
         self._expect(TokKind.RBRACE)
-        self._expect(TokKind.SEMI)
         sty = StructTy(name, tuple(fields))
         self._struct_types[name] = sty
+        # Only consume the trailing semicolon if not in a typedef context
+        # (typedef will consume its own trailing ident + semi).
+        # Check: if next token is SEMI or EOF, consume.
+        if self._at(TokKind.SEMI):
+            self._advance()
         return sty
 
     def _parse_enum_def(self):
@@ -1508,13 +1588,19 @@ class Parser:
         self._match(TokKind.SEMI)  # optional trailing semicolon
 
     def _parse_typedef(self):
-        """Parse: typedef struct Name Name;  or  typedef type name;"""
+        """Parse: typedef struct [Name] { ... } Alias;  or  typedef type name;"""
         self._expect(TokKind.KW_TYPEDEF)
         if self._at(TokKind.KW_STRUCT):
             sty = self._parse_struct_def()
-            # typedef struct Foo Foo; — the name after } is the typedef alias
-            # But we already consumed ;. Check if there's another ident.
-            self._typedefs[sty.name] = sty
+            # _parse_struct_def may or may not have consumed the ';'.
+            # If there is an IDENT next, it is the typedef alias name.
+            if self._at(TokKind.IDENT):
+                alias = self._advance().value
+                self._typedefs[alias] = sty
+                self._match(TokKind.SEMI)
+            else:
+                # No alias — just register by struct name
+                self._typedefs[sty.name] = sty
         else:
             ty = self._parse_type_with_ptr()
             alias = self._expect(TokKind.IDENT).value
