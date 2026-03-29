@@ -73,6 +73,7 @@ class Parser:
         self._global_consts['true'] = Const(INT32, 1)
         self._global_consts['false'] = Const(INT32, 0)
         self._global_consts['NULL'] = Const(UINT64, 0)
+        self._global_consts['nullptr'] = Const(UINT64, 0)
 
     def _register_builtin_vector_types(self):
         """Pre-register CUDA built-in vector types as StructTy.
@@ -1730,15 +1731,25 @@ class Parser:
         if self._match(TokKind.ASSIGN):
             rhs = self._parse_expr()
             if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
-                # Coerce rhs to the pointer's pointee type if there's a scalar mismatch
-                # (e.g. half value stored to float* must widen via cvt.f32.f16).
-                if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
-                        and isinstance(lhs.ty.pointee, ScalarTy)
-                        and rhs.ty != lhs.ty.pointee):
-                    coerced = self._new_val("coerce", lhs.ty.pointee)
-                    self._emit(CvtInst(coerced, rhs))
-                    rhs = coerced
-                self._emit(StoreInst(addr=lhs, value=rhs))
+                # Distinguish pointer variable reassignment (p = new_ptr) from
+                # memory store through pointer (ptr[i] = val or *ptr = val).
+                # _stmt_lhs_name is set iff the statement started with IDENT = ...
+                # AND the IDENT is tracked in _variables.  In that case, treat as
+                # variable update; otherwise emit a memory store.
+                update_name = _stmt_lhs_name or lhs.name
+                if _stmt_lhs_name and update_name in self._variables:
+                    # Pointer variable reassignment: p = new_ptr_value
+                    self._variables[update_name] = rhs
+                else:
+                    # Memory store through pointer: ptr[i] = val or *ptr = val
+                    # Coerce rhs to the pointer's pointee type if there's a mismatch
+                    if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
+                            and isinstance(lhs.ty.pointee, ScalarTy)
+                            and rhs.ty != lhs.ty.pointee):
+                        coerced = self._new_val("coerce", lhs.ty.pointee)
+                        self._emit(CvtInst(coerced, rhs))
+                        rhs = coerced
+                    self._emit(StoreInst(addr=lhs, value=rhs))
             elif isinstance(lhs, Value):
                 update_name = _stmt_lhs_name or lhs.name
                 if update_name in self._variables:
@@ -1885,6 +1896,8 @@ class Parser:
                             self._emit(BinInst(new_addr, BinOp.ADD, addr, Const(INT32, field_off)))
                             addr = new_addr
                         return addr  # Return ADDRESS, not loaded value
+                    # Plain pointer variable: p = ... or p used as rvalue
+                    return var
         # Fall back to normal expression parsing
         return self._parse_expr()
 
