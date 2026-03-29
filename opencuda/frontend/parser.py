@@ -1016,7 +1016,22 @@ class Parser:
                                 index = scaled
                             addr = self._new_val("addr", var.ty)
                             self._emit(BinInst(addr, BinOp.ADD, var, index))
-                            return addr  # return address, no load
+                            # &arr[idx].field[.subfield...] — chain field addresses
+                            cur_addr = addr
+                            cur_ty = var.ty.pointee
+                            while (self._at(TokKind.DOT)
+                                   and isinstance(cur_ty, StructTy)):
+                                self._advance()  # consume '.'
+                                field = self._expect(TokKind.IDENT).value
+                                field_off = cur_ty.field_offset(field)
+                                field_ty = cur_ty.field_type(field)
+                                field_ptr_ty = PtrTy(field_ty, var.ty.addr_space)
+                                field_addr = self._new_val("faddr", field_ptr_ty)
+                                self._emit(BinInst(field_addr, BinOp.ADD,
+                                                   cur_addr, Const(INT32, field_off)))
+                                cur_addr = field_addr
+                                cur_ty = field_ty
+                            return cur_addr  # return address, no load
                         if self._at(TokKind.ARROW) or self._at(TokKind.DOT):
                             # &p->field or &p.field: postfix operators follow.
                             # Unconsume ident and fall to generic handler so that
