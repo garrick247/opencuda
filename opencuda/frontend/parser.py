@@ -1117,7 +1117,9 @@ class Parser:
             return dest
         if self._match(TokKind.BANG):
             operand = self._parse_unary_expr()
-            dest = self._new_val("lnot", INT32)
+            # Logical NOT: result is BOOL so that 'int x = !expr' triggers CvtInst
+            # (BOOL → INT32 → selp.s32), rather than a no-op BinInst ADD of a predicate.
+            dest = self._new_val("lnot", ScalarTy(ScalarType.BOOL))
             self._emit(CmpInst(dest, CmpOp.EQ, operand, Const(INT32, 0)))
             return dest
         # Prefix ++i / --i — increment/decrement before use

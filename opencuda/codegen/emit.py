@@ -925,10 +925,28 @@ class PTXEmitter:
             # should emit cvt.rn.f32.u32, not cvt.rn.f32.s32 (which would sign-extend UINT32 max).
             src_ty = inst.src.ty if isinstance(inst.src, (Value, Const)) else INT32
             dst_ty = inst.dest.ty
-            src_ptx = _ptx_type(src_ty)
             dst_ptx = _ptx_type(dst_ty)
+            # Predicate → integer: emit selp.{type} dest, 1, 0, pred
+            src_is_bool = (isinstance(src_ty, ScalarTy)
+                           and src_ty.scalar == ScalarType.BOOL)
+            src_is_pred_val = (isinstance(inst.src, Value)
+                               and inst.src.id in self._pred_ids)
+            if src_is_bool or src_is_pred_val:
+                pred_src = self._operand(inst.src)
+                # selp needs type-appropriate literals for true/false values
+                if dst_ptx == 'f32':
+                    true_lit, false_lit = '0f3F800000', '0f00000000'
+                elif dst_ptx == 'f64':
+                    true_lit, false_lit = '0d3FF0000000000000', '0d0000000000000000'
+                elif dst_ptx == 'f16':
+                    true_lit, false_lit = '0h3C00', '0h0000'
+                else:
+                    true_lit, false_lit = '1', '0'
+                self._lines.append(
+                    f'    selp.{dst_ptx} {self._reg(inst.dest)}, {true_lit}, {false_lit}, {pred_src};')
+                return
+            src_ptx = _ptx_type(src_ty)
             rnd = _cvt_modifier(dst_ty, src_ty)
-            # Predicate → integer: emit selp first, then cvt on the selp result
             src_op = self._operand(inst.src, src_ptx, kernel)
             self._lines.append(
                 f'    cvt{rnd}.{dst_ptx}.{src_ptx} {self._reg(inst.dest)}, {src_op};')
