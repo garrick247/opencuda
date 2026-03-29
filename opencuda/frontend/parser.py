@@ -1897,11 +1897,18 @@ class Parser:
                         else:
                             ret_ty = INT32
                     elif name in _float_unary:
-                        ret_ty = FLOAT
+                        # Preserve double precision: sin(double) → double, sinf(float) → float
+                        _a0 = args[0] if args else None
+                        _a0_ty = _a0.ty if isinstance(_a0, (Value, Const)) else FLOAT
+                        ret_ty = DOUBLE if (isinstance(_a0_ty, ScalarTy) and _a0_ty.scalar == ScalarType.DOUBLE) else FLOAT
                     elif name in _float_binary:
-                        ret_ty = FLOAT
+                        _a0 = args[0] if args else None
+                        _a0_ty = _a0.ty if isinstance(_a0, (Value, Const)) else FLOAT
+                        ret_ty = DOUBLE if (isinstance(_a0_ty, ScalarTy) and _a0_ty.scalar == ScalarType.DOUBLE) else FLOAT
                     elif name in _float_ternary:
-                        ret_ty = FLOAT
+                        _a0 = args[0] if args else None
+                        _a0_ty = _a0.ty if isinstance(_a0, (Value, Const)) else FLOAT
+                        ret_ty = DOUBLE if (isinstance(_a0_ty, ScalarTy) and _a0_ty.scalar == ScalarType.DOUBLE) else FLOAT
                     elif name in _int_unary:
                         a_ty = args[0].ty if args and isinstance(args[0], (Value, Const)) else INT32
                         ret_ty = a_ty

@@ -1248,6 +1248,31 @@ class PTXEmitter:
                     'exp2f': 'ex2.approx.f32', 'exp2': 'ex2.approx.f32',
                     'log2f': 'lg2.approx.f32', 'log2': 'lg2.approx.f32',
                 }
+                # f64 variants: only sqrt.rn.f64 and rsqrt.approx.f64 are direct PTX.
+                # All other double-precision transcendentals require cvt→f32→approx→cvt.
+                _f64_direct_unary = {
+                    'sqrt':  'sqrt.rn.f64',
+                    'rsqrt': 'rsqrt.approx.f64',
+                    'fabs':  'abs.f64',
+                    'floor': 'cvt.rmi.f64.f64', 'ceil': 'cvt.rpi.f64.f64',
+                    'trunc': 'cvt.rzi.f64.f64', 'round': 'cvt.rni.f64.f64',
+                }
+                # f64 fallback: these don't have f64 PTX instructions on SM_120.
+                # Emit: cvt.rn.f32.f64 → approx.f32 → cvt.f64.f32 (imprecise but valid).
+                _f64_via_f32_approx = {
+                    'sin': 'sin.approx.f32', 'cos': 'cos.approx.f32',
+                    'exp2': 'ex2.approx.f32', 'log2': 'lg2.approx.f32',
+                }
+                # Two-step f32 scale then ex2/lg2 (f64 input cast to f32 first).
+                _f64_via_f32_scaled = {
+                    'exp':   ('ex2.approx.f32', '0f3FB8AA3B'),
+                    'log':   ('lg2.approx.f32', '0f3F317218'),
+                    'log10': ('lg2.approx.f32', '0f3E9A209B'),
+                    'exp10': ('ex2.approx.f32', '0f40549A78'),
+                }
+                # (unused placeholders — kept for clarity)
+                _f64_scaled_unary = {}
+                _f64_approx_unary = {}
                 # expf(x) = 2^(x*log2e);  logf(x) = lg2(x)*ln2
                 # log10f(x) = lg2(x)*log10_2;  exp10f(x) = 2^(x*log2_10)
                 # These require two PTX instructions.
@@ -1272,6 +1297,13 @@ class PTXEmitter:
                     'fminf': 'min.f32', 'fmin': 'min.f32',
                     'fmaxf': 'max.f32', 'fmax': 'max.f32',
                 }
+                # Detect if first argument is f64 — redirect to f64 intrinsics.
+                _first_arg_is_f64 = (
+                    inst.args
+                    and isinstance(inst.args[0], Value)
+                    and isinstance(inst.args[0].ty, ScalarTy)
+                    and inst.args[0].ty.scalar == ScalarType.DOUBLE
+                )
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
                 if inst.func in ('__nanosleep',):
                     # Turing+ warp-level sleep: nanosleep.approx.u32 delay_ns
@@ -1369,6 +1401,33 @@ class PTXEmitter:
                     self._lines.append(f'    and.{ptx_ty} {self._reg(tmp_lsb)}, {src}, {self._reg(tmp_neg)};')
                     self._lines.append(f'    bfind.u32 {self._reg(tmp_pos)}, {self._reg(tmp_lsb)};')
                     self._lines.append(f'    add.s32 {dest}, {self._reg(tmp_pos)}, 1;')
+                elif _first_arg_is_f64 and inst.func in _f64_direct_unary:
+                    # Direct f64 PTX instruction (sqrt.rn, rsqrt.approx, abs, cvt rounding).
+                    ptx_op = _f64_direct_unary[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    self._lines.append(f'    {ptx_op} {dest}, {src};')
+                elif _first_arg_is_f64 and inst.func in _f64_via_f32_approx:
+                    # No f64 PTX approx: downcast to f32, compute, upcast back to f64.
+                    ptx_op = _f64_via_f32_approx[inst.func]
+                    n = inst.dest.id if inst.dest else 0
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    tmp32 = kernel.new_value(f'_d2f_{n}', FLOAT)
+                    res32 = kernel.new_value(f'_f32r_{n}', FLOAT)
+                    self._lines.append(f'    cvt.rn.f32.f64 {self._reg(tmp32)}, {src};')
+                    self._lines.append(f'    {ptx_op} {self._reg(res32)}, {self._reg(tmp32)};')
+                    self._lines.append(f'    cvt.f64.f32 {dest}, {self._reg(res32)};')
+                elif _first_arg_is_f64 and inst.func in _f64_via_f32_scaled:
+                    # Two-step via f32: downcast, scale, ex2/lg2 approx, upcast.
+                    ptx_op, scale_hex = _f64_via_f32_scaled[inst.func]
+                    n = inst.dest.id if inst.dest else 0
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    tmp32 = kernel.new_value(f'_d2f_{n}', FLOAT)
+                    scaled = kernel.new_value(f'_scl_{n}', FLOAT)
+                    res32  = kernel.new_value(f'_f32r_{n}', FLOAT)
+                    self._lines.append(f'    cvt.rn.f32.f64 {self._reg(tmp32)}, {src};')
+                    self._lines.append(f'    mul.f32 {self._reg(scaled)}, {self._reg(tmp32)}, {scale_hex};')
+                    self._lines.append(f'    {ptx_op} {self._reg(res32)}, {self._reg(scaled)};')
+                    self._lines.append(f'    cvt.f64.f32 {dest}, {self._reg(res32)};')
                 elif inst.func in _f32_scaled_unary:
                     # Two-instruction form: scale input then apply base-2 op.
                     # e.g. expf(x): tmp = x * log2e; dest = ex2.approx(tmp)
@@ -1386,16 +1445,20 @@ class PTXEmitter:
                     src = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     self._lines.append(f'    {ptx_op} {dest}, {src};')
                 elif inst.func in _f32_binary:
-                    ptx_op = _f32_binary[inst.func]
+                    if _first_arg_is_f64:
+                        ptx_op = _f32_binary[inst.func].replace('.f32', '.f64')
+                    else:
+                        ptx_op = _f32_binary[inst.func]
                     a = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
                     self._lines.append(f'    {ptx_op} {dest}, {a}, {b};')
                 elif inst.func in ('fmaf', 'fma'):
                     # Fused multiply-add: fma(a, b, c) = a*b + c (single rounding)
+                    fma_ty = 'f64' if _first_arg_is_f64 else 'f32'
                     a = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
                     c = self._operand(inst.args[2]) if len(inst.args) > 2 else '0f00000000'
-                    self._lines.append(f'    fma.rn.f32 {dest}, {a}, {b}, {c};')
+                    self._lines.append(f'    fma.rn.{fma_ty} {dest}, {a}, {b}, {c};')
                 elif inst.func in ('fmodf', 'fmod'):
                     # fmod(x, y) = x - trunc(x/y)*y — no direct PTX opcode
                     # Uses: div.approx, cvt.rzi (truncate-toward-zero), mul, sub
