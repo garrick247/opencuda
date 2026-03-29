@@ -747,19 +747,25 @@ class Parser:
             return dest
         # Prefix ++i / --i — increment/decrement before use
         if self._match(TokKind.PLUSPLUS):
+            _pre_var = self._peek().value if self._at(TokKind.IDENT) else None
             operand = self._parse_unary_expr()
             if isinstance(operand, Value):
                 new_val = self._new_val(f"{operand.name}_preinc", operand.ty)
                 self._emit(BinInst(new_val, BinOp.ADD, operand, Const(operand.ty, 1)))
-                self._variables[operand.name] = new_val
+                update_name = (_pre_var if _pre_var and _pre_var in self._variables
+                               else operand.name)
+                self._variables[update_name] = new_val
                 return new_val  # pre-increment returns the new value
             return operand
         if self._match(TokKind.MINUSMINUS):
+            _pre_var = self._peek().value if self._at(TokKind.IDENT) else None
             operand = self._parse_unary_expr()
             if isinstance(operand, Value):
                 new_val = self._new_val(f"{operand.name}_predec", operand.ty)
                 self._emit(BinInst(new_val, BinOp.SUB, operand, Const(operand.ty, 1)))
-                self._variables[operand.name] = new_val
+                update_name = (_pre_var if _pre_var and _pre_var in self._variables
+                               else operand.name)
+                self._variables[update_name] = new_val
                 return new_val  # pre-decrement returns the new value
             return operand
         # Cast: (type)expr
@@ -788,6 +794,15 @@ class Parser:
         return self._parse_postfix_expr()
 
     def _parse_postfix_expr(self) -> Operand:
+        # Capture the source variable name before parsing the primary expression.
+        # Values resolved from _variables may have a .name that differs from the
+        # key used in _variables (e.g. `j = n-1` stores _variables["j"] = Value("compound"))
+        # so post-increment/decrement must update _variables["j"], not _variables["compound"].
+        _src_var_name = None
+        if self._at(TokKind.IDENT):
+            cand = self._peek().value
+            if cand in self._variables:
+                _src_var_name = cand
         lhs = self._parse_primary_expr()
 
         while True:
@@ -797,16 +812,20 @@ class Parser:
                     old = lhs
                     new_val = self._new_val(f"{old.name}_inc", old.ty)
                     self._emit(BinInst(new_val, BinOp.ADD, old, Const(old.ty, 1)))
-                    self._variables[old.name] = new_val
+                    update_name = _src_var_name if _src_var_name else old.name
+                    self._variables[update_name] = new_val
                     lhs = old  # post-increment returns old value
+                _src_var_name = None
                 continue
             if self._match(TokKind.MINUSMINUS):
                 if isinstance(lhs, Value):
                     old = lhs
                     new_val = self._new_val(f"{old.name}_dec", old.ty)
                     self._emit(BinInst(new_val, BinOp.SUB, old, Const(old.ty, 1)))
-                    self._variables[old.name] = new_val
+                    update_name = _src_var_name if _src_var_name else old.name
+                    self._variables[update_name] = new_val
                     lhs = old
+                _src_var_name = None
                 continue
 
             if self._match(TokKind.LBRACKET):
