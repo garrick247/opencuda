@@ -1080,13 +1080,28 @@ class Parser:
                         break
                     continue
 
-                # Local array declaration: type name[N];
+                # Local array declaration: type name[N] or name[d0][d1]...;
                 # Allocate in .local memory, expose as a pointer.
                 if self._at(TokKind.LBRACKET):
                     self._advance()
                     size_operand = self._parse_assign_expr()
                     self._expect(TokKind.RBRACKET)
-                    size = int(size_operand.value) if isinstance(size_operand, Const) else 1
+                    d0 = int(size_operand.value) if isinstance(size_operand, Const) else 1
+                    size = d0
+                    inner_dims = []
+                    while self._at(TokKind.LBRACKET):
+                        self._advance()
+                        dim_op = self._parse_assign_expr()
+                        dim = int(dim_op.value) if isinstance(dim_op, Const) else 1
+                        inner_dims.append(dim)
+                        size *= dim
+                        self._expect(TokKind.RBRACKET)
+                    if inner_dims:
+                        elem_size = decl_ty.size if isinstance(decl_ty, ScalarTy) else 8
+                        inner_prod = 1
+                        for d in inner_dims:
+                            inner_prod *= d
+                        self._array_row_strides[name] = inner_prod * elem_size
                     arr_ty = PtrTy(decl_ty, AddrSpace.LOCAL)
                     val = self._new_val(name, arr_ty)
                     self._variables[name] = val
