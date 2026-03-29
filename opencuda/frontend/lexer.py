@@ -34,8 +34,10 @@ class TokKind(Enum):
     KW_WHILE    = auto()
     KW_RETURN   = auto()
     KW_STRUCT   = auto()
+    KW_UNION    = auto()
     KW_TYPEDEF  = auto()
     KW_CONST    = auto()
+    KW_CONSTANT = auto()  # __constant__
     KW_VOLATILE = auto()
     KW_BREAK    = auto()
     KW_CONTINUE = auto()
@@ -129,6 +131,8 @@ _KEYWORDS = {
     'while': TokKind.KW_WHILE,
     'return': TokKind.KW_RETURN,
     'struct': TokKind.KW_STRUCT,
+    'union': TokKind.KW_UNION,
+    '__constant__': TokKind.KW_CONSTANT,
     'typedef': TokKind.KW_TYPEDEF,
     'const': TokKind.KW_CONST,
     'volatile': TokKind.KW_VOLATILE,
