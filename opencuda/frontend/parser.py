@@ -656,13 +656,30 @@ class Parser:
             # RHS block: evaluate RHS, store in dest.
             # IMPORTANT: parsing RHS may create new blocks and change _cur_block.
             # Set the terminator on self._cur_block (final RHS block), not rhs_bb.
+            # Snapshot variables so we can detect rebindings in the RHS and make
+            # them multi-def by emitting default copies in lor_skip.
+            vars_before_rhs = dict(self._variables)
             self._cur_block = rhs_bb
             rhs = self._parse_and_expr()
             self._emit(BinInst(dest, BinOp.ADD, rhs, Const(INT32, 0)))
             self._cur_block.terminator = BrTerm(merge_bb.label)
-            # Skip block: LHS was true, result is 1
+            # Collect variables rebound inside lor_rhs (assignment expressions, etc.)
+            _rebound = [
+                (new_v, vars_before_rhs[vname])
+                for vname, new_v in self._variables.items()
+                if (isinstance(new_v, Value)
+                    and vname in vars_before_rhs
+                    and vars_before_rhs[vname] is not new_v
+                    and isinstance(vars_before_rhs[vname], Value))
+            ]
+            # Skip block: LHS was true, result is 1.
+            # Also emit default copies for rebound vars to make them multi-def,
+            # exempting them from the verifier's single-def dominance check.
             self._cur_block = skip_bb
             self._emit(BinInst(dest, BinOp.ADD, Const(INT32, 1), Const(INT32, 0)))
+            for new_v, old_v in _rebound:
+                _zero = Const(new_v.ty, 0.0 if isinstance(new_v.ty, ScalarTy) and new_v.ty.is_float else 0)
+                self._emit(BinInst(new_v, BinOp.ADD, old_v, _zero))
             self._cur_block.terminator = BrTerm(merge_bb.label)
             self._cur_block = merge_bb
             lhs = dest
@@ -684,13 +701,32 @@ class Parser:
             # IMPORTANT: parsing RHS may create new blocks and change _cur_block
             # (e.g. if RHS contains || or another &&).  Set the terminator on
             # self._cur_block (the final block after RHS evaluation), not rhs_bb.
+            # Snapshot variables so we can detect rebindings and make them multi-def.
+            vars_before_rhs = dict(self._variables)
             self._cur_block = rhs_bb
             rhs = self._parse_bitor_expr()
             self._emit(BinInst(dest, BinOp.ADD, rhs, Const(INT32, 0)))
             self._cur_block.terminator = BrTerm(merge_bb.label)
-            # Skip block: LHS was false, result is 0
+            # Collect variables rebound inside land_rhs (assignment expressions, etc.)
+            # E.g. `while (i < n && (v = arr[i]) != 0)` rebinds `v` in land_rhs.
+            # Emit a copy of each rebound Value in land_skip so it is multi-defined.
+            # Multi-def Values are exempt from the verifier's dominance check, and
+            # the land_skip path never reaches the loop body so the default value
+            # (old binding) is never observed.
+            _rebound = [
+                (new_v, vars_before_rhs[vname])
+                for vname, new_v in self._variables.items()
+                if (isinstance(new_v, Value)
+                    and vname in vars_before_rhs
+                    and vars_before_rhs[vname] is not new_v
+                    and isinstance(vars_before_rhs[vname], Value))
+            ]
+            # Skip block: LHS was false, result is 0.
             self._cur_block = skip_bb
             self._emit(BinInst(dest, BinOp.ADD, Const(INT32, 0), Const(INT32, 0)))
+            for new_v, old_v in _rebound:
+                _zero = Const(new_v.ty, 0.0 if isinstance(new_v.ty, ScalarTy) and new_v.ty.is_float else 0)
+                self._emit(BinInst(new_v, BinOp.ADD, old_v, _zero))
             self._cur_block.terminator = BrTerm(merge_bb.label)
             self._cur_block = merge_bb
             lhs = dest
@@ -1517,15 +1553,46 @@ class Parser:
                             # Fresh sentinel so that `param.field` → `pname_field`
                             param_sentinel = self._new_val(pname, pty)
                             self._variables[pname] = param_sentinel
-                            # Pre-bind per-field keys from caller
-                            for _fname, _fty in pty.fields:
-                                if not isinstance(_fty, ScalarTy):
-                                    continue
-                                caller_field_key = f"{arg.name}_{_fname}"
-                                param_field_key  = f"{pname}_{_fname}"
-                                if caller_field_key in self._variables:
-                                    self._variables[param_field_key] = \
-                                        self._variables[caller_field_key]
+                            if (isinstance(arg.ty, PtrTy)
+                                    and isinstance(arg.ty.pointee, StructTy)):
+                                # arg is a pointer-to-struct (e.g. array[i] for a
+                                # struct array keeps the address rather than loading
+                                # the struct).  Load each field (and sub-fields of
+                                # nested structs) so the inline body can reference
+                                # pname_field and pname_nested_subfield.
+                                _asp = arg.ty.addr_space
+                                def _load_param_fields(
+                                        base_ptr, src_sty, dest_prefix, base_off=0):
+                                    for _fname, _fty in src_sty.fields:
+                                        _off = src_sty.field_offset(_fname) + base_off
+                                        _pkey = f"{dest_prefix}_{_fname}"
+                                        if isinstance(_fty, ScalarTy):
+                                            _faddr = self._new_val(
+                                                "faddr", PtrTy(_fty, _asp))
+                                            self._emit(BinInst(
+                                                _faddr, BinOp.ADD, base_ptr,
+                                                Const(INT32, _off)))
+                                            _loaded = self._new_val(_pkey, _fty)
+                                            self._emit(LoadInst(_loaded, _faddr))
+                                            self._variables[_pkey] = _loaded
+                                        elif isinstance(_fty, StructTy):
+                                            # Nested struct: create sentinel, recurse
+                                            if _pkey not in self._variables:
+                                                _nsent = self._new_val(_pkey, _fty)
+                                                self._variables[_pkey] = _nsent
+                                            _load_param_fields(
+                                                base_ptr, _fty, _pkey, _off)
+                                _load_param_fields(arg, arg.ty.pointee, pname)
+                            else:
+                                # Pre-bind per-field keys from caller's field vars
+                                for _fname, _fty in pty.fields:
+                                    if not isinstance(_fty, ScalarTy):
+                                        continue
+                                    caller_field_key = f"{arg.name}_{_fname}"
+                                    param_field_key  = f"{pname}_{_fname}"
+                                    if caller_field_key in self._variables:
+                                        self._variables[param_field_key] = \
+                                            self._variables[caller_field_key]
                         else:
                             self._variables[pname] = arg
 
