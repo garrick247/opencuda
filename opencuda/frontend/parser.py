@@ -2105,17 +2105,20 @@ class Parser:
 
     def _parse_kernel(self):
         self._expect(TokKind.KW_GLOBAL)
-        # Skip optional __launch_bounds__(maxThreads, minBlocks)
-        if self._at(TokKind.IDENT) and self._peek().value == '__launch_bounds__':
-            self._advance()
-            self._expect(TokKind.LPAREN)
-            depth = 1
-            while depth > 0:
-                if self._peek().kind == TokKind.LPAREN: depth += 1
-                if self._peek().kind == TokKind.RPAREN: depth -= 1
+        # Skip optional __launch_bounds__(maxThreads, minBlocks) — may appear
+        # before or after the return type: both positions are valid CUDA.
+        def _skip_launch_bounds(self):
+            if self._at(TokKind.IDENT) and self._peek().value == '__launch_bounds__':
                 self._advance()
-            # Consumed the closing )
+                self._expect(TokKind.LPAREN)
+                depth = 1
+                while depth > 0:
+                    if self._peek().kind == TokKind.LPAREN: depth += 1
+                    if self._peek().kind == TokKind.RPAREN: depth -= 1
+                    self._advance()
+        _skip_launch_bounds(self)
         ret_ty = self._parse_type()  # should be void
+        _skip_launch_bounds(self)    # also handle __global__ void __launch_bounds__(...)
         name = self._expect(TokKind.IDENT).value
 
         # Parameters

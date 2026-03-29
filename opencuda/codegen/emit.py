@@ -459,9 +459,11 @@ class PTXEmitter:
                 else:
                     ptx.append(f'    .shared .{ptx_sty} {sname}[{scount}];')
 
-        # Local memory (stack) array declarations
+        # Local memory (stack) array declarations.
+        # Use value ID in the PTX symbol to guarantee uniqueness — two inlined
+        # device functions may both declare a local array with the same C name.
         if hasattr(kernel, '_local_decls'):
-            for lname, lty, lcount, _val in kernel._local_decls:
+            for _lname, lty, lcount, lval in kernel._local_decls:
                 elem_bytes = lty.size if hasattr(lty, 'size') else 4
                 total_bytes = elem_bytes * lcount
                 # PTX .align must be a power of two: round elem_bytes up
@@ -469,7 +471,8 @@ class PTXEmitter:
                 while align < elem_bytes:
                     align <<= 1
                 align = min(align, 16)  # PTX max useful alignment
-                ptx.append(f'    .local .align {align} .b8 {lname}_local[{total_bytes}];')
+                sym = f'_local_{lval.id}'
+                ptx.append(f'    .local .align {align} .b8 {sym}[{total_bytes}];')
 
         # Register declarations
         for prefix, count in sorted(self._reg_counts.items()):
@@ -493,11 +496,12 @@ class PTXEmitter:
         if hasattr(kernel, '_local_decls'):
             local_inits = []
             emitted_local_regs: set[str] = set()
-            for lname, _lty, _lcount, lval in kernel._local_decls:
+            for _lname, _lty, _lcount, lval in kernel._local_decls:
                 reg = self._reg(lval)
                 if reg not in emitted_local_regs:
                     emitted_local_regs.add(reg)
-                    local_inits.append(f'    mov.u64 {reg}, {lname}_local;')
+                    sym = f'_local_{lval.id}'
+                    local_inits.append(f'    mov.u64 {reg}, {sym};')
             body_lines = local_inits + body_lines
 
         # Initialize shared memory base addresses — one mov per unique phys register.
@@ -722,10 +726,24 @@ class PTXEmitter:
                 self._lines.append(
                     f'    {ptx_op}.{fty} {self._reg(inst.dest)}, {lhs_str}, {rhs_str};')
             elif _is_64bit(ty):
+                # Widen any 32-bit Value operands to match the 64-bit instruction type.
+                # Without this, mul.lo.s64 %rd, %rd, %r  (32-bit %r) is rejected by ptxas.
+                def _bin64_operand(op, tgt_ptx):
+                    if isinstance(op, Value) and not _is_64bit(op.ty):
+                        wid = self._widen_cache.get(op.id)
+                        if wid is None:
+                            is_signed = isinstance(op.ty, ScalarTy) and op.ty.is_signed
+                            widen_op = 'cvt.s64.s32' if is_signed else 'cvt.u64.u32'
+                            wid = kernel.new_value(f'_wide{inst.dest.id}', ty)
+                            self._lines.append(
+                                f'    {widen_op} {self._reg(wid)}, {self._reg(op)};')
+                            self._widen_cache[op.id] = wid
+                        return self._reg(wid)
+                    return self._operand(op, tgt_ptx, kernel)
                 self._lines.append(
                     f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
-                    f'{self._operand(inst.lhs, ptx_ty, kernel)}, '
-                    f'{self._operand(inst.rhs, ptx_ty, kernel)};')
+                    f'{_bin64_operand(inst.lhs, ptx_ty)}, '
+                    f'{_bin64_operand(inst.rhs, ptx_ty)};')
             else:
                 self._lines.append(
                     f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
