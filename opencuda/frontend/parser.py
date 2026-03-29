@@ -1221,6 +1221,26 @@ class Parser:
                     saved_pos = self._pos
                     saved_inline_target = self._inline_return_target
 
+                    # Identify caller variables passed by pointer (&x pattern).
+                    # After the inline, those variables may have been modified
+                    # through their spill slot — we must reload them.
+                    spilled_out: list[tuple[str, type, object]] = []
+                    for arg in args:
+                        if (isinstance(arg, Value)
+                                and isinstance(arg.ty, PtrTy)
+                                and arg.ty.addr_space == AddrSpace.LOCAL):
+                            # Find the original var name by matching spill pointer id
+                            for vname, vval in saved_vars.items():
+                                if (vname.startswith('_spill_')
+                                        and isinstance(vval, Value)
+                                        and vval.id == arg.id):
+                                    orig_name = vname[len('_spill_'):]
+                                    if (orig_name in saved_vars
+                                            and isinstance(saved_vars[orig_name], Value)):
+                                        spilled_out.append(
+                                            (orig_name, saved_vars[orig_name].ty, arg))
+                                    break
+
                     # Bind arguments to parameters
                     for (pname, pty), arg in zip(dfunc['params'], args):
                         self._variables[pname] = arg
@@ -1257,6 +1277,13 @@ class Parser:
                     self._cur_block = return_merge
                     self._pos = saved_pos
                     self._variables = saved_vars
+                    # Reload caller variables that were passed by pointer.
+                    # The inlined function may have modified them through the
+                    # spill slot — emit ld.local to pick up any changes.
+                    for (orig_name, orig_ty, spill_ptr) in spilled_out:
+                        updated = self._new_val(orig_name, orig_ty)
+                        self._emit(LoadInst(updated, spill_ptr))
+                        self._variables[orig_name] = updated
                     self._inline_return_target = saved_inline_target
                     self._scope_locals_stack = saved_scope_stack
                     return return_dest
