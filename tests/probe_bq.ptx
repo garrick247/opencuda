@@ -1,0 +1,55 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry point_in_box(
+    .param .u64 out, .param .u64 xs, .param .u64 ys, .param .f32 x0, .param .f32 y0, .param .f32 x1, .param .f32 y1, .param .s32 n)
+{
+    .reg .f32 %f<6>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<3>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [xs];
+    ld.param.u64 %rd2, [ys];
+    ld.param.f32 %f4, [x0];
+    ld.param.f32 %f4, [y0];
+    ld.param.f32 %f4, [x1];
+    ld.param.f32 %f4, [y1];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra inline_make_aabb_merge_5;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+inline_make_aabb_merge_5:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd3, %rd0, %rd5;
+    add.u64 %rd4, %rd1, %rd5;
+    ld.global.f32 %f4, [%rd4];
+    add.u64 %rd4, %rd2, %rd5;
+    ld.global.f32 %f5, [%rd4];
+    setp.ge.f32 %p0, %f4, %f0;
+    setp.le.f32 %p1, %f4, %f1;
+    and.pred %p2, %p0, %p1;
+    setp.ge.f32 %p0, %f5, %f2;
+    and.pred %p1, %p2, %p0;
+    setp.le.f32 %p2, %f5, %f3;
+    and.pred %p0, %p1, %p2;
+    @%p0 bra tern_true_8;
+    bra tern_false_9;
+inline_aabb_contains_merge_7:
+    st.global.s32 [%rd3], %r1;
+    bra if_merge_4;
+tern_true_8:
+    mov.s32 %r1, 1;
+    bra inline_aabb_contains_merge_7;
+tern_false_9:
+    mov.s32 %r1, 0;
+    bra inline_aabb_contains_merge_7;
+}

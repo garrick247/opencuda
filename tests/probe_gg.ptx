@@ -1,0 +1,135 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry deep_expr(
+    .param .u64 out, .param .u64 a, .param .u64 b, .param .u64 c, .param .s32 n)
+{
+    .reg .f32 %f<8>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.u64 %rd2, [b];
+    ld.param.u64 %rd3, [c];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd4, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd4];
+    add.u64 %rd1, %rd2, %rd5;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd4, %rd3, %rd5;
+    ld.global.f32 %f2, [%rd4];
+    add.f32 %f3, %f0, %f1;
+    sub.f32 %f4, %f1, %f2;
+    mul.f32 %f5, %f3, %f4;
+    mul.f32 %f3, %f0, %f2;
+    mul.f32 %f6, %f1, %f1;
+    sub.f32 %f7, %f3, %f6;
+    add.f32 %f3, %f5, %f7;
+    mul.f32 %f5, %f0, %f0;
+    add.f32 %f7, %f5, %f6;
+    mul.f32 %f6, %f2, %f2;
+    add.f32 %f5, %f7, %f6;
+    add.f32 %f7, %f5, 0f3F800000;
+    div.approx.f32 %f6, %f3, %f7;
+    sub.f32 %f5, %f0, %f1;
+    mul.f32 %f3, %f5, %f4;
+    sub.f32 %f7, %f0, %f2;
+    mul.f32 %f1, %f3, %f7;
+    mul.f32 %f4, %f6, %f1;
+    add.u64 %rd2, %rd0, %rd5;
+    st.global.f32 [%rd2], %f4;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry register_pressure(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<8>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    add.f32 %f1, %f0, 0f3F800000;
+    mul.f32 %f2, %f0, 0f40000000;
+    sub.f32 %f3, %f0, 0f3F800000;
+    div.approx.f32 %f4, %f0, 0f40000000;
+    add.f32 %f0, %f1, %f2;
+    sub.f32 %f5, %f3, %f4;
+    mul.f32 %f6, %f0, %f5;
+    mul.f32 %f7, %f1, %f3;
+    mul.f32 %f1, %f2, %f4;
+    add.f32 %f3, %f7, %f1;
+    sub.f32 %f2, %f6, %f3;
+    mul.f32 %f4, %f2, %f0;
+    add.f32 %f7, %f5, 0f3F800000;
+    div.approx.f32 %f1, %f4, %f7;
+    add.u64 %rd1, %rd0, %rd3;
+    st.global.f32 [%rd1], %f1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry cse_test(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<5>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    mul.f32 %f1, %f0, %f0;
+    mul.f32 %f2, %f1, %f0;
+    add.f32 %f3, %f1, %f2;
+    mul.f32 %f4, %f1, %f1;
+    add.f32 %f1, %f3, %f4;
+    mul.f32 %f3, %f2, %f0;
+    add.f32 %f4, %f1, %f3;
+    add.u64 %rd1, %rd0, %rd3;
+    st.global.f32 [%rd1], %f4;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

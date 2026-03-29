@@ -17,22 +17,23 @@ entry_1:
     mov.u32 %r3, %ntid.x;
     mul.lo.u32 %r4, %r2, %r3;
     add.u32 %r2, %r1, %r4;
-    mov.s32 %r3, 0;
+    cvt.s32.u32 %r3, %r2;
+    mov.s32 %r1, 0;
     bra do_body_2;
 do_body_2:
-    add.s32 %r1, %r3, 1;
-    sub.s32 %r4, %r0, 1;
-    mov.s32 %r3, %r1;
-    mov.s32 %r0, %r4;
+    add.s32 %r4, %r1, 1;
+    sub.s32 %r2, %r0, 1;
+    mov.s32 %r1, %r4;
+    mov.s32 %r0, %r2;
     bra do_cond_3;
 do_cond_3:
     setp.gt.s32 %p0, %r0, 0;
     @%p0 bra do_body_2;
     bra do_exit_4;
 do_exit_4:
-    shl.b32 %r0, %r2, 2;
-    cvt.u64.u32 %rd2, %r0;
+    shl.b32 %r0, %r3, 2;
+    cvt.s64.s32 %rd2, %r0;
     add.u64 %rd1, %rd0, %rd2;
-    st.global.s32 [%rd1], %r3;
+    st.global.s32 [%rd1], %r1;
     ret;
 }

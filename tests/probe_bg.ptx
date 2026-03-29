@@ -1,0 +1,135 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry activation_chain(
+    .param .u64 out, .param .u64 in, .param .s32 n, .param .s32 mode)
+{
+    .reg .f32 %f<7>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    ld.param.s32 %r1, [mode];
+    mov.u32 %r2, %tid.x;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r3, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_5;
+    bra if_false_6;
+if_merge_4:
+    ret;
+if_true_5:
+    setp.gt.f32 %p0, %f0, 0f00000000;
+    @%p0 bra tern_true_9;
+    bra tern_false_10;
+if_false_6:
+    setp.eq.s32 %p0, %r1, 1;
+    @%p0 bra if_true_13;
+    bra if_false_14;
+if_merge_7:
+    shl.b32 %r2, %r3, 2;
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.f32 [%rd1], %f1;
+    bra if_merge_4;
+inline_relu_merge_8:
+    mov.f32 %f1, %f2;
+    bra if_merge_7;
+tern_true_9:
+    mov.f32 %f2, %f0;
+    bra inline_relu_merge_8;
+tern_false_10:
+    mov.f32 %f2, 0f00000000;
+    bra inline_relu_merge_8;
+if_true_13:
+    sub.f32 %f2, 0f00000000, %f0;
+    mul.f32 %f5, %f2, 0f3FB8AA3B;
+    ex2.approx.f32 %f3, %f5;
+    add.f32 %f2, 0f3F800000, %f3;
+    div.approx.f32 %f3, 0f3F800000, %f2;
+    bra inline_sigmoid_merge_16;
+if_false_14:
+    mul.f32 %f2, 0f40000000, %f0;
+    sub.f32 %f4, 0f00000000, %f2;
+    mul.f32 %f6, %f4, 0f3FB8AA3B;
+    ex2.approx.f32 %f2, %f6;
+    add.f32 %f4, 0f3F800000, %f2;
+    div.approx.f32 %f2, 0f3F800000, %f4;
+    bra inline_sigmoid_merge_19;
+inline_sigmoid_merge_16:
+    mov.f32 %f1, %f3;
+    bra if_merge_7;
+inline_tanh_approx_merge_18:
+    mov.f32 %f1, %f4;
+    bra if_merge_7;
+inline_sigmoid_merge_19:
+    mul.f32 %f3, 0f40000000, %f2;
+    sub.f32 %f4, %f3, 0f3F800000;
+    bra inline_tanh_approx_merge_18;
+}
+
+.visible .entry nested_func_call(
+    .param .u64 out, .param .u64 a, .param .u64 b, .param .u64 t, .param .s32 n)
+{
+    .reg .f32 %f<7>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.u64 %rd2, [b];
+    ld.param.u64 %rd3, [t];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd4, %rd0, %rd5;
+    add.u64 %rd0, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd1, %rd2, %rd5;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd3, %rd5;
+    ld.global.f32 %f2, [%rd0];
+    sub.f32 %f3, 0f00000000, %f2;
+    mul.f32 %f5, %f3, 0f3FB8AA3B;
+    ex2.approx.f32 %f2, %f5;
+    add.f32 %f3, 0f3F800000, %f2;
+    div.approx.f32 %f2, 0f3F800000, %f3;
+    bra inline_sigmoid_merge_5;
+if_merge_4:
+    ret;
+inline_sigmoid_merge_5:
+    sub.f32 %f3, %f1, %f0;
+    mul.f32 %f4, %f3, %f2;
+    add.f32 %f3, %f0, %f4;
+    bra inline_lerp_merge_7;
+inline_lerp_merge_7:
+    sub.f32 %f4, 0f00000000, %f3;
+    mul.f32 %f6, %f4, 0f3FB8AA3B;
+    ex2.approx.f32 %f3, %f6;
+    add.f32 %f4, 0f3F800000, %f3;
+    div.approx.f32 %f3, 0f3F800000, %f4;
+    bra inline_sigmoid_merge_9;
+inline_sigmoid_merge_9:
+    st.global.f32 [%rd4], %f3;
+    bra if_merge_4;
+}

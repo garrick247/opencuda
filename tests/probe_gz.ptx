@@ -1,0 +1,153 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry tree_stats(
+    .param .u64 out_sum, .param .u64 out_mean, .param .u64 out_depth, .param .u64 nodes, .param .s32 n)
+{
+    .shared .f32 warp_sums[8];
+    .reg .f32 %f<3>;
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<15>;
+    .reg .pred %p<3>;
+
+    mov.u64 %rd1, warp_sums;
+entry_1:
+    ld.param.u64 %rd0, [out_sum];
+    ld.param.u64 %rd2, [out_mean];
+    ld.param.u64 %rd3, [out_depth];
+    ld.param.u64 %rd4, [nodes];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r1, %r3;
+    add.u32 %r1, %r4, %r2;
+    cvt.s32.u32 %r3, %r1;
+    div.s32 %r4, %r2, 32;
+    rem.s32 %r1, %r2, 32;
+    setp.lt.s32 %p0, %r3, %r0;
+    mul.lo.s32 %r2, %r3, 24;
+    cvt.s64.s32 %rd7, %r2;
+    add.u64 %rd5, %rd4, %rd7;
+    add.u64 %rd6, %rd5, 12;
+    ld.global.f32 %f0, [%rd6];
+    @%p0 bra tern_true_2;
+    bra tern_false_3;
+tern_true_2:
+    mov.f32 %f1, %f0;
+    bra tern_merge_4;
+tern_false_3:
+    mov.f32 %f1, 0f00000000;
+    bra tern_merge_4;
+tern_merge_4:
+    mov.s32 %r2, 16;
+    bra for_cond_6;
+inline_reduce_warp_merge_5:
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_11;
+    bra if_merge_13;
+for_cond_6:
+    setp.gt.s32 %p1, %r2, 0;
+    @%p1 bra for_body_7;
+    bra inline_reduce_warp_merge_5;
+for_body_7:
+    shfl.sync.down.b32 %f0, %f1, %r2, 31, 4294967295;
+    add.f32 %f2, %f1, %f0;
+    mov.f32 %f1, %f2;
+    bra for_inc_8;
+for_inc_8:
+    shr.s32 %r5, %r2, 1;
+    mov.s32 %r2, %r5;
+    bra for_cond_6;
+if_true_11:
+    shl.b32 %r2, %r4, 2;
+    cvt.s64.s32 %rd8, %r2;
+    add.u64 %rd5, %rd1, %rd8;
+    st.shared.f32 [%rd5], %f1;
+    bra if_merge_13;
+if_merge_13:
+    bar.sync 0;
+    setp.eq.s32 %p0, %r4, 0;
+    setp.lt.s32 %p1, %r1, 8;
+    and.pred %p2, %p0, %p1;
+    @%p2 bra if_true_14;
+    bra if_merge_16;
+if_true_14:
+    shl.b32 %r5, %r1, 2;
+    cvt.s64.s32 %rd9, %r5;
+    add.u64 %rd6, %rd1, %rd9;
+    ld.shared.f32 %f1, [%rd6];
+    mov.s32 %r4, 16;
+    bra for_cond_18;
+if_merge_16:
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_26;
+    bra if_merge_28;
+inline_reduce_warp_merge_17:
+    setp.eq.s32 %p1, %r1, 0;
+    @%p1 bra if_true_23;
+    bra if_merge_16;
+for_cond_18:
+    setp.gt.s32 %p2, %r4, 0;
+    @%p2 bra for_body_19;
+    bra inline_reduce_warp_merge_17;
+for_body_19:
+    shfl.sync.down.b32 %f0, %f1, %r4, 31, 4294967295;
+    add.f32 %f2, %f1, %f0;
+    mov.f32 %f1, %f2;
+    bra for_inc_20;
+for_inc_20:
+    shr.s32 %r2, %r4, 1;
+    mov.s32 %r4, %r2;
+    bra for_cond_18;
+if_true_23:
+    atom.global.add.f32 %f0, [%rd0], %f1;
+    bra if_merge_16;
+if_true_26:
+    mov.s32 %r5, 0;
+    bra while_cond_30;
+if_merge_28:
+    ret;
+inline_find_depth_merge_29:
+    shl.b32 %r0, %r3, 2;
+    cvt.s64.s32 %rd10, %r0;
+    add.u64 %rd5, %rd3, %rd10;
+    st.global.s32 [%rd5], %r5;
+    mul.lo.s32 %r1, %r3, 24;
+    cvt.s64.s32 %rd11, %r1;
+    add.u64 %rd0, %rd4, %rd11;
+    add.u64 %rd1, %rd0, 20;
+    ld.global.s32 %r4, [%rd1];
+    setp.eq.s32 %p0, %r4, 2;
+    @%p0 bra if_true_34;
+    bra if_merge_28;
+while_cond_30:
+    mul.lo.s32 %r2, %r3, 24;
+    cvt.s64.s32 %rd12, %r2;
+    add.u64 %rd6, %rd4, %rd12;
+    ld.global.s32 %r1, [%rd6];
+    setp.ne.s32 %p1, %r1, -1;
+    setp.lt.s32 %p2, %r5, 8;
+    and.pred %p0, %p1, %p2;
+    @%p0 bra while_body_31;
+    bra inline_find_depth_merge_29;
+while_body_31:
+    mul.lo.s32 %r4, %r3, 24;
+    cvt.s64.s32 %rd13, %r4;
+    add.u64 %rd5, %rd4, %rd13;
+    ld.global.s32 %r1, [%rd5];
+    add.s32 %r4, %r5, 1;
+    mov.s32 %r5, %r4;
+    mov.s32 %r3, %r1;
+    bra while_cond_30;
+if_true_34:
+    mul.lo.s32 %r0, %r3, 24;
+    cvt.s64.s32 %rd14, %r0;
+    add.u64 %rd0, %rd4, %rd14;
+    add.u64 %rd1, %rd0, 12;
+    ld.global.f32 %f2, [%rd1];
+    st.global.f32 [%rd2], %f2;
+    bra if_merge_28;
+}

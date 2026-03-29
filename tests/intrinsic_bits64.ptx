@@ -1,0 +1,50 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry intrinsic_bits64_test(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.u64 %rd1, [%rd2];
+    popc.b64 %r1, %rd1;
+    cvt.s64.u64 %rd2, %rd1;
+    clz.b64 %r0, %rd2;
+    brev.b64 %rd2, %rd1;
+    mul.lo.s32 %r3, %r2, 3;
+    shl.b32 %r2, %r3, 3;
+    cvt.s64.s32 %rd5, %r2;
+    add.u64 %rd1, %rd0, %rd5;
+    cvt.u64.s32 %rd3, %r1;
+    st.global.u64 [%rd1], %rd3;
+    add.s32 %r1, %r3, 1;
+    shl.b32 %r2, %r1, 3;
+    cvt.s64.s32 %rd6, %r2;
+    add.u64 %rd1, %rd0, %rd6;
+    cvt.u64.s32 %rd3, %r0;
+    st.global.u64 [%rd1], %rd3;
+    add.s32 %r0, %r3, 2;
+    shl.b32 %r1, %r0, 3;
+    cvt.s64.s32 %rd7, %r1;
+    add.u64 %rd1, %rd0, %rd7;
+    st.global.u64 [%rd1], %rd2;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

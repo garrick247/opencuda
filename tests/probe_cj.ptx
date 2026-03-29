@@ -1,0 +1,49 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry config_kernel(
+    .param .u64 out, .param .u64 configs, .param .s32 n)
+{
+    .local .align 4 .b8 _spill_v_local[4];
+    .reg .f32 %f<4>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd1, _spill_v_local;
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd2, [configs];
+    ld.param.s32 %r1, [n];
+    mov.u32 %r2, %tid.x;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r1;
+    @%p0 bra inline_init_config_merge_5;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+inline_init_config_merge_5:
+    rem.s32 %r1, %r3, %r0;
+    cvt.rn.f32.s32 %f1, %r1;
+    cvt.rn.f32.s32 %f2, %r0;
+    div.approx.f32 %f3, %f1, %f2;
+    st.local.f32 [%rd1], %f3;
+    ld.local.f32 %f1, [%rd1];
+    mul.f32 %f2, %f1, %f0;
+    st.local.f32 [%rd1], %f2;
+    bra inline_apply_scale_merge_6;
+inline_apply_scale_merge_6:
+    shl.b32 %r2, %r3, 2;
+    cvt.s64.s32 %rd6, %r2;
+    add.u64 %rd3, %rd0, %rd6;
+    shl.b32 %r1, %r3, 4;
+    cvt.s64.s32 %rd7, %r1;
+    add.u64 %rd4, %rd2, %rd7;
+    add.u64 %rd5, %rd4, 12;
+    ld.global.s32 %r2, [%rd5];
+    cvt.rn.f32.s32 %f1, %r2;
+    add.f32 %f2, %f3, %f1;
+    st.global.f32 [%rd3], %f2;
+    bra if_merge_4;
+}

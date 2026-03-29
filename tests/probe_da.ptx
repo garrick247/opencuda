@@ -1,0 +1,60 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry compute_areas(
+    .param .u64 out, .param .u64 x0, .param .u64 y0, .param .u64 x1, .param .u64 y1, .param .s32 n)
+{
+    .reg .f32 %f<7>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<3>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [x0];
+    ld.param.u64 %rd2, [y0];
+    ld.param.u64 %rd3, [x1];
+    ld.param.u64 %rd4, [y1];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd6, %r0;
+    add.u64 %rd5, %rd1, %rd6;
+    ld.global.f32 %f4, [%rd5];
+    add.u64 %rd1, %rd2, %rd6;
+    ld.global.f32 %f4, [%rd1];
+    add.u64 %rd5, %rd3, %rd6;
+    ld.global.f32 %f4, [%rd5];
+    add.u64 %rd2, %rd4, %rd6;
+    ld.global.f32 %f4, [%rd2];
+    bra inline_make_bbox_merge_5;
+if_merge_4:
+    ret;
+inline_make_bbox_merge_5:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd7, %r1;
+    add.u64 %rd1, %rd0, %rd7;
+    sub.f32 %f4, %f0, %f1;
+    sub.f32 %f5, %f2, %f3;
+    setp.gt.f32 %p0, %f4, 0f00000000;
+    setp.gt.f32 %p1, %f5, 0f00000000;
+    and.pred %p2, %p0, %p1;
+    mul.f32 %f6, %f4, %f5;
+    @%p2 bra tern_true_8;
+    bra tern_false_9;
+inline_bbox_area_merge_7:
+    st.global.f32 [%rd1], %f4;
+    bra if_merge_4;
+tern_true_8:
+    mov.f32 %f4, %f6;
+    bra inline_bbox_area_merge_7;
+tern_false_9:
+    mov.f32 %f4, 0f00000000;
+    bra inline_bbox_area_merge_7;
+}

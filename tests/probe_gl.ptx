@@ -1,0 +1,164 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry shared_device_fn(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .shared .f32 g_smem[256];
+    .shared .f32 local_smem[256];
+    .reg .f32 %f<4>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<12>;
+    .reg .pred %p<3>;
+
+    mov.u64 %rd2, g_smem;
+    mov.u64 %rd1, local_smem;
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd3, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    setp.lt.s32 %p1, %r2, 256;
+    and.pred %p2, %p0, %p1;
+    @%p2 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd6, %r1;
+    add.u64 %rd4, %rd1, %rd6;
+    add.u64 %rd5, %rd3, %rd6;
+    ld.global.f32 %f0, [%rd5];
+    st.shared.f32 [%rd4], %f0;
+    add.u64 %rd3, %rd2, %rd6;
+    ld.global.f32 %f0, [%rd5];
+    mul.f32 %f1, %f0, 0f40000000;
+    st.shared.f32 [%rd3], %f1;
+    bra if_merge_4;
+if_merge_4:
+    bar.sync 0;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd7, %r1;
+    add.u64 %rd4, %rd1, %rd7;
+    ld.shared.f32 %f0, [%rd4];
+    add.s32 %r1, %r2, 1;
+    rem.s32 %r3, %r1, 256;
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd8, %r1;
+    add.u64 %rd5, %rd1, %rd8;
+    ld.shared.f32 %f1, [%rd5];
+    mul.f32 %f2, %f0, %f1;
+    setp.lt.s32 %p1, %r2, %r0;
+    setp.lt.s32 %p2, %r2, 256;
+    and.pred %p0, %p1, %p2;
+    @%p0 bra if_true_9;
+    bra if_merge_11;
+if_merge_7:
+    ret;
+inline_dot_shared_merge_8:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd9, %r0;
+    add.u64 %rd3, %rd0, %rd9;
+    add.f32 %f0, %f2, %f1;
+    st.global.f32 [%rd3], %f0;
+    bra if_merge_7;
+if_true_9:
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd10, %r3;
+    add.u64 %rd4, %rd2, %rd10;
+    ld.shared.f32 %f1, [%rd4];
+    add.s32 %r1, %r2, 1;
+    rem.s32 %r3, %r1, 256;
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd11, %r1;
+    add.u64 %rd1, %rd2, %rd11;
+    ld.shared.f32 %f0, [%rd1];
+    mul.f32 %f3, %f1, %f0;
+    mov.f32 %f1, %f3;
+    bra inline_dot_shared_merge_8;
+if_merge_11:
+    mov.f32 %f1, 0f00000000;
+    bra inline_dot_shared_merge_8;
+}
+
+.visible .entry nested_shared(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .shared .f32 g_smem[256];
+    .shared .f32 my_buf[128];
+    .reg .f32 %f<5>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<10>;
+    .reg .pred %p<3>;
+
+    mov.u64 %rd2, g_smem;
+    mov.u64 %rd1, my_buf;
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd3, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    setp.lt.s32 %p1, %r2, 128;
+    and.pred %p2, %p0, %p1;
+    @%p2 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd6, %r1;
+    add.u64 %rd4, %rd1, %rd6;
+    add.u64 %rd5, %rd3, %rd6;
+    ld.global.f32 %f0, [%rd5];
+    st.shared.f32 [%rd4], %f0;
+    add.u64 %rd3, %rd2, %rd6;
+    ld.global.f32 %f0, [%rd5];
+    add.f32 %f1, %f0, 0f3F800000;
+    st.shared.f32 [%rd3], %f1;
+    bra if_merge_4;
+if_merge_4:
+    bar.sync 0;
+    setp.lt.s32 %p0, %r2, 128;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd7, %r1;
+    add.u64 %rd4, %rd0, %rd7;
+    add.u64 %rd5, %rd1, %rd7;
+    ld.shared.f32 %f0, [%rd5];
+    setp.lt.s32 %p1, %r2, %r0;
+    setp.lt.s32 %p2, %r2, 256;
+    and.pred %p0, %p1, %p2;
+    @%p0 bra if_true_9;
+    bra if_merge_11;
+if_merge_7:
+    ret;
+inline_dot_shared_merge_8:
+    add.f32 %f1, %f0, %f2;
+    st.global.f32 [%rd4], %f1;
+    bra if_merge_7;
+if_true_9:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd8, %r0;
+    add.u64 %rd3, %rd2, %rd8;
+    ld.shared.f32 %f2, [%rd3];
+    add.s32 %r1, %r2, 1;
+    rem.s32 %r0, %r1, 256;
+    shl.b32 %r1, %r0, 2;
+    cvt.s64.s32 %rd9, %r1;
+    add.u64 %rd0, %rd2, %rd9;
+    ld.shared.f32 %f3, [%rd0];
+    mul.f32 %f4, %f2, %f3;
+    mov.f32 %f2, %f4;
+    bra inline_dot_shared_merge_8;
+if_merge_11:
+    mov.f32 %f2, 0f00000000;
+    bra inline_dot_shared_merge_8;
+}

@@ -1,0 +1,175 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .const .align 4 .f32 PI;
+.visible .const .align 4 .f32 TWO_PI;
+.visible .const .align 4 .f32 HALF_PI;
+
+.visible .entry sincos_kernel(
+    .param .u64 out_s, .param .u64 out_c, .param .u64 angles, .param .s32 n)
+{
+    .reg .f32 %f<7>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out_s];
+    ld.param.u64 %rd1, [out_c];
+    ld.param.u64 %rd2, [angles];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd2, %rd4;
+    ld.global.f32 %f0, [%rd3];
+    add.u64 %rd2, %rd0, %rd4;
+    bra while_cond_6;
+if_merge_4:
+    ret;
+inline_fast_sin_merge_5:
+    st.global.f32 [%rd2], %f1;
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd3, %rd1, %rd5;
+    ld.const.f32 %f1, [HALF_PI];
+    add.f32 %f2, %f0, %f1;
+    bra while_cond_15;
+while_cond_6:
+    ld.const.f32 %f1, [PI];
+    setp.gt.f32 %p0, %f0, %f1;
+    @%p0 bra while_body_7;
+    bra while_cond_9;
+while_body_7:
+    ld.const.f32 %f3, [TWO_PI];
+    sub.f32 %f4, %f0, %f3;
+    mov.f32 %f0, %f4;
+    bra while_cond_6;
+while_cond_9:
+    ld.const.f32 %f1, [PI];
+    sub.f32 %f3, 0f00000000, %f1;
+    setp.lt.f32 %p0, %f0, %f3;
+    @%p0 bra while_body_10;
+    bra while_exit_11;
+while_body_10:
+    ld.const.f32 %f4, [TWO_PI];
+    add.f32 %f3, %f0, %f4;
+    mov.f32 %f0, %f3;
+    bra while_cond_9;
+while_exit_11:
+    mul.f32 %f1, %f0, %f0;
+    ld.const.f32 %f4, [PI];
+    ld.const.f32 %f3, [PI];
+    mul.f32 %f5, %f4, %f3;
+    sub.f32 %f4, %f5, %f1;
+    mul.f32 %f3, %f0, %f4;
+    ld.const.f32 %f5, [HALF_PI];
+    ld.const.f32 %f4, [PI];
+    mul.f32 %f6, %f5, %f4;
+    ld.const.f32 %f5, [PI];
+    mul.f32 %f4, %f6, %f5;
+    mul.f32 %f6, %f1, 0f3E800000;
+    sub.f32 %f5, %f4, %f6;
+    div.approx.f32 %f1, %f3, %f5;
+    bra inline_fast_sin_merge_5;
+inline_fast_cos_merge_13:
+    st.global.f32 [%rd3], %f3;
+    bra if_merge_4;
+while_cond_15:
+    ld.const.f32 %f4, [PI];
+    setp.gt.f32 %p0, %f2, %f4;
+    @%p0 bra while_body_16;
+    bra while_cond_18;
+while_body_16:
+    ld.const.f32 %f6, [TWO_PI];
+    sub.f32 %f3, %f2, %f6;
+    mov.f32 %f2, %f3;
+    bra while_cond_15;
+while_cond_18:
+    ld.const.f32 %f5, [PI];
+    sub.f32 %f1, 0f00000000, %f5;
+    setp.lt.f32 %p0, %f2, %f1;
+    @%p0 bra while_body_19;
+    bra while_exit_20;
+while_body_19:
+    ld.const.f32 %f4, [TWO_PI];
+    add.f32 %f6, %f2, %f4;
+    mov.f32 %f2, %f6;
+    bra while_cond_18;
+while_exit_20:
+    mul.f32 %f3, %f2, %f2;
+    ld.const.f32 %f1, [PI];
+    ld.const.f32 %f5, [PI];
+    mul.f32 %f4, %f1, %f5;
+    sub.f32 %f6, %f4, %f3;
+    mul.f32 %f1, %f2, %f6;
+    ld.const.f32 %f5, [HALF_PI];
+    ld.const.f32 %f4, [PI];
+    mul.f32 %f6, %f5, %f4;
+    ld.const.f32 %f5, [PI];
+    mul.f32 %f4, %f6, %f5;
+    mul.f32 %f6, %f3, 0f3E800000;
+    sub.f32 %f5, %f4, %f6;
+    div.approx.f32 %f3, %f1, %f5;
+    bra inline_fast_cos_merge_13;
+}
+
+.visible .entry angle_normalize(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    bra while_cond_5;
+if_merge_4:
+    ret;
+while_cond_5:
+    setp.lt.f32 %p0, %f0, 0f00000000;
+    @%p0 bra while_body_6;
+    bra while_cond_8;
+while_body_6:
+    ld.const.f32 %f1, [TWO_PI];
+    add.f32 %f2, %f0, %f1;
+    mov.f32 %f0, %f2;
+    bra while_cond_5;
+while_cond_8:
+    ld.const.f32 %f1, [TWO_PI];
+    setp.ge.f32 %p0, %f0, %f1;
+    @%p0 bra while_body_9;
+    bra while_exit_10;
+while_body_9:
+    ld.const.f32 %f2, [TWO_PI];
+    sub.f32 %f3, %f0, %f2;
+    mov.f32 %f0, %f3;
+    bra while_cond_8;
+while_exit_10:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd1, %rd0, %rd4;
+    ld.const.f32 %f1, [TWO_PI];
+    div.approx.f32 %f2, %f0, %f1;
+    st.global.f32 [%rd1], %f2;
+    bra if_merge_4;
+}

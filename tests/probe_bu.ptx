@@ -1,0 +1,61 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry mandelbrot(
+    .param .u64 out, .param .f32 x0, .param .f32 y0, .param .f32 dx, .param .f32 dy, .param .s32 W, .param .s32 H, .param .s32 max_iter)
+{
+    .reg .f32 %f<1>;
+    .reg .b32 %r<8>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<4>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.f32 %f0, [x0];
+    ld.param.f32 %f0, [y0];
+    ld.param.f32 %f0, [dx];
+    ld.param.f32 %f0, [dy];
+    ld.param.s32 %r1, [W];
+    ld.param.s32 %r2, [H];
+    ld.param.s32 %r3, [max_iter];
+    mov.u32 %r3, %tid.x;
+    mov.u32 %r4, %ctaid.x;
+    mov.u32 %r5, %ntid.x;
+    mul.lo.u32 %r6, %r4, %r5;
+    add.u32 %r4, %r3, %r6;
+    cvt.s32.u32 %r5, %r4;
+    mov.u32 %r3, %tid.y;
+    mov.u32 %r6, %ctaid.y;
+    mov.u32 %r4, %ntid.y;
+    mul.lo.u32 %r7, %r6, %r4;
+    add.u32 %r6, %r3, %r7;
+    cvt.s32.u32 %r4, %r6;
+    setp.ge.s32 %p0, %r5, %r1;
+    setp.ge.s32 %p1, %r4, %r2;
+    or.pred %p2, %p0, %p1;
+    @%p2 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    mov.s32 %r3, 0;
+    bra while_cond_5;
+while_cond_5:
+    sqrt.approx.f32 %f0, 0f00000000;
+    setp.ne.s32 %p3, %r0, 0;
+    @%p3 bra inline_complex_mul_merge_10;
+    bra while_exit_7;
+while_exit_7:
+    mul.lo.s32 %r7, %r4, %r1;
+    add.s32 %r2, %r7, %r5;
+    shl.b32 %r6, %r2, 2;
+    cvt.s64.s32 %rd2, %r6;
+    add.u64 %rd1, %rd0, %rd2;
+    st.global.s32 [%rd1], %r3;
+    ret;
+inline_complex_mul_merge_10:
+    add.s32 %r7, %r3, 1;
+    mov.s32 %r3, %r7;
+    bra while_cond_5;
+}

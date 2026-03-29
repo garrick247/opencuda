@@ -610,7 +610,6 @@ class Parser:
                 if name in self._variables:
                     var = self._variables[name]
                     if isinstance(var.ty, PtrTy):
-                        saved = self._pos
                         self._advance()  # consume ident
                         if self._match(TokKind.LBRACKET):
                             index = self._parse_expr()
@@ -625,9 +624,15 @@ class Parser:
                             addr = self._new_val("addr", var.ty)
                             self._emit(BinInst(addr, BinOp.ADD, var, index))
                             return addr  # return address, no load
-                        # Not array index: &ptr_var → return the pointer itself
-                        self._advance()  # consume ident
-                        return var
+                        if self._at(TokKind.ARROW) or self._at(TokKind.DOT):
+                            # &p->field or &p.field: postfix operators follow.
+                            # Unconsume ident and fall to generic handler so that
+                            # _parse_postfix_expr can process ->/. before we spill.
+                            self._pos -= 1
+                            # fall through to generic handler below
+                        else:
+                            # No subscript, no member access: &ptr_var → pointer itself
+                            return var
                     elif isinstance(var.ty, ScalarTy):
                         # &scalar_local — spill to .local, return pointer to it
                         self._advance()  # consume ident
@@ -2342,8 +2347,11 @@ class Parser:
     def _parse_device_func(self):
         """Parse __device__ function and store for inlining."""
         self._expect(TokKind.KW_DEVICE)
-        # Consume any additional qualifiers: __device__ __forceinline__, inline __device__, etc.
-        while self._at(TokKind.KW_DEVICE) or self._at(TokKind.KW_STATIC):
+        # Consume any additional qualifiers: __device__ __forceinline__, __noinline__, etc.
+        _FUNC_QUALIFIERS = {'__noinline__', '__forceinline__', '__inline__', '__attribute__',
+                            '__cdecl__', '__stdcall__', '__fastcall__'}
+        while (self._at(TokKind.KW_DEVICE) or self._at(TokKind.KW_STATIC)
+               or (self._at(TokKind.IDENT) and self._peek().value in _FUNC_QUALIFIERS)):
             self._advance()
         ret_ty = self._parse_type_with_ptr()
         name = self._expect(TokKind.IDENT).value

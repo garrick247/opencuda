@@ -1,0 +1,80 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry angle_convert(
+    .param .u64 out_deg, .param .u64 out_rad, .param .u64 in_deg, .param .u64 in_rad, .param .s32 n)
+{
+    .reg .f32 %f<2>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out_deg];
+    ld.param.u64 %rd1, [out_rad];
+    ld.param.u64 %rd2, [in_deg];
+    ld.param.u64 %rd3, [in_rad];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd4, %rd1, %rd5;
+    add.u64 %rd1, %rd2, %rd5;
+    ld.global.f32 %f0, [%rd1];
+    mul.f32 %f1, %f0, 0f40490FDB;
+    div.approx.f32 %f0, %f1, 0f43340000;
+    st.global.f32 [%rd4], %f0;
+    add.u64 %rd2, %rd0, %rd5;
+    add.u64 %rd4, %rd3, %rd5;
+    ld.global.f32 %f1, [%rd4];
+    mul.f32 %f0, %f1, 0f43340000;
+    div.approx.f32 %f1, %f0, 0f40490FDB;
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry hypot_kernel(
+    .param .u64 out, .param .u64 a, .param .u64 b, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.u64 %rd2, [b];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd0, %rd4;
+    add.u64 %rd0, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd0];
+    ld.global.f32 %f1, [%rd0];
+    mul.f32 %f2, %f0, %f1;
+    add.u64 %rd1, %rd2, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    ld.global.f32 %f1, [%rd1];
+    mul.f32 %f3, %f0, %f1;
+    add.f32 %f0, %f2, %f3;
+    sqrt.approx.f32 %f1, %f0;
+    st.global.f32 [%rd3], %f1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

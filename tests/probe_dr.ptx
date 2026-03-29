@@ -1,0 +1,86 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry per_row_stats(
+    .param .u64 means, .param .u64 variances, .param .u64 data, .param .s32 rows, .param .s32 cols)
+{
+    .reg .f32 %f<7>;
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [means];
+    ld.param.u64 %rd1, [variances];
+    ld.param.u64 %rd2, [data];
+    ld.param.s32 %r0, [rows];
+    ld.param.s32 %r1, [cols];
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    mov.u32 %r2, %tid.x;
+    add.u32 %r3, %r4, %r2;
+    cvt.s32.u32 %r4, %r3;
+    setp.lt.s32 %p0, %r4, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mul.lo.s32 %r2, %r4, %r1;
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd3, %rd2, %rd4;
+    ld.global.f32 %f2, [%rd3];
+    ld.global.f32 %f3, [%rd3];
+    mov.s32 %r0, 0;
+    bra for_cond_6;
+if_merge_4:
+    ret;
+inline_compute_stats_merge_5:
+    shl.b32 %r3, %r4, 2;
+    cvt.s64.s32 %rd5, %r3;
+    add.u64 %rd2, %rd0, %rd5;
+    st.global.f32 [%rd2], %f0;
+    add.u64 %rd2, %rd1, %rd5;
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+for_cond_6:
+    setp.lt.s32 %p0, %r0, %r1;
+    @%p0 bra for_body_7;
+    bra for_exit_9;
+for_body_7:
+    shl.b32 %r2, %r0, 2;
+    cvt.s64.s32 %rd6, %r2;
+    add.u64 %rd2, %rd3, %rd6;
+    ld.global.f32 %f4, [%rd2];
+    setp.lt.f32 %p1, %f4, %f2;
+    bra if_merge_12;
+for_inc_8:
+    add.s32 %r2, %r0, 1;
+    mov.s32 %r0, %r2;
+    bra for_cond_6;
+for_exit_9:
+    mov.f32 %f5, 0f00000000;
+    mov.s32 %r5, 0;
+    bra for_cond_16;
+if_merge_12:
+    setp.gt.f32 %p1, %f4, %f3;
+    bra for_inc_8;
+for_cond_16:
+    setp.lt.s32 %p0, %r5, %r1;
+    @%p0 bra for_body_17;
+    bra inline_compute_stats_merge_5;
+for_body_17:
+    shl.b32 %r2, %r5, 2;
+    cvt.s64.s32 %rd7, %r2;
+    add.u64 %rd2, %rd3, %rd7;
+    ld.global.f32 %f4, [%rd2];
+    sub.f32 %f6, %f4, 0f00000000;
+    mul.f32 %f4, %f6, %f6;
+    add.f32 %f6, %f5, %f4;
+    mov.f32 %f5, %f6;
+    bra for_inc_18;
+for_inc_18:
+    add.s32 %r2, %r5, 1;
+    mov.s32 %r5, %r2;
+    bra for_cond_16;
+}

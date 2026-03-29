@@ -1,0 +1,82 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry lighting(
+    .param .u64 out, .param .u64 normals, .param .u32 light_dir, .param .s32 n)
+{
+    .reg .f32 %f<13>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [normals];
+    ld.param.u32 %r0, [light_dir];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mul.lo.s32 %r0, %r2, 12;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f9, [%rd2];
+    ld.global.f32 %f10, [%rd2];
+    mul.f32 %f11, %f9, %f10;
+    add.u64 %rd1, %rd2, 4;
+    ld.global.f32 %f9, [%rd1];
+    ld.global.f32 %f10, [%rd1];
+    mul.f32 %f12, %f9, %f10;
+    add.f32 %f9, %f11, %f12;
+    add.u64 %rd1, %rd2, 8;
+    ld.global.f32 %f10, [%rd1];
+    ld.global.f32 %f11, [%rd1];
+    mul.f32 %f12, %f10, %f11;
+    add.f32 %f10, %f9, %f12;
+    sqrt.approx.f32 %f11, %f10;
+    bra inline_length_merge_6;
+if_merge_4:
+    ret;
+inline_normalize_merge_5:
+    mul.f32 %f9, %f0, %f0;
+    mul.f32 %f12, %f1, %f1;
+    add.f32 %f10, %f9, %f12;
+    mul.f32 %f11, %f2, %f2;
+    add.f32 %f12, %f10, %f11;
+    sqrt.approx.f32 %f10, %f12;
+    bra inline_normalize_merge_9;
+inline_length_merge_6:
+    ld.global.f32 %f11, [%rd2];
+    add.u64 %rd1, %rd2, 4;
+    ld.global.f32 %f12, [%rd1];
+    add.u64 %rd1, %rd2, 8;
+    ld.global.f32 %f10, [%rd1];
+    bra inline_normalize_merge_5;
+inline_normalize_merge_9:
+    mul.f32 %f11, %f3, %f4;
+    mul.f32 %f12, %f5, %f6;
+    add.f32 %f9, %f11, %f12;
+    mul.f32 %f10, %f7, %f8;
+    add.f32 %f11, %f9, %f10;
+    bra inline_dot_merge_13;
+inline_dot_merge_13:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd1, %rd0, %rd4;
+    setp.gt.f32 %p0, %f11, 0f00000000;
+    @%p0 bra tern_true_15;
+    bra tern_false_16;
+tern_true_15:
+    mov.f32 %f12, %f11;
+    bra tern_merge_17;
+tern_false_16:
+    mov.f32 %f12, 0f00000000;
+    bra tern_merge_17;
+tern_merge_17:
+    st.global.f32 [%rd1], %f12;
+    bra if_merge_4;
+}

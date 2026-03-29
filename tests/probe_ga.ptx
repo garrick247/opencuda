@@ -1,0 +1,133 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry shl64_with_s32_amt(
+    .param .u64 out, .param .u64 in, .param .u64 amounts, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.u64 %rd2, [amounts];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd1, %rd4;
+    ld.global.s64 %rd1, [%rd3];
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd3, %rd2, %rd5;
+    ld.global.s32 %r2, [%rd3];
+    and.b32 %r1, %r2, 63;
+    add.u64 %rd2, %rd0, %rd4;
+    shl.b64 %rd3, %rd1, %r1;
+    st.global.s64 [%rd2], %rd3;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry shr64_arithmetic(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s64 %rd1, [%rd2];
+    add.u64 %rd2, %rd0, %rd3;
+    shr.s64 %rd0, %rd1, 1;
+    st.global.s64 [%rd2], %rd0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry shr64_logical(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.u64 %rd1, [%rd2];
+    add.u64 %rd2, %rd0, %rd3;
+    shr.b64 %rd0, %rd1, 1;
+    st.global.u64 [%rd2], %rd0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry mixed64(
+    .param .u64 out, .param .u64 in32, .param .u64 in64, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in32];
+    ld.param.u64 %rd2, [in64];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd2, %rd4;
+    ld.global.s64 %rd2, [%rd3];
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd3, %rd1, %rd5;
+    ld.global.s32 %r2, [%rd3];
+    shr.s64 %rd1, %rd2, %r2;
+    cvt.s64.s32 %rd3, %r2;
+    shl.b64 %rd2, %rd3, 32;
+    add.s64 %rd3, %rd1, %rd2;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.s64 [%rd1], %rd3;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

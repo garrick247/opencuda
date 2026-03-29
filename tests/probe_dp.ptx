@@ -1,0 +1,106 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry brightness_filter(
+    .param .u64 out, .param .u64 pixels, .param .f32 threshold, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [pixels];
+    ld.param.f32 %f0, [threshold];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    shl.b32 %r1, %r2, 5;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd0, %rd1, %rd4;
+    add.u64 %rd1, %rd0, 16;
+    ld.global.u32 %r0, [%rd1];
+    cvt.rn.f32.u32 %f1, %r0;
+    mul.f32 %f2, 0f3E991687, %f1;
+    add.u64 %rd0, %rd1, 4;
+    ld.global.u32 %r2, [%rd0];
+    cvt.rn.f32.u32 %f1, %r2;
+    mul.f32 %f3, 0f3F1645A2, %f1;
+    add.f32 %f1, %f2, %f3;
+    add.u64 %rd0, %rd1, 8;
+    ld.global.u32 %r1, [%rd0];
+    cvt.rn.f32.u32 %f2, %r1;
+    mul.f32 %f3, 0f3DE978D5, %f2;
+    add.f32 %f2, %f1, %f3;
+    bra inline_color_luminance_merge_6;
+if_merge_4:
+    ret;
+inline_pixel_is_bright_merge_5:
+    st.global.s32 [%rd2], %r0;
+    bra if_merge_4;
+inline_color_luminance_merge_6:
+    setp.gt.f32 %p0, %f2, %f0;
+    @%p0 bra tern_true_8;
+    bra tern_false_9;
+tern_true_8:
+    mov.s32 %r0, 1;
+    bra inline_pixel_is_bright_merge_5;
+tern_false_9:
+    mov.s32 %r0, 0;
+    bra inline_pixel_is_bright_merge_5;
+}
+
+.visible .entry extract_luma(
+    .param .u64 out, .param .u64 pixels, .param .s32 n)
+{
+    .reg .f32 %f<3>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [pixels];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    shl.b32 %r1, %r2, 5;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd0, %rd1, %rd4;
+    add.u64 %rd1, %rd0, 16;
+    ld.global.u32 %r0, [%rd1];
+    cvt.rn.f32.u32 %f0, %r0;
+    mul.f32 %f1, 0f3E991687, %f0;
+    add.u64 %rd0, %rd1, 4;
+    ld.global.u32 %r2, [%rd0];
+    cvt.rn.f32.u32 %f0, %r2;
+    mul.f32 %f2, 0f3F1645A2, %f0;
+    add.f32 %f0, %f1, %f2;
+    add.u64 %rd0, %rd1, 8;
+    ld.global.u32 %r1, [%rd0];
+    cvt.rn.f32.u32 %f1, %r1;
+    mul.f32 %f2, 0f3DE978D5, %f1;
+    add.f32 %f1, %f0, %f2;
+    bra inline_color_luminance_merge_5;
+if_merge_4:
+    ret;
+inline_color_luminance_merge_5:
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
+}
