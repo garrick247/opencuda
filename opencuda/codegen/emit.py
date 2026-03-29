@@ -1820,9 +1820,18 @@ class PTXEmitter:
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
                     self._lines.append(f'    sub.rn.f16 {dest}, {a}, {b};')
                 elif inst.func in ('__hdiv',):
+                    # PTX has no div.f16 or rcp.f16; promote b to f32, compute rcp,
+                    # demote back to f16, then mul.f16.
+                    n = inst.dest.id if inst.dest else 0
                     a = self._operand(inst.args[0]) if inst.args else '0h0000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h3C00'
-                    self._lines.append(f'    div.rn.f16 {dest}, {a}, {b};')
+                    f32_b   = kernel.new_value(f'_hdiv_b_{n}', FLOAT)
+                    f32_rcp = kernel.new_value(f'_hdiv_r_{n}', FLOAT)
+                    h_rcp   = kernel.new_value(f'_hdiv_h_{n}', HALF)
+                    self._lines.append(f'    cvt.f32.f16 {self._reg(f32_b)}, {b};')
+                    self._lines.append(f'    rcp.approx.f32 {self._reg(f32_rcp)}, {self._reg(f32_b)};')
+                    self._lines.append(f'    cvt.rn.f16.f32 {self._reg(h_rcp)}, {self._reg(f32_rcp)};')
+                    self._lines.append(f'    mul.rn.f16 {dest}, {a}, {self._reg(h_rcp)};')
                 elif inst.func in ('__hfmin',):
                     a = self._operand(inst.args[0]) if inst.args else '0h0000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
@@ -1848,6 +1857,31 @@ class PTXEmitter:
                 elif inst.func in ('__hneg',):
                     src = self._operand(inst.args[0]) if inst.args else '0h0000'
                     self._lines.append(f'    neg.f16 {dest}, {src};')
+                elif inst.func in ('__hrcp', '__hsqrt', '__hrsqrt', '__hexp', '__hlog'):
+                    # PTX has no native rcp/sqrt/rsqrt/exp/log for f16;
+                    # promote to f32, apply f32 op, demote back to f16.
+                    n = inst.dest.id if inst.dest else 0
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    f32_in  = kernel.new_value(f'_hf32in_{n}', FLOAT)
+                    f32_out = kernel.new_value(f'_hf32out_{n}', FLOAT)
+                    self._lines.append(f'    cvt.f32.f16 {self._reg(f32_in)}, {src};')
+                    if inst.func == '__hrcp':
+                        self._lines.append(f'    rcp.approx.f32 {self._reg(f32_out)}, {self._reg(f32_in)};')
+                    elif inst.func == '__hsqrt':
+                        self._lines.append(f'    sqrt.approx.f32 {self._reg(f32_out)}, {self._reg(f32_in)};')
+                    elif inst.func == '__hrsqrt':
+                        self._lines.append(f'    rsqrt.approx.f32 {self._reg(f32_out)}, {self._reg(f32_in)};')
+                    elif inst.func == '__hexp':
+                        # e^x = 2^(x*log2e)
+                        scale = kernel.new_value(f'_hscale_{n}', FLOAT)
+                        self._lines.append(f'    mul.f32 {self._reg(scale)}, {self._reg(f32_in)}, 0f3FB8AA3B;')
+                        self._lines.append(f'    ex2.approx.f32 {self._reg(f32_out)}, {self._reg(scale)};')
+                    elif inst.func == '__hlog':
+                        # ln(x) = lg2(x) * ln(2)
+                        lg2 = kernel.new_value(f'_hlg2_{n}', FLOAT)
+                        self._lines.append(f'    lg2.approx.f32 {self._reg(lg2)}, {self._reg(f32_in)};')
+                        self._lines.append(f'    mul.f32 {self._reg(f32_out)}, {self._reg(lg2)}, 0f3F317218;')
+                    self._lines.append(f'    cvt.rn.f16.f32 {dest}, {self._reg(f32_out)};')
                 elif inst.func in ('__hgt', '__hlt', '__hge', '__hle', '__heq', '__hne'):
                     _hcmp_map = {
                         '__hgt': 'gt', '__hlt': 'lt', '__hge': 'ge',
@@ -1861,12 +1895,16 @@ class PTXEmitter:
                     self._pred_ids.add(p_tmp.id)
                     self._lines.append(f'    setp.{cmp_op}.f16 {self._reg(p_tmp)}, {a}, {b};')
                     self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
-                elif inst.func in ('__hisnan',):
+                elif inst.func in ('__hisnan', '__hisinf'):
+                    # PTX has no testp.f16; convert to f32 then test.
                     src = self._operand(inst.args[0]) if inst.args else '0h0000'
                     n = inst.dest.id if inst.dest else 0
-                    p_tmp = kernel.new_value(f'_hnan_{n}', ScalarTy(ScalarType.BOOL))
+                    f32_tmp = kernel.new_value(f'_h2f_{n}', FLOAT)
+                    p_tmp   = kernel.new_value(f'_htest_{n}', ScalarTy(ScalarType.BOOL))
                     self._pred_ids.add(p_tmp.id)
-                    self._lines.append(f'    testp.notanumber.f16 {self._reg(p_tmp)}, {src};')
+                    self._lines.append(f'    cvt.f32.f16 {self._reg(f32_tmp)}, {src};')
+                    cond = 'notanumber' if inst.func == '__hisnan' else 'infinite'
+                    self._lines.append(f'    testp.{cond}.f32 {self._reg(p_tmp)}, {self._reg(f32_tmp)};')
                     self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
                 elif inst.func in ('atanf', 'atan'):
                     # atan(x) — polynomial approx valid for all x via range reduction.
