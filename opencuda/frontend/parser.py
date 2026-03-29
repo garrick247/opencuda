@@ -1140,6 +1140,23 @@ class Parser:
             self._advance()
             return
 
+        # goto label; — skip (CFG goto not supported, treat as no-op)
+        if tok.kind == TokKind.KW_GOTO:
+            self._advance()  # consume 'goto'
+            if self._at(TokKind.IDENT):
+                self._advance()  # consume label name
+            self._match(TokKind.SEMI)
+            return
+
+        # Label declaration: identifier: (followed by anything)
+        # Detect IDENT COLON that is not a switch case/default
+        if (tok.kind == TokKind.IDENT
+                and self._pos + 1 < len(self._toks)
+                and self._toks[self._pos + 1].kind == TokKind.COLON):
+            self._advance()  # consume label name
+            self._advance()  # consume ':'
+            return  # label is a no-op in our flat SSA IR
+
         # Bare block: { stmt; stmt; ... }  — anonymous compound statement
         if tok.kind == TokKind.LBRACE:
             self._parse_stmt_or_block()

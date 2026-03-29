@@ -48,6 +48,7 @@ class TokKind(Enum):
     KW_SIZEOF   = auto()
     KW_ENUM     = auto()
     KW_STATIC   = auto()
+    KW_GOTO     = auto()
 
     # Operators
     PLUS     = auto()
@@ -150,6 +151,7 @@ _KEYWORDS = {
     'inline': TokKind.KW_STATIC,   # treat inline same as static (silently ignored)
     'register': TokKind.KW_STATIC,  # register hint is a no-op too
     'extern': TokKind.KW_STATIC,   # extern treated as ignorable qualifier
+    'goto': TokKind.KW_GOTO,
 }
 
 _TOKEN_RE = re.compile(r"""
