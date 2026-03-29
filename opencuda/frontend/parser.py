@@ -2816,6 +2816,10 @@ class Parser:
         self._kernel = Kernel(name=name, params=params)
         self._variables = {}
         self._block_count = 0
+        # Clear inline struct return fields — this dict is keyed by Value id, and
+        # each kernel resets its id counter to 0, so ids from a prior kernel would
+        # alias a fresh param sentinel or return dest created in this kernel.
+        self._inline_struct_return_fields = {}
 
         # Load kernel parameters into variables
         entry = self._new_block("entry")
