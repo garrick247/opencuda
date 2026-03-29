@@ -695,6 +695,25 @@ class PTXEmitter:
                     f'{self._operand(inst.rhs, ptx_ty, kernel)};')
 
         elif isinstance(inst, CmpInst):
+            # Special case: logical NOT of a predicate register.
+            # CmpInst(dest, EQ, pred_val, Const(0)) where pred_val is a predicate
+            # should emit 'not.pred %p_dest, %p_src' — NOT setp.eq.s32 (invalid).
+            if (inst.op == CmpOp.EQ
+                    and isinstance(inst.lhs, Value)
+                    and inst.lhs.id in self._pred_ids
+                    and isinstance(inst.rhs, Const) and inst.rhs.value == 0):
+                pred = self._reg(inst.dest)
+                src = self._reg(inst.lhs)
+                self._lines.append(f'    not.pred {pred}, {src};')
+                return
+            if (inst.op == CmpOp.EQ
+                    and isinstance(inst.rhs, Value)
+                    and inst.rhs.id in self._pred_ids
+                    and isinstance(inst.lhs, Const) and inst.lhs.value == 0):
+                pred = self._reg(inst.dest)
+                src = self._reg(inst.rhs)
+                self._lines.append(f'    not.pred {pred}, {src};')
+                return
             # Determine comparison type from BOTH operands (C integer promotion).
             # Bug: using only lhs.ty means:
             #   - Const lhs defaults to INT32 even when rhs is UINT32

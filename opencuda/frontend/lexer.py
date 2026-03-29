@@ -153,8 +153,9 @@ _TOKEN_RE = re.compile(r"""
     (?P<COMMENT_LINE>   //[^\n]*            ) |
     (?P<COMMENT_BLOCK>  /\*.*?\*/           ) |
     (?P<STRING_LIT>     "(?:[^"\\]|\\.)*"   ) |
-    (?P<FLOAT_LIT>      [0-9]+\.[0-9]*[fF]?
-                      | [0-9]*\.[0-9]+[fF]?
+    (?P<FLOAT_LIT>      [0-9]+\.[0-9]*(?:[eE][+-]?[0-9]+)?[fF]?
+                      | [0-9]*\.[0-9]+(?:[eE][+-]?[0-9]+)?[fF]?
+                      | [0-9]+[eE][+-]?[0-9]+[fF]?
                       | [0-9]+[fF]          ) |
     (?P<HEX_LIT>        0[xX][0-9a-fA-F]+[uUlL]* ) |
     (?P<INT_LIT>        [0-9]+[uUlL]*       ) |
