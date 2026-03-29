@@ -1784,9 +1784,11 @@ class Parser:
                     _float_unary  = ('sqrtf','rsqrtf','rcpf','fabsf','sinf','cosf',
                                      'tanf','expf','exp2f','exp10f','logf','log2f','log10f',
                                      'floorf','ceilf','roundf','truncf',
+                                     'atanf','asinf','acosf',
                                      'sqrt','rsqrt','fabs','sin','cos',
                                      'exp','exp2','exp10','log','log2','log10',
-                                     'floor','ceil','round','trunc')
+                                     'floor','ceil','round','trunc',
+                                     'atan','asin','acos')
                     _float_binary = ('fminf','fmaxf','fmodf','powf',
                                      'fmin','fmax','fmod','pow','hypotf','atan2f')
                     _float_ternary = ('fmaf', 'fma')

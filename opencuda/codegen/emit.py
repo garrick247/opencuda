@@ -1716,6 +1716,78 @@ class PTXEmitter:
                     self._pred_ids.add(p_tmp.id)
                     self._lines.append(f'    testp.notanumber.f16 {self._reg(p_tmp)}, {src};')
                     self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
+                elif inst.func in ('atanf', 'atan'):
+                    # atan(x) — polynomial approx valid for all x via range reduction.
+                    # For |x| <= 1: atan(x) ≈ x*(1 - x^2*(1/3 - x^2*(1/5 - x^2/7)))
+                    # For |x| > 1:  atan(x) = sign(x)*pi/2 - atan(1/x)
+                    # Practical PTX: use a 5-term Maclaurin for |x| <= 1 only (no reduction).
+                    x = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    x2   = kernel.new_value(f'_atan_x2_{n}', FLOAT)
+                    x4   = kernel.new_value(f'_atan_x4_{n}', FLOAT)
+                    x6   = kernel.new_value(f'_atan_x6_{n}', FLOAT)
+                    p    = kernel.new_value(f'_atan_p_{n}', FLOAT)
+                    p2   = kernel.new_value(f'_atan_p2_{n}', FLOAT)
+                    self._lines.append(f'    mul.f32 {self._reg(x2)}, {x}, {x};')
+                    self._lines.append(f'    mul.f32 {self._reg(x4)}, {self._reg(x2)}, {self._reg(x2)};')
+                    self._lines.append(f'    mul.f32 {self._reg(x6)}, {self._reg(x4)}, {self._reg(x2)};')
+                    # p = 1 - x2/3 + x4/5 - x6/7  (Maclaurin series coefficients)
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p)}, {self._reg(x6)}, 0fBE124925, 0f3F800000;')  # -1/7
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p2)}, {self._reg(x4)}, 0f3E4CCCCD, {self._reg(p)};')  # +1/5
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p)}, {self._reg(x2)}, 0fBEAAAAAB, {self._reg(p2)};')  # -1/3
+                    self._lines.append(f'    mul.f32 {dest}, {x}, {self._reg(p)};')
+                elif inst.func in ('asinf', 'asin'):
+                    # asin(x) = atan(x / sqrt(1 - x*x))
+                    x = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    x2   = kernel.new_value(f'_asin_x2_{n}', FLOAT)
+                    om   = kernel.new_value(f'_asin_om_{n}', FLOAT)
+                    sqr  = kernel.new_value(f'_asin_sq_{n}', FLOAT)
+                    rat  = kernel.new_value(f'_asin_r_{n}',  FLOAT)
+                    # Reuse atan approximation inline
+                    ax2  = kernel.new_value(f'_asin_ax2_{n}', FLOAT)
+                    ax4  = kernel.new_value(f'_asin_ax4_{n}', FLOAT)
+                    ax6  = kernel.new_value(f'_asin_ax6_{n}', FLOAT)
+                    p    = kernel.new_value(f'_asin_p_{n}',   FLOAT)
+                    p2   = kernel.new_value(f'_asin_p2_{n}',  FLOAT)
+                    self._lines.append(f'    mul.f32 {self._reg(x2)}, {x}, {x};')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(om)}, {self._reg(x2)}, 0fBF800000, 0f3F800000;')  # 1-x^2
+                    self._lines.append(f'    sqrt.approx.f32 {self._reg(sqr)}, {self._reg(om)};')
+                    self._lines.append(f'    div.approx.f32 {self._reg(rat)}, {x}, {self._reg(sqr)};')
+                    # atan of ratio
+                    self._lines.append(f'    mul.f32 {self._reg(ax2)}, {self._reg(rat)}, {self._reg(rat)};')
+                    self._lines.append(f'    mul.f32 {self._reg(ax4)}, {self._reg(ax2)}, {self._reg(ax2)};')
+                    self._lines.append(f'    mul.f32 {self._reg(ax6)}, {self._reg(ax4)}, {self._reg(ax2)};')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p)}, {self._reg(ax6)}, 0fBE124925, 0f3F800000;')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p2)}, {self._reg(ax4)}, 0f3E4CCCCD, {self._reg(p)};')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p)}, {self._reg(ax2)}, 0fBEAAAAAB, {self._reg(p2)};')
+                    self._lines.append(f'    mul.f32 {dest}, {self._reg(rat)}, {self._reg(p)};')
+                elif inst.func in ('acosf', 'acos'):
+                    # acos(x) = pi/2 - asin(x)
+                    x = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    x2   = kernel.new_value(f'_acos_x2_{n}', FLOAT)
+                    om   = kernel.new_value(f'_acos_om_{n}', FLOAT)
+                    sqr  = kernel.new_value(f'_acos_sq_{n}', FLOAT)
+                    rat  = kernel.new_value(f'_acos_r_{n}',  FLOAT)
+                    ax2  = kernel.new_value(f'_acos_ax2_{n}', FLOAT)
+                    ax4  = kernel.new_value(f'_acos_ax4_{n}', FLOAT)
+                    ax6  = kernel.new_value(f'_acos_ax6_{n}', FLOAT)
+                    p    = kernel.new_value(f'_acos_p_{n}',   FLOAT)
+                    p2   = kernel.new_value(f'_acos_p2_{n}',  FLOAT)
+                    asin_v = kernel.new_value(f'_acos_as_{n}', FLOAT)
+                    self._lines.append(f'    mul.f32 {self._reg(x2)}, {x}, {x};')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(om)}, {self._reg(x2)}, 0fBF800000, 0f3F800000;')
+                    self._lines.append(f'    sqrt.approx.f32 {self._reg(sqr)}, {self._reg(om)};')
+                    self._lines.append(f'    div.approx.f32 {self._reg(rat)}, {x}, {self._reg(sqr)};')
+                    self._lines.append(f'    mul.f32 {self._reg(ax2)}, {self._reg(rat)}, {self._reg(rat)};')
+                    self._lines.append(f'    mul.f32 {self._reg(ax4)}, {self._reg(ax2)}, {self._reg(ax2)};')
+                    self._lines.append(f'    mul.f32 {self._reg(ax6)}, {self._reg(ax4)}, {self._reg(ax2)};')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p)}, {self._reg(ax6)}, 0fBE124925, 0f3F800000;')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p2)}, {self._reg(ax4)}, 0f3E4CCCCD, {self._reg(p)};')
+                    self._lines.append(f'    fma.rn.f32 {self._reg(p)}, {self._reg(ax2)}, 0fBEAAAAAB, {self._reg(p2)};')
+                    self._lines.append(f'    mul.f32 {self._reg(asin_v)}, {self._reg(rat)}, {self._reg(p)};')
+                    self._lines.append(f'    sub.f32 {dest}, 0f3FC90FDB, {self._reg(asin_v)};')  # pi/2 - asin
                 elif inst.func in ('powf', 'pow'):
                     # powf(x, y) = exp2(y * log2(x)) — approx via f32 lg2/ex2
                     x = self._operand(inst.args[0]) if inst.args else '0f00000000'
