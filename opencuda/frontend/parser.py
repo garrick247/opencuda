@@ -53,6 +53,9 @@ class Parser:
         # Module-level compile-time constants (enum values, etc.)
         # These are visible in all kernels as Const operands without IR instructions.
         self._global_consts: dict[str, Const] = {}
+        # Module-level extern __shared__ declarations: list of (name, scalar_ty).
+        # Injected into each kernel's scope at kernel parse time.
+        self._module_shared_decls: list = []
         # Register C/CUDA scalar aliases not covered by keyword tokens
         self._typedefs['bool'] = INT32        # _Bool / bool → i32 (0 or 1)
         self._typedefs['size_t'] = UINT64     # pointer-sized unsigned
@@ -1011,12 +1014,24 @@ class Parser:
             self._advance()
             tok = self._peek()  # re-read after consuming qualifier(s)
 
-        # __shared__ declaration: __shared__ type name[size] or name[d0][d1]...;
+        # __shared__ declaration: __shared__ type name[size], name[d0][d1]...,
+        # or extern __shared__ type name[] (dynamic shared memory, size=0 sentinel).
         if tok.kind == TokKind.KW_SHARED:
             self._advance()
             ty = self._parse_type()
             name = self._expect(TokKind.IDENT).value
             self._expect(TokKind.LBRACKET)
+            # extern __shared__ float sdata[]; — empty brackets → dynamic
+            if self._at(TokKind.RBRACKET):
+                self._advance()
+                self._expect(TokKind.SEMI)
+                smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED)
+                val = self._new_val(name, smem_ty)
+                self._variables[name] = val
+                if not hasattr(self._kernel, '_shared_decls'):
+                    self._kernel._shared_decls = []
+                self._kernel._shared_decls.append((name, ty, 0))  # size=0 → extern/dynamic
+                return
             size_op = self._parse_assign_expr()
             d0 = int(size_op.value) if isinstance(size_op, Const) else 1
             size = d0
@@ -1695,6 +1710,15 @@ class Parser:
             self._emit(ParamInst(val, i, p.name))
             self._variables[p.name] = val
 
+        # Inject module-level extern __shared__ declarations into this kernel's scope.
+        for shname, shty in self._module_shared_decls:
+            smem_ty = PtrTy(shty, AddrSpace.SHARED)
+            val = self._new_val(shname, smem_ty)
+            self._variables[shname] = val
+            if not hasattr(self._kernel, '_shared_decls'):
+                self._kernel._shared_decls = []
+            self._kernel._shared_decls.append((shname, shty, 0))
+
         # Parse body
         self._expect(TokKind.LBRACE)
         while not self._match(TokKind.RBRACE):
@@ -1914,6 +1938,16 @@ class Parser:
                     ptr_ty = PtrTy(ty, AddrSpace.GLOBAL)
                     self._global_consts[name] = SymbolRef(name, ptr_ty)
                     mod.global_vars.append((name, ty, count, AddrSpace.GLOBAL))
+            elif self._at(TokKind.KW_SHARED):
+                # Module-level extern __shared__ type name[]; — dynamic shared memory.
+                # Register as a pending declaration injected into every kernel that follows.
+                self._advance()
+                ty = self._parse_type()
+                name = self._expect(TokKind.IDENT).value
+                self._expect(TokKind.LBRACKET)
+                self._expect(TokKind.RBRACKET)  # always empty brackets for extern shared
+                self._match(TokKind.SEMI)
+                self._module_shared_decls.append((name, ty))
             elif self._at(TokKind.KW_STRUCT):
                 self._parse_struct_def()
             elif self._at(TokKind.KW_UNION):

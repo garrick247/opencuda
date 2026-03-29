@@ -147,6 +147,7 @@ _KEYWORDS = {
     'static': TokKind.KW_STATIC,
     'inline': TokKind.KW_STATIC,   # treat inline same as static (silently ignored)
     'register': TokKind.KW_STATIC,  # register hint is a no-op too
+    'extern': TokKind.KW_STATIC,   # extern treated as ignorable qualifier
 }
 
 _TOKEN_RE = re.compile(r"""

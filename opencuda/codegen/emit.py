@@ -440,7 +440,16 @@ class PTXEmitter:
         if hasattr(kernel, '_shared_decls'):
             for sname, sty, scount in kernel._shared_decls:
                 ptx_sty = _ptx_type(sty)
-                ptx.append(f'    .shared .{ptx_sty} {sname}[{scount}];')
+                if scount == 0:
+                    # extern __shared__ (dynamic): must be declared at module level
+                    # as ".extern .shared .align N .b8 name[];" — PTX does not allow
+                    # incomplete-type shared variables inside a function body.
+                    elem_align = sty.size if isinstance(sty, ScalarTy) else 4
+                    decl = f'.extern .shared .align {elem_align} .b8 {sname}[];'
+                    if decl not in self._module_preamble:
+                        self._module_preamble.append(decl)
+                else:
+                    ptx.append(f'    .shared .{ptx_sty} {sname}[{scount}];')
 
         # Local memory (stack) array declarations
         if hasattr(kernel, '_local_decls'):
