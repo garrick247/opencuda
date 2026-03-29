@@ -1259,10 +1259,10 @@ class PTXEmitter:
                     'exp2f': 'ex2.approx.f32', 'exp2': 'ex2.approx.f32',
                     'log2f': 'lg2.approx.f32', 'log2': 'lg2.approx.f32',
                     # Rounding-mode sqrt/rcp variants
-                    '__fsqrt_rn': 'sqrt.rn.f32', '__fsqrt_rd': 'sqrt.rd.f32',
-                    '__fsqrt_ru': 'sqrt.ru.f32', '__fsqrt_rz': 'sqrt.rz.f32',
-                    '__frcp_rn':  'rcp.rn.f32',  '__frcp_rd':  'rcp.rd.f32',
-                    '__frcp_ru':  'rcp.ru.f32',  '__frcp_rz':  'rcp.rz.f32',
+                    '__fsqrt_rn': 'sqrt.rn.f32', '__fsqrt_rd': 'sqrt.rm.f32',
+                    '__fsqrt_ru': 'sqrt.rp.f32', '__fsqrt_rz': 'sqrt.rz.f32',
+                    '__frcp_rn':  'rcp.rn.f32',  '__frcp_rd':  'rcp.rm.f32',
+                    '__frcp_ru':  'rcp.rp.f32',  '__frcp_rz':  'rcp.rz.f32',
                     '__frsqrt_rn': 'rsqrt.approx.f32',
                 }
                 # f64 variants: only sqrt.rn.f64 and rsqrt.approx.f64 are direct PTX.
