@@ -1113,21 +1113,45 @@ class Parser:
                     for fname, fty in decl_ty.fields:
                         fval = self._new_val(f"{name}_{fname}", fty)
                         self._variables[f"{name}_{fname}"] = fval
-                    # Handle initializer: Vertex v = src_ptr[i];
-                    # Copy each scalar field from the source struct in memory.
+                    # Handle initializer: Vec3 v = {1.0f, 2.0f, 3.0f}; or v = src_ptr[i];
                     if self._match(TokKind.ASSIGN):
-                        rhs = self._parse_assign_expr()
-                        # rhs should be a PtrTy(StructTy) address pointing to the source
-                        if isinstance(rhs, Value) and isinstance(rhs.ty, PtrTy) and isinstance(rhs.ty.pointee, StructTy):
-                            sty = rhs.ty.pointee
-                            for fname, fty in sty.fields:
-                                if isinstance(fty, ScalarTy):
-                                    off = sty.field_offset(fname)
-                                    faddr = self._new_val("faddr", PtrTy(fty, rhs.ty.addr_space))
-                                    self._emit(BinInst(faddr, BinOp.ADD, rhs, Const(INT32, off)))
-                                    loaded = self._new_val(f"{name}_{fname}", fty)
-                                    self._emit(LoadInst(loaded, faddr))
-                                    self._variables[f"{name}_{fname}"] = loaded
+                        if self._at(TokKind.LBRACE):
+                            # Aggregate initializer: { expr, expr, ... }
+                            self._advance()  # consume '{'
+                            scalar_fields = [(fname, fty) for fname, fty in decl_ty.fields
+                                             if isinstance(fty, ScalarTy)]
+                            i = 0
+                            while not self._at(TokKind.RBRACE) and not self._at(TokKind.EOF):
+                                val_expr = self._parse_assign_expr()
+                                if i < len(scalar_fields):
+                                    fname, fty = scalar_fields[i]
+                                    fval = self._new_val(f"{name}_{fname}", fty)
+                                    if isinstance(val_expr, Const) and val_expr.ty != fty:
+                                        from_const = Const(fty, val_expr.value)
+                                        fval2 = self._new_val(f"{name}_{fname}", fty)
+                                        self._emit(BinInst(fval2, BinOp.ADD, from_const, Const(fty, 0.0 if fty.is_float else 0)))
+                                        self._variables[f"{name}_{fname}"] = fval2
+                                    else:
+                                        self._emit(BinInst(fval, BinOp.ADD, val_expr,
+                                                           Const(fty, 0.0 if fty.is_float else 0)))
+                                        self._variables[f"{name}_{fname}"] = fval
+                                i += 1
+                                if not self._match(TokKind.COMMA):
+                                    break
+                            self._expect(TokKind.RBRACE)
+                        else:
+                            rhs = self._parse_assign_expr()
+                            # rhs should be a PtrTy(StructTy) address pointing to the source
+                            if isinstance(rhs, Value) and isinstance(rhs.ty, PtrTy) and isinstance(rhs.ty.pointee, StructTy):
+                                sty = rhs.ty.pointee
+                                for fname, fty in sty.fields:
+                                    if isinstance(fty, ScalarTy):
+                                        off = sty.field_offset(fname)
+                                        faddr = self._new_val("faddr", PtrTy(fty, rhs.ty.addr_space))
+                                        self._emit(BinInst(faddr, BinOp.ADD, rhs, Const(INT32, off)))
+                                        loaded = self._new_val(f"{name}_{fname}", fty)
+                                        self._emit(LoadInst(loaded, faddr))
+                                        self._variables[f"{name}_{fname}"] = loaded
                     if not self._match(TokKind.COMMA):
                         break
                     continue
