@@ -398,13 +398,17 @@ class Parser:
                 return UINT8
             elif self._match(TokKind.KW_LONG):
                 if self._match(TokKind.KW_LONG):
+                    self._match(TokKind.KW_INT)  # optional "unsigned long long int"
                     return UINT64
+                self._match(TokKind.KW_INT)  # optional "unsigned long int"
             return UINT32
         elif tok.kind == TokKind.KW_LONG:
             self._advance()
             if self._match(TokKind.KW_LONG):
+                self._match(TokKind.KW_INT)  # optional "long long int"
                 return INT64
-            return INT32  # treat 'long' as int32 for simplicity
+            self._match(TokKind.KW_INT)  # optional "long int"
+            return INT32  # treat 'long' as int32 for simplicity (CUDA device code)
         elif tok.kind == TokKind.KW_SHORT:
             self._advance()
             self._match(TokKind.KW_INT)  # optional trailing 'int'
@@ -421,6 +425,7 @@ class Parser:
                 if self._match(TokKind.KW_LONG):
                     self._match(TokKind.KW_INT)
                     return INT64
+                self._match(TokKind.KW_INT)  # optional "signed long int"
                 return INT32
             else:
                 self._match(TokKind.KW_INT)
