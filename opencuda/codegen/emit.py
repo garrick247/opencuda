@@ -1196,6 +1196,24 @@ class PTXEmitter:
                     ptx_ty = 'b64' if (isinstance(src_ty, ScalarTy) and src_ty.size == 8) else 'b32'
                     src = self._operand(src_arg) if src_arg is not None else '0'
                     self._lines.append(f'    brev.{ptx_ty} {dest}, {src};')
+                elif inst.func in ('__ffs', '__ffsll'):
+                    # __ffs(x): 1-indexed position of least significant 1-bit (0 if x==0)
+                    # PTX: neg → and (isolate LSB) → bfind.u32 → add 1
+                    # Zero case: bfind(0)=0xFFFFFFFF, +1 overflows to 0 — correct!
+                    src_arg = inst.args[0] if inst.args else None
+                    src_ty = src_arg.ty if isinstance(src_arg, (Value, Const)) else INT32
+                    is64 = isinstance(src_ty, ScalarTy) and src_ty.size == 8
+                    ptx_ty = 'b64' if is64 else 'b32'
+                    neg_ty = 's64' if is64 else 's32'
+                    src = self._operand(src_arg) if src_arg is not None else '0'
+                    n = inst.dest.id if inst.dest else 0
+                    tmp_neg = kernel.new_value(f'_ffs_neg_{n}', INT32)
+                    tmp_lsb = kernel.new_value(f'_ffs_lsb_{n}', INT32)
+                    tmp_pos = kernel.new_value(f'_ffs_pos_{n}', UINT32)
+                    self._lines.append(f'    neg.{neg_ty} {self._reg(tmp_neg)}, {src};')
+                    self._lines.append(f'    and.{ptx_ty} {self._reg(tmp_lsb)}, {src}, {self._reg(tmp_neg)};')
+                    self._lines.append(f'    bfind.u32 {self._reg(tmp_pos)}, {self._reg(tmp_lsb)};')
+                    self._lines.append(f'    add.s32 {dest}, {self._reg(tmp_pos)}, 1;')
                 elif inst.func in _f32_scaled_unary:
                     # Two-instruction form: scale input then apply base-2 op.
                     # e.g. expf(x): tmp = x * log2e; dest = ex2.approx(tmp)

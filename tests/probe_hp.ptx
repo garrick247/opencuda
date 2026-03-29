@@ -1,0 +1,129 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry switch_fallthrough(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<8>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    rem.s32 %r0, %r1, 4;
+    mov.s32 %r1, 0;
+    bra switch_dispatch_13;
+if_merge_4:
+    ret;
+switch_exit_5:
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.s32 [%rd1], %r1;
+    bra if_merge_4;
+case_6:
+    add.s32 %r4, %r1, 10;
+    mov.s32 %r1, %r4;
+    bra case_7;
+case_7:
+    add.s32 %r5, %r1, 1;
+    mov.s32 %r1, %r5;
+    bra switch_exit_5;
+case_9:
+    add.s32 %r6, %r1, 20;
+    mov.s32 %r1, %r6;
+    bra switch_exit_5;
+default_11:
+    add.s32 %r7, %r1, 99;
+    mov.s32 %r1, %r7;
+    bra switch_exit_5;
+switch_dispatch_13:
+    setp.eq.s32 %p0, %r0, 0;
+    @%p0 bra case_6;
+    bra switch_next_14;
+switch_next_14:
+    setp.eq.s32 %p0, %r0, 1;
+    @%p0 bra case_7;
+    bra switch_next_15;
+switch_next_15:
+    setp.eq.s32 %p0, %r0, 2;
+    @%p0 bra case_9;
+    bra default_11;
+}
+
+.visible .entry switch_chain(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<7>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    mov.s32 %r0, 0;
+    bra switch_dispatch_12;
+if_merge_4:
+    ret;
+switch_exit_5:
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.s32 [%rd1], %r0;
+    bra if_merge_4;
+case_6:
+    or.b32 %r4, %r0, 4;
+    mov.s32 %r0, %r4;
+    bra case_8;
+case_8:
+    or.b32 %r5, %r0, 2;
+    mov.s32 %r0, %r5;
+    bra case_9;
+case_9:
+    or.b32 %r6, %r0, 1;
+    mov.s32 %r0, %r6;
+    bra switch_exit_5;
+default_11:
+    mov.s32 %r0, 0;
+    bra switch_exit_5;
+switch_dispatch_12:
+    setp.eq.s32 %p0, %r1, 7;
+    @%p0 bra case_6;
+    bra switch_next_13;
+switch_next_13:
+    setp.eq.s32 %p0, %r1, 6;
+    @%p0 bra case_8;
+    bra switch_next_14;
+switch_next_14:
+    setp.eq.s32 %p0, %r1, 5;
+    @%p0 bra case_8;
+    bra switch_next_15;
+switch_next_15:
+    setp.eq.s32 %p0, %r1, 4;
+    @%p0 bra case_9;
+    bra default_11;
+}

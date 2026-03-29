@@ -741,6 +741,13 @@ class Parser:
                     cast_ty = PtrTy(cast_ty, AddrSpace.GLOBAL)
                 self._expect(TokKind.RPAREN)
                 operand = self._parse_unary_expr()
+                # Pointer cast: inherit address space from source so
+                # (unsigned int *)&local_var emits ld.local, not ld.global
+                if (isinstance(cast_ty, PtrTy)
+                        and isinstance(operand, Value)
+                        and isinstance(operand.ty, PtrTy)
+                        and operand.ty.addr_space != AddrSpace.GLOBAL):
+                    cast_ty = PtrTy(cast_ty.pointee, operand.ty.addr_space)
                 dest = self._new_val("cast", cast_ty)
                 self._emit(CvtInst(dest, operand))
                 return dest
@@ -1016,6 +1023,12 @@ class Parser:
                 self._expect(TokKind.LPAREN)
                 operand = self._parse_assign_expr()
                 self._expect(TokKind.RPAREN)
+                # Pointer cast: inherit address space from source
+                if (isinstance(cast_ty, PtrTy)
+                        and isinstance(operand, Value)
+                        and isinstance(operand.ty, PtrTy)
+                        and operand.ty.addr_space != AddrSpace.GLOBAL):
+                    cast_ty = PtrTy(cast_ty.pointee, operand.ty.addr_space)
                 dest = self._new_val("cast", cast_ty)
                 self._emit(CvtInst(dest, operand))
                 return dest
@@ -1138,7 +1151,7 @@ class Parser:
                     _uint_return  = ('__activemask',)
                     _sync_ops     = ('__syncwarp',)
                     _int_ops      = ('__popc', '__popcll', '__clz', '__clzll',
-                                     '__brev', '__brevll')
+                                     '__brev', '__brevll', '__ffs', '__ffsll')
                     if name in _void_stmts:
                         self._emit(CallInst(None, name, args))
                         return Const(VOID, 0)
@@ -1788,31 +1801,42 @@ class Parser:
             # so each body starts from the same canonical environment.
             cases = []  # (value, case_bb)
             default_bb = None
+            # When a case body has no break (fallthrough), remember the block so
+            # we can connect it to the NEXT case block instead of exit_bb.
+            _fallthrough_from = None
             while not self._match(TokKind.RBRACE):
                 if self._peek().kind in (TokKind.KW_CASE, TokKind.KW_DEFAULT):
-                    # If the block we're currently in has no terminator (e.g. an
-                    # after_break stub or a fall-through case body), close it.
+                    # If the block we're currently in has no terminator it is
+                    # either a fallthrough case body or the pre_switch_bb.
                     # Guard: never close pre_switch_bb here — its terminator is
-                    # set later (line 1045) to point at the switch_dispatch block.
-                    # Without this guard, the first `case` keyword would close
-                    # pre_switch_bb with BrTerm(exit_bb), bypassing the dispatch
-                    # entirely and producing a switch that always falls through to
-                    # exit without testing any case.
+                    # set later to point at the switch_dispatch block.
                     if self._cur_block.terminator is None and self._cur_block is not pre_switch_bb:
+                        # Fallthrough: writeback modified vars to canonical regs
+                        # (so the next case sees the updated values via the
+                        # same canonical entry Values), then remember this block
+                        # so we can point it at the next case_bb below.
                         self._loop_writeback(vars_before_switch)
-                        self._cur_block.terminator = BrTerm(exit_bb.label)
+                        _fallthrough_from = self._cur_block
+                    else:
+                        _fallthrough_from = None
                     if self._peek().kind == TokKind.KW_CASE:
                         self._advance()
                         case_val = self._parse_expr()
                         self._expect(TokKind.COLON)
                         case_bb = self._new_block("case")
                         cases.append((case_val, case_bb))
+                        if _fallthrough_from is not None:
+                            _fallthrough_from.terminator = BrTerm(case_bb.label)
+                            _fallthrough_from = None
                         self._variables = dict(vars_before_switch)
                         self._cur_block = case_bb
                     else:
                         self._advance()
                         self._expect(TokKind.COLON)
                         default_bb = self._new_block("default")
+                        if _fallthrough_from is not None:
+                            _fallthrough_from.terminator = BrTerm(default_bb.label)
+                            _fallthrough_from = None
                         self._variables = dict(vars_before_switch)
                         self._cur_block = default_bb
                 else:
