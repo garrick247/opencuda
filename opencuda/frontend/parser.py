@@ -1756,10 +1756,17 @@ class Parser:
                     self._variables[update_name] = rhs
             self._expect(TokKind.SEMI)
             return
-        # Compound assignment: +=, -=, *=
+        # Compound assignment: +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
         for tok_kind, op in [(TokKind.PLUS_EQ, BinOp.ADD),
                              (TokKind.MINUS_EQ, BinOp.SUB),
-                             (TokKind.STAR_EQ, BinOp.MUL)]:
+                             (TokKind.STAR_EQ, BinOp.MUL),
+                             (TokKind.SLASH_EQ, BinOp.DIV),
+                             (TokKind.PERCENT_EQ, BinOp.MOD),
+                             (TokKind.AMP_EQ, BinOp.AND),
+                             (TokKind.PIPE_EQ, BinOp.OR),
+                             (TokKind.CARET_EQ, BinOp.XOR),
+                             (TokKind.LSHIFT_EQ, BinOp.SHL),
+                             (TokKind.RSHIFT_EQ, BinOp.SHR)]:
             if self._match(tok_kind):
                 rhs = self._parse_expr()
                 if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
