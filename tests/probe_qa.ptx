@@ -1,0 +1,375 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry sqrt_via_ptr(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .local .align 4 .b8 _local_10[4];
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd0, _local_10;
+entry_1:
+    ld.param.u64 %rd1, [out];
+    ld.param.u64 %rd2, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd2, %rd4;
+    ld.global.f32 %f0, [%rd3];
+    st.local.f32 [%rd0], 0f00000000;
+    mul.f32 %f1, %f0, 0f3F000000;
+    mul.f32 %f2, %f1, %f1;
+    sub.f32 %f3, %f2, %f0;
+    mul.f32 %f2, %f3, 0f3F000000;
+    div.approx.f32 %f3, %f2, %f1;
+    sub.f32 %f2, %f1, %f3;
+    mul.f32 %f1, %f2, %f2;
+    sub.f32 %f3, %f1, %f0;
+    mul.f32 %f0, %f3, 0f3F000000;
+    div.approx.f32 %f1, %f0, %f2;
+    sub.f32 %f3, %f2, %f1;
+    st.local.f32 [%rd0], %f3;
+    bra inline_square_root_approx_merge_5;
+if_merge_4:
+    ret;
+inline_square_root_approx_merge_5:
+    ld.local.f32 %f0, [%rd0];
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd2, %rd1, %rd5;
+    st.global.f32 [%rd2], %f0;
+    bra if_merge_4;
+}
+
+.visible .entry sort2(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .local .align 4 .b8 _local_19[4];
+    .local .align 4 .b8 _local_20[4];
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<9>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd0, _local_19;
+    mov.u64 %rd1, _local_20;
+entry_1:
+    ld.param.u64 %rd2, [out];
+    ld.param.u64 %rd3, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    div.s32 %r1, %r0, 2;
+    setp.lt.s32 %p0, %r2, %r1;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 1;
+    shl.b32 %r1, %r0, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd4, %rd3, %rd5;
+    ld.global.s32 %r1, [%rd4];
+    mov.s32 %r3, %r1;
+    add.s32 %r1, %r0, 1;
+    shl.b32 %r0, %r1, 2;
+    cvt.s64.s32 %rd6, %r0;
+    add.u64 %rd4, %rd3, %rd6;
+    ld.global.s32 %r1, [%rd4];
+    mov.s32 %r0, %r1;
+    setp.gt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_merge_4:
+    ret;
+if_true_5:
+    st.local.s32 [%rd0], %r3;
+    st.local.s32 [%rd1], %r0;
+    ld.local.s32 %r1, [%rd0];
+    ld.local.s32 %r4, [%rd1];
+    st.local.s32 [%rd0], %r4;
+    st.local.s32 [%rd1], %r1;
+    bra inline_swap_ints_merge_8;
+if_merge_7:
+    shl.b32 %r1, %r2, 1;
+    shl.b32 %r4, %r1, 2;
+    cvt.s64.s32 %rd7, %r4;
+    add.u64 %rd3, %rd2, %rd7;
+    st.global.s32 [%rd3], %r3;
+    add.s32 %r4, %r1, 1;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd8, %r5;
+    add.u64 %rd4, %rd2, %rd8;
+    st.global.s32 [%rd4], %r0;
+    bra if_merge_4;
+inline_swap_ints_merge_8:
+    ld.local.s32 %r4, [%rd0];
+    ld.local.s32 %r5, [%rd1];
+    mov.s32 %r3, %r4;
+    mov.s32 %r0, %r5;
+    bra if_merge_7;
+}
+
+.visible .entry compute_minmax(
+    .param .u64 out_mn, .param .u64 out_mx, .param .u64 a, .param .u64 b, .param .s32 n)
+{
+    .local .align 4 .b8 _local_16[4];
+    .local .align 4 .b8 _local_17[4];
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<9>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd0, _local_16;
+    mov.u64 %rd1, _local_17;
+entry_1:
+    ld.param.u64 %rd2, [out_mn];
+    ld.param.u64 %rd3, [out_mx];
+    ld.param.u64 %rd4, [a];
+    ld.param.u64 %rd5, [b];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd7, %r0;
+    add.u64 %rd6, %rd4, %rd7;
+    ld.global.s32 %r1, [%rd6];
+    add.u64 %rd4, %rd5, %rd7;
+    ld.global.s32 %r0, [%rd4];
+    st.local.s32 [%rd0], 0;
+    st.local.s32 [%rd1], 0;
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra tern_true_6;
+    bra tern_false_7;
+if_merge_4:
+    ret;
+inline_minmax_merge_5:
+    ld.local.s32 %r3, [%rd0];
+    ld.local.s32 %r4, [%rd1];
+    shl.b32 %r5, %r2, 2;
+    cvt.s64.s32 %rd8, %r5;
+    add.u64 %rd6, %rd2, %rd8;
+    st.global.s32 [%rd6], %r3;
+    add.u64 %rd5, %rd3, %rd8;
+    st.global.s32 [%rd5], %r4;
+    bra if_merge_4;
+tern_true_6:
+    mov.s32 %r4, %r1;
+    bra tern_merge_8;
+tern_false_7:
+    mov.s32 %r4, %r0;
+    bra tern_merge_8;
+tern_merge_8:
+    st.local.s32 [%rd0], %r4;
+    setp.gt.s32 %p0, %r1, %r0;
+    @%p0 bra tern_true_9;
+    bra tern_false_10;
+tern_true_9:
+    mov.s32 %r5, %r1;
+    bra tern_merge_11;
+tern_false_10:
+    mov.s32 %r5, %r0;
+    bra tern_merge_11;
+tern_merge_11:
+    st.local.s32 [%rd1], %r5;
+    bra inline_minmax_merge_5;
+}
+
+.visible .entry accum_kernel(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .local .align 4 .b8 _local_9[4];
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd0, _local_9;
+entry_1:
+    ld.param.u64 %rd1, [out];
+    ld.param.u64 %rd2, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r1, 0;
+    mov.s32 %r2, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    st.local.s32 [%rd0], %r1;
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd3, %rd2, %rd4;
+    ld.global.s32 %r3, [%rd3];
+    ld.local.s32 %r4, [%rd0];
+    add.s32 %r5, %r4, %r3;
+    st.local.s32 [%rd0], %r5;
+    bra inline_accumulate_merge_9;
+for_inc_7:
+    add.s32 %r3, %r2, 1;
+    mov.s32 %r2, %r3;
+    bra for_cond_5;
+for_exit_8:
+    st.global.s32 [%rd1], %r1;
+    bra if_merge_4;
+inline_accumulate_merge_9:
+    ld.local.s32 %r4, [%rd0];
+    mov.s32 %r1, %r4;
+    bra for_inc_7;
+}
+
+.visible .entry three_level_inline(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd0];
+    shl.b32 %r2, %r1, 1;
+    bra inline_double_val_merge_7;
+if_merge_4:
+    ret;
+inline_oct_val_merge_5:
+    st.global.s32 [%rd2], %r0;
+    bra if_merge_4;
+inline_quad_val_merge_6:
+    shl.b32 %r1, %r3, 1;
+    bra inline_double_val_merge_13;
+inline_double_val_merge_7:
+    shl.b32 %r3, %r2, 1;
+    bra inline_quad_val_merge_6;
+inline_double_val_merge_13:
+    shl.b32 %r0, %r1, 1;
+    bra inline_oct_val_merge_5;
+}
+
+.visible .entry self_add_kernel(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    add.s32 %r0, %r1, %r1;
+    bra inline_add_self_merge_5;
+if_merge_4:
+    ret;
+inline_add_self_merge_5:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.s32 %r1, [%rd2];
+    add.s32 %r3, %r1, 1;
+    add.s32 %r1, %r3, %r3;
+    bra inline_add_self_merge_7;
+inline_add_self_merge_7:
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd5, %r3;
+    add.u64 %rd2, %rd0, %rd5;
+    add.s32 %r3, %r0, %r1;
+    st.global.s32 [%rd2], %r3;
+    bra if_merge_4;
+}
+
+.visible .entry loop_min(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .local .align 4 .b8 _local_15[4];
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<2>;
+
+    mov.u64 %rd0, _local_15;
+entry_1:
+    ld.param.u64 %rd1, [out];
+    ld.param.u64 %rd2, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ld.global.s32 %r1, [%rd2];
+    mov.s32 %r2, %r1;
+    mov.s32 %r1, 1;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    shl.b32 %r3, %r1, 2;
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd3, %rd2, %rd4;
+    ld.global.s32 %r3, [%rd3];
+    st.local.s32 [%rd0], %r2;
+    ld.local.s32 %r4, [%rd0];
+    setp.lt.s32 %p1, %r3, %r4;
+    @%p1 bra if_true_10;
+    bra inline_running_min_merge_9;
+for_inc_7:
+    add.s32 %r4, %r1, 1;
+    mov.s32 %r1, %r4;
+    bra for_cond_5;
+for_exit_8:
+    st.global.s32 [%rd1], %r2;
+    bra if_merge_4;
+inline_running_min_merge_9:
+    ld.local.s32 %r5, [%rd0];
+    mov.s32 %r2, %r5;
+    bra for_inc_7;
+if_true_10:
+    st.local.s32 [%rd0], %r3;
+    bra inline_running_min_merge_9;
+}
