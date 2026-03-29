@@ -1076,6 +1076,21 @@ class Parser:
                     for fname, fty in decl_ty.fields:
                         fval = self._new_val(f"{name}_{fname}", fty)
                         self._variables[f"{name}_{fname}"] = fval
+                    # Handle initializer: Vertex v = src_ptr[i];
+                    # Copy each scalar field from the source struct in memory.
+                    if self._match(TokKind.ASSIGN):
+                        rhs = self._parse_assign_expr()
+                        # rhs should be a PtrTy(StructTy) address pointing to the source
+                        if isinstance(rhs, Value) and isinstance(rhs.ty, PtrTy) and isinstance(rhs.ty.pointee, StructTy):
+                            sty = rhs.ty.pointee
+                            for fname, fty in sty.fields:
+                                if isinstance(fty, ScalarTy):
+                                    off = sty.field_offset(fname)
+                                    faddr = self._new_val("faddr", PtrTy(fty, rhs.ty.addr_space))
+                                    self._emit(BinInst(faddr, BinOp.ADD, rhs, Const(INT32, off)))
+                                    loaded = self._new_val(f"{name}_{fname}", fty)
+                                    self._emit(LoadInst(loaded, faddr))
+                                    self._variables[f"{name}_{fname}"] = loaded
                     if not self._match(TokKind.COMMA):
                         break
                     continue
