@@ -190,6 +190,32 @@ def constant_fold(kernel: Kernel) -> int:
             elif isinstance(inst, CmpInst):
                 inst.lhs = _resolve(inst.lhs)
                 inst.rhs = _resolve(inst.rhs)
+            elif isinstance(inst, CvtInst):
+                src = _resolve(inst.src)
+                inst.src = src
+                # Fold CvtInst whose source is a compile-time constant.
+                # Convert the constant value to the destination type and
+                # replace with a simpler add-zero instruction.
+                if isinstance(src, Const):
+                    dest_ty = inst.dest.ty
+                    dest_is_float = isinstance(dest_ty, ScalarTy) and dest_ty.is_float
+                    src_is_float = isinstance(src.ty, ScalarTy) and src.ty.is_float
+                    try:
+                        if dest_is_float:
+                            folded_val = float(src.value)
+                        else:
+                            raw = float(src.value) if src_is_float else int(src.value)
+                            folded_val = _mask_int(int(raw), dest_ty)
+                        inst.lhs = Const(dest_ty, folded_val)
+                        inst.rhs = Const(dest_ty, 0.0 if dest_is_float else 0)
+                        # Replace with BinInst ADD so the rest of the pipeline
+                        # can fold it further via the replacement map.
+                        new_insts.append(
+                            BinInst(inst.dest, BinOp.ADD, inst.lhs, inst.rhs))
+                        folded += 1
+                        continue
+                    except Exception:
+                        pass
             elif isinstance(inst, LoadInst):
                 inst.addr = _resolve(inst.addr)
             elif isinstance(inst, StoreInst):
