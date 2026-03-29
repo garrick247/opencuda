@@ -172,11 +172,12 @@ class Parser:
         and __restrict__ alone doesn't make the data read-only.
         """
         # Track const on the pointee (before or immediately after the base type).
-        # volatile is silently consumed — at the PTX level every ld/st is already
-        # emitted as-is; there is no instruction to skip due to a volatile qualifier.
+        # volatile/static/inline/register are silently consumed — no PTX semantics.
+        self._match(TokKind.KW_STATIC)    # static/inline/register before type
         self._match(TokKind.KW_VOLATILE)  # volatile before type (e.g. volatile int *)
         pointee_const = self._match(TokKind.KW_CONST)
         self._match(TokKind.KW_VOLATILE)  # volatile after const (e.g. const volatile T *)
+        self._match(TokKind.KW_STATIC)
         base = self._parse_type()
         # "float const *" or "float volatile *" — qualifier after base type
         if self._match(TokKind.KW_CONST):
@@ -867,12 +868,10 @@ class Parser:
     def _parse_stmt(self):
         tok = self._peek()
 
-        # const/volatile declaration: skip the qualifier and parse as normal
-        if tok.kind in (TokKind.KW_CONST, TokKind.KW_VOLATILE):
+        # const/volatile/static/inline/register declaration: skip the qualifier and parse as normal
+        _ignorable_quals = (TokKind.KW_CONST, TokKind.KW_VOLATILE, TokKind.KW_STATIC)
+        while tok.kind in _ignorable_quals:
             self._advance()
-            # Allow both (e.g. const volatile or volatile const)
-            if self._at(TokKind.KW_CONST) or self._at(TokKind.KW_VOLATILE):
-                self._advance()
             tok = self._peek()  # re-read after consuming qualifier(s)
 
         # __shared__ declaration: __shared__ type name[size];
@@ -1506,6 +1505,9 @@ class Parser:
     def _parse_device_func(self):
         """Parse __device__ function and store for inlining."""
         self._expect(TokKind.KW_DEVICE)
+        # Consume any additional qualifiers: __device__ __forceinline__, inline __device__, etc.
+        while self._at(TokKind.KW_DEVICE) or self._at(TokKind.KW_STATIC):
+            self._advance()
         ret_ty = self._parse_type_with_ptr()
         name = self._expect(TokKind.IDENT).value
 
@@ -1544,6 +1546,9 @@ class Parser:
         self._device_funcs = {}
 
         while not self._at(TokKind.EOF):
+            # Skip leading storage class qualifiers (static, inline) before __global__/__device__
+            while self._at(TokKind.KW_STATIC):
+                self._advance()
             if self._at(TokKind.KW_GLOBAL):
                 mod.kernels.append(self._parse_kernel())
             elif self._at(TokKind.KW_DEVICE):
