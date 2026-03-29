@@ -1655,7 +1655,14 @@ class Parser:
                             self._emit(CvtInst(val, rhs))
                             self._variables[name] = val
                         else:
-                            self._variables[name] = rhs
+                            # Always emit an explicit copy so 'name' gets its own
+                            # canonical register, distinct from 'rhs'.  Aliasing
+                            # (self._variables[name] = rhs) breaks nested loops:
+                            # `int j = i` would share i's writeback register, so
+                            # the inner-loop writeback for j clobbers i's value,
+                            # causing the outer loop to exit after one iteration.
+                            self._emit(BinInst(val, BinOp.ADD, rhs, Const(decl_ty, 0)))
+                            self._variables[name] = val
 
                 if not self._match(TokKind.COMMA):
                     break
