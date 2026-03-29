@@ -1731,6 +1731,13 @@ class Parser:
             self._advance()
             self._expect(TokKind.LPAREN)
 
+            # Push a scope for for-loop init variables (e.g. `int i = 0`).
+            # This ensures that after the loop, any outer variable with the
+            # same name is restored — matching C's rule that for-loop init
+            # declarations are scoped to the loop statement itself.
+            for_outer_bindings = dict(self._variables)
+            self._scope_locals_stack.append(set())
+
             # Snapshot variables before init to track which get modified
             vars_before = dict(self._variables)
 
@@ -1824,6 +1831,16 @@ class Parser:
 
             inc_bb.terminator = BrTerm(cond_bb.label)
             self._cur_block = exit_bb
+
+            # Pop the for-loop init scope: restore outer bindings for any
+            # variable re-declared in the init (e.g. `int i` when outer `i`
+            # exists), and remove purely inner variables.
+            for_inner_decls = self._scope_locals_stack.pop()
+            for name in for_inner_decls:
+                if name in for_outer_bindings:
+                    self._variables[name] = for_outer_bindings[name]
+                elif name in self._variables:
+                    del self._variables[name]
             return
 
         # While loop
