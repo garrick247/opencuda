@@ -1081,6 +1081,7 @@ class PTXEmitter:
                     'atomicMin': 'min', 'atomicMax': 'max',
                     'atomicAnd': 'and', 'atomicOr': 'or', 'atomicXor': 'xor',
                     'atomicExch': 'exch', 'atomicCAS': 'cas',
+                    'atomicInc': 'inc', 'atomicDec': 'dec',
                 }
                 addr = self._operand(inst.args[0]) if inst.args else '%rd0'
                 # Detect shared vs global address space for the pointer argument.
@@ -1454,6 +1455,29 @@ class PTXEmitter:
                     src_ty_str = 's64' if 'll' in inst.func else 's32'
                     src = self._operand(inst.args[0]) if inst.args else '0'
                     self._lines.append(f'    cvt.rn.f64.{src_ty_str} {dest}, {src};')
+                elif inst.func in ('__float_as_int', '__float_as_uint'):
+                    # Bit-reinterpret float → int32: mov.b32 %r, %f
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    mov.b32 {dest}, {src};')
+                elif inst.func in ('__int_as_float', '__uint_as_float'):
+                    # Bit-reinterpret int32 → float: mov.b32 %f, %r
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    mov.b32 {dest}, {src};')
+                elif inst.func in ('__double_as_longlong', '__double_as_ulonglong'):
+                    # Bit-reinterpret f64 → i64: mov.b64 %rd, %fd
+                    src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
+                    self._lines.append(f'    mov.b64 {dest}, {src};')
+                elif inst.func in ('__longlong_as_double', '__ulonglong_as_double'):
+                    # Bit-reinterpret i64 → f64: mov.b64 %fd, %rd
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    mov.b64 {dest}, {src};')
+                elif inst.func in ('__sad', '__usad'):
+                    # Sum of absolute differences: sad.{s32|u32} dest, a, b, accum
+                    ptx_ty = 'u32' if inst.func == '__usad' else 's32'
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    acc = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                    self._lines.append(f'    sad.{ptx_ty} {dest}, {a}, {b}, {acc};')
 
     def _emit_term(self, term):
         if isinstance(term, RetTerm):
