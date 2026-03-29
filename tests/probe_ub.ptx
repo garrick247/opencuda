@@ -220,10 +220,10 @@ if_merge_4:
     ret;
 for_cond_5:
     add.s32 %r1, %r0, 10;
-    add.s32 %r3, %r1, 11;
-    add.s32 %r1, %r3, 12;
-    add.s32 %r3, %r1, 13;
-    add.s32 %r1, %r3, 14;
+    add.s32 %r3, %r1, 10;
+    add.s32 %r1, %r3, 10;
+    add.s32 %r3, %r1, 10;
+    add.s32 %r1, %r3, 10;
     mov.s32 %r0, %r1;
     bra for_exit_8;
 for_exit_8:

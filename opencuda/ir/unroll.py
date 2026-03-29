@@ -163,6 +163,61 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
         if trip_count > 64:
             continue
 
+        # Detect secondary induction variables: variables modified by a constant
+        # step each iteration in inc_bb (e.g. j-- alongside i++ in for(;i<5;i++,j--)).
+        # These must be injected as Const values at each iteration so that
+        # body expressions like `i + j` constant-fold correctly.
+        # Build a map of value_id → defining BinInst in inc_bb for lookup.
+        inc_bb_defs = {}
+        for inst in inc_bb.instructions:
+            if hasattr(inst, 'dest') and inst.dest is not None:
+                inc_bb_defs[inst.dest.id] = inst
+
+        secondary_induction = {}  # canonical_id → (canonical_Value, init_int, step_int)
+        for canonical_id, (canonical_val, new_val) in carried_vars.items():
+            if canonical_id == induction_var.id:
+                continue  # primary induction var handled separately
+            if not isinstance(new_val, Value):
+                continue
+            defining_inst = inc_bb_defs.get(new_val.id)
+            if defining_inst is None or not isinstance(defining_inst, BinInst):
+                continue
+            if defining_inst.op not in (BinOp.ADD, BinOp.SUB):
+                continue
+            # Check pattern: new_val = canonical ± const_step
+            # For ADD: sec_step = rhs constant
+            # For SUB: sec_step = -rhs constant (j-- → j + (-1))
+            if (isinstance(defining_inst.lhs, Value)
+                    and defining_inst.lhs.id == canonical_id
+                    and isinstance(defining_inst.rhs, Const)):
+                raw_step = int(defining_inst.rhs.value)
+                sec_step = -raw_step if defining_inst.op == BinOp.SUB else raw_step
+            elif (defining_inst.op == BinOp.ADD
+                    and isinstance(defining_inst.rhs, Value)
+                    and defining_inst.rhs.id == canonical_id
+                    and isinstance(defining_inst.lhs, Const)):
+                sec_step = int(defining_inst.lhs.value)
+            else:
+                continue
+            # Find initial value of this canonical var from pre-loop blocks
+            sec_init = None
+            for scan_bb in kernel.blocks:
+                if scan_bb.label in loop_labels:
+                    continue
+                for sinst in scan_bb.instructions:
+                    if not (isinstance(sinst, BinInst) and sinst.op == BinOp.ADD):
+                        continue
+                    if sinst.dest.id != canonical_id:
+                        continue
+                    if isinstance(sinst.rhs, Const) and int(sinst.rhs.value) == 0:
+                        if isinstance(sinst.lhs, Const):
+                            sec_init = int(sinst.lhs.value)
+                    elif isinstance(sinst.lhs, Const) and int(sinst.lhs.value) == 0:
+                        if isinstance(sinst.rhs, Const):
+                            sec_init = int(sinst.rhs.value)
+            if sec_init is not None:
+                secondary_induction[canonical_id] = (canonical_val, sec_init, sec_step)
+
         loops.append({
             'cond_bb': cond_bb,
             'body_bb': body_bb,
@@ -174,6 +229,7 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
             'trip_count': trip_count,
             'induction_var': induction_var,
             'carried_vars': carried_vars,
+            'secondary_induction': secondary_induction,
         })
 
     return loops
@@ -207,11 +263,17 @@ def unroll_loops(kernel: Kernel, max_unroll: int = 16) -> int:
         # Persistent remap across iterations for loop-carried variables
         carried_remap = {}  # canonical_id → current Value (chains across iterations)
 
+        secondary_induction = loop.get('secondary_induction', {})
+
         for iteration in range(trip_count):
             # Build replacement map: start from carried state + induction var
             remap = dict(carried_remap)  # inherit carried var chain
             # i_value = init_val + step * iteration
             remap[induction_var.id] = Const(induction_var.ty, init_val + step * iteration)
+            # Secondary induction variables (e.g. j-- in for(;i<5;i++,j--)):
+            # inject their value as a constant so body expressions constant-fold.
+            for sid, (sval, sinit, sstep) in secondary_induction.items():
+                remap[sid] = Const(sval.ty, sinit + sstep * iteration)
 
             # Carried variables: for iteration 0, use the canonical (entry) value.
             # For iteration N>0, use the output from iteration N-1.
