@@ -71,8 +71,7 @@ ALL_CU_FILES = sorted(f for f in TESTS_DIR.glob('*.cu') if not f.name.startswith
 # All files here still show verifier errors after full optimization (confirmed
 # by test_known_parser_bugs_detected).
 KNOWN_PARSER_BUGS = frozenset({
-    # Remaining unfixed parser/SSA bugs (3 of original 28):
-    'probe_bu',   # short-circuit && in while condition — CondBrTerm uses undefined %and
+    # Remaining unfixed parser/SSA bugs (2 of original 28):
     'probe_jv',   # struct assignment inside conditional branch — fields not propagated
     'probe_lh',   # switch statement — undefined value in switch_next block
 })

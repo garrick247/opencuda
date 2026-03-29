@@ -242,10 +242,18 @@ class Parser:
         for var_name, entry_val in entry_vars.items():
             if not isinstance(entry_val, Value):
                 continue
+            # Struct sentinels (StructTy Values) are never-defined placeholders;
+            # their per-field scalars (name_x, name_y, ...) carry the actual values
+            # and are written back individually. Emitting a BinInst for the sentinel
+            # would reference an undefined operand.
+            if isinstance(entry_val.ty, StructTy):
+                continue
             cur_val = self._variables.get(var_name)
             if cur_val is None or cur_val is entry_val:
                 continue
             if isinstance(cur_val, Value):
+                if isinstance(cur_val.ty, StructTy):
+                    continue  # rhs is also a struct sentinel — skip
                 self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
                 self._variables[var_name] = entry_val
             elif isinstance(cur_val, Const):
@@ -1672,15 +1680,17 @@ class Parser:
                     sentinel = self._new_val(name, decl_ty)
                     self._variables[name] = sentinel
                     self._declare_local(name)
-                    for fname, fty in decl_ty.fields:
-                        fval = self._new_val(f"{name}_{fname}", fty)
-                        self._variables[f"{name}_{fname}"] = fval
-                        # Zero-init every scalar field so it has a defining
-                        # instruction.  Without this, any pre-call spill-store
-                        # for &struct_var would reference an undefined sentinel.
-                        if isinstance(fty, ScalarTy):
-                            _fzero = Const(fty, 0.0 if fty.is_float else 0)
-                            self._emit(BinInst(fval, BinOp.ADD, _fzero, _fzero))
+                    def _zero_init_decl_fields(prefix: str, sty: 'StructTy') -> None:
+                        for fname, fty in sty.fields:
+                            _key = f"{prefix}_{fname}"
+                            fval = self._new_val(_key, fty)
+                            self._variables[_key] = fval
+                            if isinstance(fty, ScalarTy):
+                                _fzero = Const(fty, 0.0 if fty.is_float else 0)
+                                self._emit(BinInst(fval, BinOp.ADD, _fzero, _fzero))
+                            elif isinstance(fty, StructTy):
+                                _zero_init_decl_fields(_key, fty)
+                    _zero_init_decl_fields(name, decl_ty)
                     # Handle initializer: Vec3 v = {1.0f, 2.0f, 3.0f}; or v = src_ptr[i];
                     if self._match(TokKind.ASSIGN):
                         if self._at(TokKind.LBRACE):
@@ -1968,7 +1978,12 @@ class Parser:
                 cond = Const(INT32, 1)
             else:
                 cond = self._parse_expr()
-            cond_bb.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
+            # Use _cur_block (not cond_bb) so that if the condition contained an
+            # inlined function call, the CondBrTerm lands on the inline's merge
+            # block (which holds the condition result), not on cond_bb itself.
+            # cond_bb still has BrTerm(inline_body) from the inline; the loop
+            # back-edge jumps to cond_bb.label which then flows through the inline.
+            self._cur_block.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
 
             # Emit body (with break → exit_bb, continue → inc_bb)
             self._pos = body_resume
@@ -2049,7 +2064,7 @@ class Parser:
             self._cur_block = cond_bb
             cond = self._parse_expr()
             self._expect(TokKind.RPAREN)
-            cond_bb.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
+            self._cur_block.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
 
             self._cur_block = body_bb
             self._break_targets.append(exit_bb.label)
@@ -2111,7 +2126,7 @@ class Parser:
             cond = self._parse_expr()
             self._expect(TokKind.RPAREN)
             self._expect(TokKind.SEMI)
-            cond_bb.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
+            self._cur_block.terminator = CondBrTerm(cond, body_bb.label, exit_bb.label)
 
             self._cur_block = exit_bb
             return
@@ -2663,12 +2678,21 @@ class Parser:
             # PTX struct-by-value params are not natively supported; emit zero-init
             # so the IR is valid (field reads won't be "undefined").
             if isinstance(p.ty, StructTy):
-                for _pfname, _pfty in p.ty.fields:
-                    if isinstance(_pfty, ScalarTy):
-                        _pfval = self._new_val(f"{p.name}_{_pfname}", _pfty)
-                        _pzero = Const(_pfty, 0.0 if _pfty.is_float else 0)
-                        self._emit(BinInst(_pfval, BinOp.ADD, _pzero, _pzero))
-                        self._variables[f"{p.name}_{_pfname}"] = _pfval
+                def _zero_init_struct_fields(prefix: str, sty: 'StructTy') -> None:
+                    for _pfname, _pfty in sty.fields:
+                        _key = f"{prefix}_{_pfname}"
+                        if isinstance(_pfty, ScalarTy):
+                            _pfval = self._new_val(_key, _pfty)
+                            _pzero = Const(_pfty, 0.0 if _pfty.is_float else 0)
+                            self._emit(BinInst(_pfval, BinOp.ADD, _pzero, _pzero))
+                            self._variables[_key] = _pfval
+                        elif isinstance(_pfty, StructTy):
+                            # Create sentinel for the sub-struct itself
+                            _sent = self._new_val(_key, _pfty)
+                            self._variables[_key] = _sent
+                            # Recurse into sub-struct fields
+                            _zero_init_struct_fields(_key, _pfty)
+                _zero_init_struct_fields(p.name, p.ty)
 
         # Inject module-level extern __shared__ declarations into this kernel's scope.
         for shname, shty, shcount in self._module_shared_decls:
