@@ -1575,6 +1575,16 @@ class Parser:
                                             _loaded = self._new_val(_pkey, _fty)
                                             self._emit(LoadInst(_loaded, _faddr))
                                             self._variables[_pkey] = _loaded
+                                        elif isinstance(_fty, PtrTy):
+                                            # Pointer field: load 64-bit address
+                                            _faddr = self._new_val(
+                                                "faddr", PtrTy(_fty, _asp))
+                                            self._emit(BinInst(
+                                                _faddr, BinOp.ADD, base_ptr,
+                                                Const(INT32, _off)))
+                                            _loaded = self._new_val(_pkey, _fty)
+                                            self._emit(LoadInst(_loaded, _faddr))
+                                            self._variables[_pkey] = _loaded
                                         elif isinstance(_fty, StructTy):
                                             # Nested struct: create sentinel, recurse
                                             if _pkey not in self._variables:
@@ -1586,7 +1596,7 @@ class Parser:
                             else:
                                 # Pre-bind per-field keys from caller's field vars
                                 for _fname, _fty in pty.fields:
-                                    if not isinstance(_fty, ScalarTy):
+                                    if not isinstance(_fty, (ScalarTy, PtrTy)):
                                         continue
                                     caller_field_key = f"{arg.name}_{_fname}"
                                     param_field_key  = f"{pname}_{_fname}"
