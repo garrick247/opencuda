@@ -1,0 +1,83 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.extern .func (.param .b32 func_retval0) vprintf(.param .b64 fmt, .param .b64 valist);
+
+.global .align 1 .b8 _fmt_nasty_mem_local_scratch_0[13] = {37, 100, 32, 37, 100, 32, 37, 100, 32, 37, 100, 10, 0};
+
+.visible .entry nasty_mem_local_scratch(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<9>;
+    .reg .b64 %rd<18>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    shl.b32 %r1, %r0, 2;
+    cvt.s64.s32 %rd3, %r1;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    add.s32 %r3, %r0, 1;
+    shl.b32 %r4, %r3, 2;
+    cvt.s64.s32 %rd4, %r4;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.s32 %r3, [%rd2];
+    add.s32 %r4, %r0, 2;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd5, %r5;
+    add.u64 %rd2, %rd1, %rd5;
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r0, 3;
+    shl.b32 %r6, %r5, 2;
+    cvt.s64.s32 %rd6, %r6;
+    add.u64 %rd2, %rd1, %rd6;
+    ld.global.s32 %r5, [%rd2];
+    add.s32 %r6, %r1, %r3;
+    add.s32 %r7, %r6, %r4;
+    add.s32 %r6, %r7, %r5;
+    cvt.s64.s32 %rd7, %r0;
+    add.u64 %rd1, %rd0, %rd7;
+    st.global.s32 [%rd1], %r6;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_5;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+if_true_5:
+    mov.u64 %rd8, _fmt_nasty_mem_local_scratch_0;
+    .local .align 8 .b8 _valist_0[32];
+    mov.u64 %rd9, _valist_0;
+    cvt.s64.s32 %rd10, %r1;
+    st.local.u64 [%rd9], %rd10;
+    cvt.s64.s32 %rd11, %r3;
+    add.u64 %rd12, %rd9, 8;
+    st.local.u64 [%rd12], %rd11;
+    cvt.s64.s32 %rd13, %r4;
+    add.u64 %rd14, %rd9, 16;
+    st.local.u64 [%rd14], %rd13;
+    cvt.s64.s32 %rd15, %r5;
+    add.u64 %rd16, %rd9, 24;
+    st.local.u64 [%rd16], %rd15;
+    cvta.local.u64 %rd17, %rd9;
+    {
+    .param .b64 _p0_0;
+    .param .b64 _p1_0;
+    .param .b32 _rv_0;
+    st.param.b64 [_p0_0], %rd8;
+    st.param.b64 [_p1_0], %rd17;
+    call.uni (_rv_0), vprintf, (_p0_0, _p1_0);
+    ld.param.b32 %r8, [_rv_0];
+    }
+    bra if_merge_4;
+}

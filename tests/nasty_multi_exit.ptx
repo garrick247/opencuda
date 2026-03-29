@@ -1,0 +1,71 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry find_range(
+    .param .u64 data, .param .u64 out_lo, .param .u64 out_hi, .param .s32 n, .param .s32 lo_target, .param .s32 hi_target)
+{
+    .reg .b32 %r<11>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [data];
+    ld.param.u64 %rd1, [out_lo];
+    ld.param.u64 %rd2, [out_hi];
+    ld.param.s32 %r0, [n];
+    ld.param.s32 %r1, [lo_target];
+    ld.param.s32 %r2, [hi_target];
+    mov.u32 %r3, %tid.x;
+    mov.u32 %r4, %ctaid.x;
+    mov.u32 %r5, %ntid.x;
+    mul.lo.u32 %r6, %r4, %r5;
+    add.u32 %r4, %r3, %r6;
+    cvt.s32.u32 %r5, %r4;
+    setp.ge.s32 %p0, %r5, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    mov.s32 %r3, 0;
+    mov.s32 %r6, 0;
+    div.s32 %r4, %r0, 2;
+    bra for_cond_5;
+for_cond_5:
+    setp.lt.s32 %p0, %r6, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    shl.b32 %r7, %r6, 2;
+    cvt.s64.s32 %rd4, %r7;
+    add.u64 %rd3, %rd0, %rd4;
+    ld.global.s32 %r7, [%rd3];
+    setp.lt.s32 %p1, %r7, %r1;
+    @%p1 bra for_exit_8;
+    bra if_merge_11;
+for_inc_7:
+    add.s32 %r8, %r6, 1;
+    mov.s32 %r6, %r8;
+    bra for_cond_5;
+for_exit_8:
+    shl.b32 %r9, %r5, 2;
+    cvt.s64.s32 %rd5, %r9;
+    add.u64 %rd3, %rd1, %rd5;
+    st.global.s32 [%rd3], -1;
+    add.u64 %rd3, %rd2, %rd5;
+    st.global.s32 [%rd3], -1;
+    ret;
+if_merge_11:
+    setp.gt.s32 %p1, %r7, %r2;
+    @%p1 bra for_exit_8;
+    bra if_merge_15;
+if_merge_15:
+    add.s32 %r10, %r3, 1;
+    setp.gt.s32 %p1, %r10, %r4;
+    @%p1 bra for_exit_8;
+    bra if_merge_19;
+if_merge_19:
+    mov.s32 %r3, %r10;
+    bra for_inc_7;
+}

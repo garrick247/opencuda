@@ -162,19 +162,30 @@ class Parser:
         raise ParseError(f"Line {tok.line}: expected type, got '{tok.value}'")
 
     def _parse_type_with_ptr(self) -> Type:
-        """Parse type followed by optional pointer stars."""
-        # Skip leading const qualifier
-        self._match(TokKind.KW_CONST)
+        """Parse type followed by optional pointer stars.
+
+        const T * __restrict__ → AddrSpace.CONST (emits ld.global.nc).
+        Both qualifiers must be present: const alone doesn't exclude aliasing,
+        and __restrict__ alone doesn't make the data read-only.
+        """
+        # Track const on the pointee (before or immediately after the base type)
+        pointee_const = self._match(TokKind.KW_CONST)
         base = self._parse_type()
-        # Skip const after type (e.g. "float const *")
-        self._match(TokKind.KW_CONST)
+        # "float const *" — const after base type also means pointee-const
+        if self._match(TokKind.KW_CONST):
+            pointee_const = True
         while self._match(TokKind.STAR):
-            # Skip const after each pointer star (e.g. "float * const")
-            self._match(TokKind.KW_CONST)
+            # "float * const" — const AFTER star means pointer-const, not pointee-const
+            ptr_const = self._match(TokKind.KW_CONST)  # noqa: F841 (consumed, not used)
             base = PtrTy(base, AddrSpace.GLOBAL)
-        # Skip __restrict__ qualifier
-        if self._at(TokKind.IDENT) and self._peek().value == '__restrict__':
+        # __restrict__ qualifier
+        has_restrict = (self._at(TokKind.IDENT) and self._peek().value == '__restrict__')
+        if has_restrict:
             self._advance()
+        # Upgrade to CONST addr space when programmer guarantees read-only + no aliasing.
+        # This allows codegen to emit ld.global.nc (non-caching / read-only cache).
+        if pointee_const and has_restrict and isinstance(base, PtrTy):
+            base = PtrTy(base.pointee, AddrSpace.CONST)
         return base
 
     # -- Expression parsing (precedence climbing) ----------------------------
@@ -206,8 +217,9 @@ class Parser:
             self._expect(TokKind.COLON)
             false_val = self._parse_assign_expr()
             # Lower to: if (cond) { dest = true } else { dest = false }
-            result_ty = true_val.ty if isinstance(true_val, Value) else (
-                false_val.ty if isinstance(false_val, Value) else INT32)
+            # Use _result_type so that float constants (Const(FLOAT, 1.0)) are
+            # considered — not just Value instances.
+            result_ty = self._result_type(true_val, false_val)
             dest = self._new_val("ternary", result_ty)
             true_bb = self._new_block("tern_true")
             false_bb = self._new_block("tern_false")
@@ -227,6 +239,13 @@ class Parser:
         if self._match(TokKind.ASSIGN):
             rhs = self._parse_assign_expr()
             if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
+                # Coerce rhs to pointee type on scalar type mismatch (e.g. half → float*)
+                if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
+                        and isinstance(lhs.ty.pointee, ScalarTy)
+                        and rhs.ty != lhs.ty.pointee):
+                    coerced = self._new_val("coerce", lhs.ty.pointee)
+                    self._emit(CvtInst(coerced, rhs))
+                    rhs = coerced
                 self._emit(StoreInst(addr=lhs, value=rhs))
                 return rhs
             # Variable assignment: update the variable binding.
@@ -337,6 +356,12 @@ class Parser:
         # 64-bit promotion
         if (isinstance(a_ty, ScalarTy) and a_ty.size == 8) or (isinstance(b_ty, ScalarTy) and b_ty.size == 8):
             return a_ty if isinstance(a_ty, ScalarTy) and a_ty.size == 8 else b_ty
+        # Usual arithmetic conversions: unsigned wins over signed of same width.
+        # e.g. INT32 + UINT32 → UINT32 (matches C standard §6.3.1.8).
+        if (isinstance(a_ty, ScalarTy) and isinstance(b_ty, ScalarTy)
+                and a_ty.size == b_ty.size
+                and a_ty.is_signed != b_ty.is_signed):
+            return b_ty if a_ty.is_signed else a_ty  # return the unsigned one
         return a_ty
 
     def _parse_shift_expr(self) -> Operand:
@@ -344,12 +369,20 @@ class Parser:
         while True:
             if self._match(TokKind.LSHIFT):
                 rhs = self._parse_add_expr()
-                dest = self._new_val("shl", self._result_type(lhs, rhs))
+                # Shift result type is the left operand's type (C §6.5.7).
+                # The right operand's type does NOT affect the result type.
+                lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else INT32
+                dest = self._new_val("shl", lhs_ty)
                 self._emit(BinInst(dest, BinOp.SHL, lhs, rhs))
                 lhs = dest
             elif self._match(TokKind.RSHIFT):
                 rhs = self._parse_add_expr()
-                dest = self._new_val("shr", self._result_type(lhs, rhs))
+                # Shift result type is the left operand's type (C §6.5.7).
+                # Critical: int x >> unsigned y must stay INT32 → shr.s32 (arithmetic).
+                # Using _result_type would incorrectly return UINT32 (unsigned wins),
+                # producing shr.b32 (logical) and giving wrong results for negative x.
+                lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else INT32
+                dest = self._new_val("shr", lhs_ty)
                 self._emit(BinInst(dest, BinOp.SHR, lhs, rhs))
                 lhs = dest
             else:
@@ -411,9 +444,10 @@ class Parser:
                             self._expect(TokKind.RBRACKET)
                             elem_size = var.ty.pointee.size
                             if elem_size != 1:
-                                scaled = self._new_val("scale", INT32)
+                                idx_ty = index.ty if isinstance(index, Value) else INT32
+                                scaled = self._new_val("scale", idx_ty)
                                 self._emit(BinInst(scaled, BinOp.MUL, index,
-                                                   Const(index.ty if isinstance(index, Value) else INT32, elem_size)))
+                                                   Const(idx_ty, elem_size)))
                                 index = scaled
                             addr = self._new_val("addr", var.ty)
                             self._emit(BinInst(addr, BinOp.ADD, var, index))
@@ -433,15 +467,19 @@ class Parser:
                 return dest
         if self._match(TokKind.MINUS):
             operand = self._parse_unary_expr()
-            ty = operand.ty if isinstance(operand, Value) else INT32
+            # Include Const types: -1LL → dest should be INT64, not INT32
+            ty = operand.ty if isinstance(operand, (Value, Const)) else INT32
             dest = self._new_val("neg", ty)
             zero = Const(FLOAT, 0.0) if (isinstance(ty, ScalarTy) and ty.is_float) else Const(ty, 0)
             self._emit(BinInst(dest, BinOp.SUB, zero, operand))
             return dest
         if self._match(TokKind.TILDE):
             operand = self._parse_unary_expr()
-            dest = self._new_val("bnot", operand.ty if isinstance(operand, Value) else INT32)
-            self._emit(BinInst(dest, BinOp.XOR, operand, Const(INT32, -1)))
+            ty = operand.ty if isinstance(operand, (Value, Const)) else INT32
+            dest = self._new_val("bnot", ty)
+            # XOR with all-ones of the same width for correct NOT semantics
+            all_ones = Const(ty, -1) if isinstance(ty, ScalarTy) else Const(INT32, -1)
+            self._emit(BinInst(dest, BinOp.XOR, operand, all_ones))
             return dest
         if self._match(TokKind.BANG):
             operand = self._parse_unary_expr()
@@ -496,8 +534,9 @@ class Parser:
                     elem_size = lhs.ty.pointee.size
                     # addr = base + index * elem_size
                     if elem_size != 1:
-                        scaled = self._new_val("scale", INT32)
-                        self._emit(BinInst(scaled, BinOp.MUL, index, Const(index.ty if isinstance(index, Value) else INT32, elem_size)))
+                        idx_ty = index.ty if isinstance(index, Value) else INT32
+                        scaled = self._new_val("scale", idx_ty)
+                        self._emit(BinInst(scaled, BinOp.MUL, index, Const(idx_ty, elem_size)))
                         index = scaled
                     addr = self._new_val("addr", lhs.ty)
                     self._emit(BinInst(addr, BinOp.ADD, lhs, index))
@@ -513,9 +552,11 @@ class Parser:
             elif self._match(TokKind.DOT):
                 member = self._expect(TokKind.IDENT).value
                 # Built-in: threadIdx.x, blockIdx.y, etc.
-                if isinstance(lhs, Value) and lhs.name in ('threadIdx', 'blockIdx', 'blockDim'):
+                if isinstance(lhs, Value) and lhs.name in ('threadIdx', 'blockIdx', 'blockDim', 'gridDim'):
                     builtin = f"{lhs.name}.{member}"
-                    dest = self._new_val(builtin.replace('.', '_'), INT32)
+                    # CUDA hardware registers are unsigned 32-bit; using UINT32 ensures
+                    # comparisons emit setp.lt.u32 (correct) not setp.lt.s32.
+                    dest = self._new_val(builtin.replace('.', '_'), UINT32)
                     self._emit(CallInst(dest, builtin))
                     lhs = dest
                 # Struct member access
@@ -550,7 +591,29 @@ class Parser:
 
         if tok.kind == TokKind.INT_LIT:
             self._advance()
-            val = int(tok.value.rstrip('uUlL'), 0)
+            raw = tok.value
+            # Detect suffixes: u/U (unsigned), l/L or ll/LL (long/long long)
+            suffix = ''
+            for ch in reversed(raw.lower()):
+                if ch in ('u', 'l'):
+                    suffix = ch + suffix
+                else:
+                    break
+            has_unsigned_suffix = 'u' in suffix
+            has_ll_suffix = 'll' in suffix or 'l' in suffix
+            val = int(raw.rstrip('uUlL'), 0)
+            # C standard §6.4.4.1 type selection:
+            # - ll/LL suffix OR value > UINT32_MAX → 64-bit type
+            # - u/U suffix  → unsigned (UINT32 or UINT64)
+            # - Otherwise:  signed (INT32 if ≤ INT32_MAX, else UINT32 for hex
+            #               that exceeds INT32_MAX, or INT64 for larger values)
+            if has_ll_suffix or val > 0xFFFFFFFF:
+                if has_unsigned_suffix:
+                    return Const(UINT64, val)
+                else:
+                    return Const(INT64, val)
+            if has_unsigned_suffix or val > 0x7FFFFFFF:
+                return Const(UINT32, val)
             return Const(INT32, val)
 
         if tok.kind == TokKind.FLOAT_LIT:
@@ -576,7 +639,20 @@ class Parser:
                     return Const(VOID, 0)
                 elif name in ('__shfl_sync', '__shfl_up_sync', '__shfl_down_sync',
                               '__shfl_xor_sync', '__ballot_sync'):
-                    dest = self._new_val(name.replace('__',''), INT32)
+                    # __ballot_sync returns a u32 lane mask (bitmask of active lanes).
+                    # __shfl_*_sync shuffles 32-bit values bitwise; the return type must
+                    # match the shuffled value's type so that floats stay as floats.
+                    # args: (mask, value, offset[, width]) — value is args[1].
+                    if name == '__ballot_sync':
+                        ret_ty = UINT32
+                    else:
+                        # Infer from the shuffled value argument (args[1])
+                        val_arg = args[1] if len(args) > 1 else None
+                        if isinstance(val_arg, (Value, Const)) and isinstance(val_arg.ty, ScalarTy):
+                            ret_ty = val_arg.ty
+                        else:
+                            ret_ty = INT32  # fallback
+                    dest = self._new_val(name.replace('__',''), ret_ty)
                     self._emit(CallInst(dest, name, args))
                     return dest
                 elif name in ('atomicAdd', 'atomicSub', 'atomicMin', 'atomicMax',
@@ -644,7 +720,54 @@ class Parser:
                     self._inline_return_target = saved_inline_target
                     return return_dest
                 else:
-                    dest = self._new_val(name, INT32)
+                    # Infer return type for known math intrinsics; fallback INT32.
+                    _void_stmts   = ('__threadfence', '__threadfence_block',
+                                     '__threadfence_system')
+                    _float_unary  = ('sqrtf','rsqrtf','rcpf','fabsf','sinf','cosf',
+                                     'tanf','expf','exp2f','exp10f','logf','log2f','log10f',
+                                     'floorf','ceilf','roundf','truncf',
+                                     'sqrt','rsqrt','fabs','sin','cos',
+                                     'exp','exp2','exp10','log','log2','log10',
+                                     'floor','ceil','round','trunc')
+                    _float_binary = ('fminf','fmaxf','fmodf','powf',
+                                     'fmin','fmax','fmod','pow','hypotf','atan2f')
+                    _float_ternary = ('fmaf', 'fma')
+                    _int_unary    = ('abs',)
+                    _int_binary   = ('min','max')
+                    _uint_return  = ('__activemask',)
+                    _sync_ops     = ('__syncwarp',)
+                    _int_ops      = ('__popc', '__popcll', '__clz', '__clzll',
+                                     '__brev', '__brevll')
+                    if name in _void_stmts:
+                        self._emit(CallInst(None, name, args))
+                        return Const(VOID, 0)
+                    elif name in _sync_ops:
+                        self._emit(CallInst(None, name, args))
+                        return Const(VOID, 0)
+                    elif name in _uint_return:
+                        dest = self._new_val(name, UINT32)
+                        self._emit(CallInst(dest, name, args))
+                        return dest
+                    elif name in _int_ops:
+                        ret_ty = UINT32 if name in ('__popcll', '__brevll') else INT32
+                        dest = self._new_val(name, ret_ty)
+                        self._emit(CallInst(dest, name, args))
+                        return dest
+                    elif name in _float_unary:
+                        ret_ty = FLOAT
+                    elif name in _float_binary:
+                        ret_ty = FLOAT
+                    elif name in _float_ternary:
+                        ret_ty = FLOAT
+                    elif name in _int_unary:
+                        a_ty = args[0].ty if args and isinstance(args[0], (Value, Const)) else INT32
+                        ret_ty = a_ty
+                    elif name in _int_binary:
+                        a_ty = args[0].ty if args and isinstance(args[0], (Value, Const)) else INT32
+                        ret_ty = self._result_type(args[0], args[1]) if args and len(args) > 1 else a_ty
+                    else:
+                        ret_ty = INT32
+                    dest = self._new_val(name, ret_ty)
                     self._emit(CallInst(dest, name, args))
                     return dest
 
@@ -660,7 +783,7 @@ class Parser:
                 return self._variables[name]
 
             # Built-in names (threadIdx, blockIdx, blockDim)
-            if name in ('threadIdx', 'blockIdx', 'blockDim'):
+            if name in ('threadIdx', 'blockIdx', 'blockDim', 'gridDim'):
                 return Value(name, INT32)  # placeholder, resolved by .member access
 
             raise ParseError(f"Line {tok.line}: undefined variable '{name}'")
@@ -729,7 +852,21 @@ class Parser:
                     self._emit(BinInst(val, BinOp.ADD, rhs, Const(ty, 0)))
                     self._variables[name] = val
                 elif isinstance(rhs, Value) and rhs != val:
-                    self._variables[name] = rhs
+                    # If rhs type matches declared type, use rhs directly (no copy).
+                    # If there is a same-width signedness mismatch (e.g. int x = uint_expr),
+                    # insert a CvtInst so that the variable carries the declared type.
+                    # This ensures pointer arithmetic uses cvt.s64.s32 (sign-extending)
+                    # rather than cvt.u64.u32 (zero-extending) for int-typed indices.
+                    rhs_ty = rhs.ty
+                    if (isinstance(ty, ScalarTy) and isinstance(rhs_ty, ScalarTy)
+                            and ty != rhs_ty
+                            and ty.size == rhs_ty.size
+                            and not ty.is_float and not rhs_ty.is_float):
+                        # Same-width integer type mismatch: coerce to declared type
+                        self._emit(CvtInst(val, rhs))
+                        self._variables[name] = val
+                    else:
+                        self._variables[name] = rhs
             self._expect(TokKind.SEMI)
             return
 
@@ -1112,6 +1249,14 @@ class Parser:
         if self._match(TokKind.ASSIGN):
             rhs = self._parse_expr()
             if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
+                # Coerce rhs to the pointer's pointee type if there's a scalar mismatch
+                # (e.g. half value stored to float* must widen via cvt.f32.f16).
+                if (isinstance(rhs, Value) and isinstance(rhs.ty, ScalarTy)
+                        and isinstance(lhs.ty.pointee, ScalarTy)
+                        and rhs.ty != lhs.ty.pointee):
+                    coerced = self._new_val("coerce", lhs.ty.pointee)
+                    self._emit(CvtInst(coerced, rhs))
+                    rhs = coerced
                 self._emit(StoreInst(addr=lhs, value=rhs))
             elif isinstance(lhs, Value):
                 update_name = _stmt_lhs_name or lhs.name
@@ -1160,8 +1305,9 @@ class Parser:
                         self._expect(TokKind.RBRACKET)
                         elem_size = var.ty.pointee.size
                         if elem_size != 1:
-                            scaled = self._new_val("scale", INT32)
-                            self._emit(BinInst(scaled, BinOp.MUL, index, Const(index.ty if isinstance(index, Value) else INT32, elem_size)))
+                            idx_ty = index.ty if isinstance(index, Value) else INT32
+                            scaled = self._new_val("scale", idx_ty)
+                            self._emit(BinInst(scaled, BinOp.MUL, index, Const(idx_ty, elem_size)))
                             index = scaled
                         addr = self._new_val("addr", var.ty)
                         self._emit(BinInst(addr, BinOp.ADD, var, index))

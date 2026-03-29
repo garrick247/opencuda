@@ -5,32 +5,30 @@
 .visible .entry local_arr(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<17>;
-    .reg .b32 %r<8>;
-    .reg .b64 %rd<19>;
+    .reg .f32 %f<3>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
     ld.param.u64 %rd1, [in];
-    ld.param.s32 %r2, [n];
-    mov.u32 %r4, %tid.x;
-    setp.lt.s32 %p0, %r4, %r2;
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
     @%p0 bra if_true_2;
-    bra if_false_3;
-if_true_2:
-    shl.b32 %r7, %r4, 2;
-    cvt.u64.u32 %rd17, %r7;
-    add.u64 %rd8, %rd1, %rd17;
-    ld.global.f32 %f9, [%rd8];
-    mul.f32 %f11, %f9, 0f40000000;
-    mul.f32 %f13, %f9, 0f3F000000;
-    cvt.u64.u32 %rd18, %r7;
-    add.u64 %rd15, %rd0, %rd18;
-    add.f32 %f16, %f11, %f13;
-    st.global.f32 [%rd15], %f16;
     bra if_merge_4;
-if_false_3:
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    mul.f32 %f1, %f0, 0f40000000;
+    mul.f32 %f2, %f0, 0f3F000000;
+    add.u64 %rd1, %rd0, %rd3;
+    add.f32 %f0, %f1, %f2;
+    st.global.f32 [%rd1], %f0;
     bra if_merge_4;
 if_merge_4:
     ret;

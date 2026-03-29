@@ -13,7 +13,7 @@ iteration's output. The unroller must connect these across copies.
 from __future__ import annotations
 from ..ir.nodes import (Kernel, BasicBlock, Value, Const, Operand,
                          BinInst, CmpInst, LoadInst, StoreInst,
-                         CallInst, ParamInst, CvtInst,
+                         CallInst, ParamInst, CvtInst, PrintfInst,
                          BinOp, CmpOp,
                          RetTerm, BrTerm, CondBrTerm)
 
@@ -214,6 +214,17 @@ def _remap_inst(inst, remap: dict, kernel: Kernel, iteration: int):
     elif isinstance(inst, CallInst):
         if inst.func == '__syncthreads':
             return inst  # keep barriers
-        return inst
+        # Remap args for other CallInsts (atomics, warp shuffles, etc.)
+        new_args = [_r(a) for a in inst.args]
+        if inst.dest is not None:
+            new_dest = kernel.new_value(f"{inst.dest.name}_u{iteration}", inst.dest.ty)
+            remap[inst.dest.id] = new_dest
+            return CallInst(new_dest, inst.func, new_args)
+        return CallInst(None, inst.func, new_args)
+
+    elif isinstance(inst, PrintfInst):
+        # Remap Value args so each unrolled iteration uses the correct registers.
+        new_args = [_r(a) for a in inst.args]
+        return PrintfInst(inst.fmt, new_args)
 
     return inst

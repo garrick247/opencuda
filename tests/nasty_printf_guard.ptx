@@ -1,0 +1,104 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.extern .func (.param .b32 func_retval0) vprintf(.param .b64 fmt, .param .b64 valist);
+
+.global .align 1 .b8 _fmt_debug_loop_0[11] = {105, 61, 37, 100, 32, 118, 61, 37, 102, 10, 0};
+.global .align 1 .b8 _fmt_debug_loop_1[8] = {115, 117, 109, 61, 37, 102, 10, 0};
+
+.visible .entry debug_loop(
+    .param .u64 data, .param .s32 n)
+{
+    .reg .f32 %f<3>;
+    .reg .f64 %fd<2>;
+    .reg .b32 %r<7>;
+    .reg .b64 %rd<12>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    cvt.s32.u32 %r3, %r2;
+    setp.ge.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    mov.f32 %f0, 0f00000000;
+    mov.s32 %r1, 0;
+    bra for_cond_5;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    shl.b32 %r4, %r1, 2;
+    cvt.s64.s32 %rd2, %r4;
+    add.u64 %rd1, %rd0, %rd2;
+    ld.global.f32 %f1, [%rd1];
+    add.f32 %f2, %f0, %f1;
+    setp.eq.s32 %p1, %r3, 0;
+    @%p1 bra if_true_9;
+    bra if_merge_11;
+for_inc_7:
+    add.s32 %r2, %r1, 1;
+    mov.s32 %r1, %r2;
+    bra for_cond_5;
+for_exit_8:
+    setp.eq.s32 %p1, %r3, 0;
+    @%p1 bra if_true_12;
+    bra if_merge_14;
+if_true_9:
+    mov.u64 %rd3, _fmt_debug_loop_0;
+    .local .align 8 .b8 _valist_0[16];
+    mov.u64 %rd4, _valist_0;
+    cvt.s64.s32 %rd5, %r1;
+    st.local.u64 [%rd4], %rd5;
+    cvt.f64.f32 %fd0, %f1;
+    add.u64 %rd6, %rd4, 8;
+    st.local.f64 [%rd6], %fd0;
+    cvta.local.u64 %rd7, %rd4;
+    {
+    .param .b64 _p0_0;
+    .param .b64 _p1_0;
+    .param .b32 _rv_0;
+    st.param.b64 [_p0_0], %rd3;
+    st.param.b64 [_p1_0], %rd7;
+    call.uni (_rv_0), vprintf, (_p0_0, _p1_0);
+    ld.param.b32 %r5, [_rv_0];
+    }
+    bra if_merge_11;
+if_merge_11:
+    mov.f32 %f0, %f2;
+    bra for_inc_7;
+if_true_12:
+    mov.u64 %rd8, _fmt_debug_loop_1;
+    .local .align 8 .b8 _valist_1[8];
+    mov.u64 %rd9, _valist_1;
+    cvt.f64.f32 %fd1, %f0;
+    st.local.f64 [%rd9], %fd1;
+    cvta.local.u64 %rd10, %rd9;
+    {
+    .param .b64 _p0_1;
+    .param .b64 _p1_1;
+    .param .b32 _rv_1;
+    st.param.b64 [_p0_1], %rd8;
+    st.param.b64 [_p1_1], %rd10;
+    call.uni (_rv_1), vprintf, (_p0_1, _p1_1);
+    ld.param.b32 %r6, [_rv_1];
+    }
+    bra if_merge_14;
+if_merge_14:
+    shl.b32 %r4, %r3, 2;
+    cvt.s64.s32 %rd11, %r4;
+    add.u64 %rd1, %rd0, %rd11;
+    st.global.f32 [%rd1], %f0;
+    ret;
+}

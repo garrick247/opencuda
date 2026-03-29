@@ -1,0 +1,58 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry half_mixed(
+    .param .u64 out, .param .u64 in, .param .f32 lo, .param .f32 hi, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .f16 %h<1>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.f32 %f0, [lo];
+    ld.param.f32 %f1, [hi];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mul.lo.u32 %r3, %r1, %r2;
+    mov.u32 %r1, %tid.x;
+    add.u32 %r2, %r3, %r1;
+    setp.lt.u32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 1;
+    cvt.u64.u32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.b16 %h0, [%rd2];
+    cvt.f32.f16 %f2, %h0;
+    shl.b32 %r3, %r2, 2;
+    cvt.u64.u32 %rd4, %r3;
+    add.u64 %rd1, %rd0, %rd4;
+    setp.lt.f32 %p0, %f2, %f0;
+    @%p0 bra if_true_6;
+    bra if_merge_8;
+if_merge_4:
+    ret;
+inline_half_clamp_merge_5:
+    st.global.f32 [%rd1], %f3;
+    bra if_merge_4;
+if_true_6:
+    mov.f32 %f3, %f0;
+    bra inline_half_clamp_merge_5;
+if_merge_8:
+    setp.gt.f32 %p0, %f2, %f1;
+    @%p0 bra if_true_10;
+    bra if_merge_12;
+if_true_10:
+    mov.f32 %f3, %f1;
+    bra inline_half_clamp_merge_5;
+if_merge_12:
+    mov.f32 %f3, %f2;
+    bra inline_half_clamp_merge_5;
+}

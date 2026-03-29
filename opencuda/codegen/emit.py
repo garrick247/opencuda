@@ -509,20 +509,31 @@ class PTXEmitter:
                     else:
                         self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, 0;')
                     return
+                elif rhs_zero and _is_half(ty) and isinstance(inst.lhs, Value):
+                    # mov.b16 D, V  (add D, V, 0 — half writeback copy; f16 regs are b16)
+                    self._lines.append(f'    mov.b16 {self._reg(inst.dest)}, {self._reg(inst.lhs)};')
+                    return
+                elif lhs_zero and _is_half(ty) and isinstance(inst.rhs, Value):
+                    # mov.b16 D, V  (add D, 0, V — half writeback copy)
+                    self._lines.append(f'    mov.b16 {self._reg(inst.dest)}, {self._reg(inst.rhs)};')
+                    return
                 elif rhs_zero and not _is_half(ty):
-                    # mov D, V  or  mov D, C  (add D, V/C, 0)  — not half (fall through to half path)
+                    # mov D, V  or  mov D, C  (add D, V/C, 0)
                     if _is_float(ty):
                         fty = _ptx_type(ty)
-                        src = self._reg(inst.lhs) if isinstance(inst.lhs, Value) else self._coerce_to_float(inst.lhs, fty, kernel)
+                        # Always use _coerce_to_float — handles int→float type mismatches.
+                        # e.g. ternary(int_arm, float_arm): dest=f32 but lhs=s32 Value
+                        src = self._coerce_to_float(inst.lhs, fty, kernel)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
                     else:
                         self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.lhs, ptx_ty)};')
                     return
                 elif lhs_zero and not isinstance(inst.rhs, Const) and not _is_half(ty):
-                    # mov D, V  (add D, 0, V)  — not half
+                    # mov D, V  (add D, 0, V)
                     if _is_float(ty):
                         fty = _ptx_type(ty)
-                        src = self._reg(inst.rhs) if isinstance(inst.rhs, Value) else self._coerce_to_float(inst.rhs, fty, kernel)
+                        # Always use _coerce_to_float — handles int→float type mismatches.
+                        src = self._coerce_to_float(inst.rhs, fty, kernel)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
                     else:
                         self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.rhs, ptx_ty)};')
@@ -571,22 +582,43 @@ class PTXEmitter:
                         f'    {ptx_op_map[inst.op]}.pred {self._reg(inst.dest)}, '
                         f'{self._reg(inst.lhs)}, {self._reg(inst.rhs)};')
                     return
-            # Bitwise ops use .b32 type, not .s32/.u32
-            if inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR, BinOp.SHL, BinOp.SHR):
+            # AND/OR/XOR/SHL always use bitwise (.b) type — sign doesn't matter.
+            # SHR needs sign-awareness: shr.s32 for INT32 (arithmetic, sign-extending),
+            # shr.b32 for UINT32 (logical, zero-filling).
+            # A C int value of -4 >> 1 must give -2, not 2147483646.
+            if inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR, BinOp.SHL):
                 ptx_ty = f'b{ty.size * 8}' if isinstance(ty, ScalarTy) else 'b32'
+            elif inst.op == BinOp.SHR:
+                if isinstance(ty, ScalarTy) and ty.is_signed:
+                    ptx_ty = f's{ty.size * 8}'  # arithmetic right shift
+                else:
+                    ptx_ty = f'b{ty.size * 8}' if isinstance(ty, ScalarTy) else 'b32'
 
             # Pointer arithmetic: use u64 for add/sub
             if _is_ptr(ty) and inst.op in (BinOp.ADD, BinOp.SUB):
                 lhs = self._operand(inst.lhs)
                 rhs = self._operand(inst.rhs)
-                if isinstance(inst.rhs, (Value, Const)) and not _is_64bit(inst.rhs.ty if isinstance(inst.rhs, Value) else INT32):
-                    rhs_id = inst.rhs.id if isinstance(inst.rhs, Value) else id(inst.rhs)
+                if isinstance(inst.rhs, Const):
+                    # Const offsets can be used directly as 64-bit immediates in
+                    # add.u64 — no cvt.u64.u32 needed.
+                    rhs = str(int(inst.rhs.value))
+                elif isinstance(inst.rhs, Value) and not _is_64bit(inst.rhs.ty):
+                    rhs_id = inst.rhs.id
                     if rhs_id in self._widen_cache:
                         wide = self._widen_cache[rhs_id]
                     else:
                         wide = kernel.new_value(f'wide{inst.dest.id}', ty)
+                        # Use sign-extending cvt for signed types (INT32 → s64),
+                        # zero-extending for unsigned (UINT32 → u64).
+                        # Wrong extension turns negative indices into huge positive
+                        # addresses, silently corrupting out-of-bounds accesses.
+                        rhs_ty = inst.rhs.ty
+                        if isinstance(rhs_ty, ScalarTy) and rhs_ty.is_signed:
+                            widen_op = 'cvt.s64.s32'
+                        else:
+                            widen_op = 'cvt.u64.u32'
                         self._lines.append(
-                            f'    cvt.u64.u32 {self._reg(wide)}, {rhs};')
+                            f'    {widen_op} {self._reg(wide)}, {rhs};')
                         self._widen_cache[rhs_id] = wide
                     rhs = self._reg(wide)
                 self._lines.append(
@@ -609,7 +641,35 @@ class PTXEmitter:
                     f'{self._operand(inst.lhs, ptx_ty)}, {self._operand(inst.rhs, ptx_ty)};')
 
         elif isinstance(inst, CmpInst):
-            ty = inst.lhs.ty if isinstance(inst.lhs, Value) else INT32
+            # Determine comparison type from BOTH operands (C integer promotion).
+            # Bug: using only lhs.ty means:
+            #   - Const lhs defaults to INT32 even when rhs is UINT32
+            #   - INT32 lhs wins over UINT32 rhs → setp.lt.s32 when u32 is needed
+            # C §6.3.1.8: if either operand is unsigned, the signed one converts.
+            lhs_ty = inst.lhs.ty if isinstance(inst.lhs, (Value, Const)) else INT32
+            rhs_ty = inst.rhs.ty if isinstance(inst.rhs, (Value, Const)) else INT32
+            # Float comparison: use the float type (wider wins)
+            lhs_is_float = isinstance(lhs_ty, ScalarTy) and lhs_ty.is_float
+            rhs_is_float = isinstance(rhs_ty, ScalarTy) and rhs_ty.is_float
+            if lhs_is_float or rhs_is_float:
+                if lhs_is_float and rhs_is_float:
+                    ty = lhs_ty if lhs_ty.size >= rhs_ty.size else rhs_ty
+                else:
+                    ty = lhs_ty if lhs_is_float else rhs_ty
+            # 64-bit wins over 32-bit
+            elif isinstance(lhs_ty, ScalarTy) and lhs_ty.size == 8:
+                ty = lhs_ty
+            elif isinstance(rhs_ty, ScalarTy) and rhs_ty.size == 8:
+                ty = rhs_ty
+            # Unsigned wins over signed at same width
+            elif (isinstance(lhs_ty, ScalarTy) and isinstance(rhs_ty, ScalarTy)
+                  and not lhs_ty.is_signed):
+                ty = lhs_ty  # lhs is unsigned
+            elif (isinstance(lhs_ty, ScalarTy) and isinstance(rhs_ty, ScalarTy)
+                  and not rhs_ty.is_signed):
+                ty = rhs_ty  # rhs is unsigned, promote to it
+            else:
+                ty = lhs_ty  # same signedness, use lhs
             ptx_ty = _ptx_type(ty)
             op_map = {
                 CmpOp.LT: 'lt', CmpOp.LE: 'le', CmpOp.GT: 'gt',
@@ -622,7 +682,9 @@ class PTXEmitter:
                 f'{self._operand(inst.lhs, ptx_ty)}, {self._operand(inst.rhs, ptx_ty)};')
 
         elif isinstance(inst, CvtInst):
-            src_ty = inst.src.ty if isinstance(inst.src, Value) else INT32
+            # Use Const's declared type when src is a Const — e.g., CvtInst(f32, Const(UINT32, val))
+            # should emit cvt.rn.f32.u32, not cvt.rn.f32.s32 (which would sign-extend UINT32 max).
+            src_ty = inst.src.ty if isinstance(inst.src, (Value, Const)) else INT32
             dst_ty = inst.dest.ty
             src_ptx = _ptx_type(src_ty)
             dst_ptx = _ptx_type(dst_ty)
@@ -701,10 +763,16 @@ class PTXEmitter:
                         store_val = self._reg(promoted)
                         store_ty = 'f64'
                     elif not _is_64bit(arg_ty) and not _is_float(arg_ty):
-                        # Widen int32 → u64
+                        # Widen int32 to 64-bit for valist slot.
+                        # Use sign extension for signed types (s32 → s64) so that
+                        # negative integers print correctly via vprintf %d/%i.
                         widened = kernel.new_value(f'_va_arg_{n}_{i}', PtrTy(VOID, AddrSpace.GLOBAL))
-                        self._lines.append(
-                            f'    cvt.u64.u32 {self._reg(widened)}, {self._operand(arg)};')
+                        if isinstance(arg_ty, ScalarTy) and arg_ty.is_signed:
+                            self._lines.append(
+                                f'    cvt.s64.s32 {self._reg(widened)}, {self._operand(arg)};')
+                        else:
+                            self._lines.append(
+                                f'    cvt.u64.u32 {self._reg(widened)}, {self._operand(arg)};')
                         store_val = self._reg(widened)
                         store_ty = 'u64'
                     else:
@@ -745,22 +813,69 @@ class PTXEmitter:
         elif isinstance(inst, CallInst):
             if inst.func.startswith('atomic'):
                 atomic_ops = {
-                    'atomicAdd': 'add', 'atomicSub': 'add',
+                    'atomicAdd': 'add',
                     'atomicMin': 'min', 'atomicMax': 'max',
                     'atomicAnd': 'and', 'atomicOr': 'or', 'atomicXor': 'xor',
                     'atomicExch': 'exch', 'atomicCAS': 'cas',
                 }
-                ptx_op = atomic_ops.get(inst.func, 'add')
                 addr = self._operand(inst.args[0]) if inst.args else '%rd0'
+                # Detect shared vs global address space for the pointer argument.
+                _addr_arg = inst.args[0] if inst.args else None
+                _atom_space = 'global'
+                if isinstance(_addr_arg, Value) and isinstance(_addr_arg.ty, PtrTy):
+                    if _addr_arg.ty.addr_space == AddrSpace.SHARED:
+                        _atom_space = 'shared'
                 val_ty = 'u32'
-                if len(inst.args) > 1 and isinstance(inst.args[1], Value):
-                    val_ty = _ptx_type(inst.args[1].ty)
-                elif len(inst.args) > 1 and isinstance(inst.args[1], Const):
-                    if isinstance(inst.args[1].value, float):
-                        val_ty = 'f32'
+                if len(inst.args) > 1:
+                    _val_arg = inst.args[1]
+                    if isinstance(_val_arg, Value):
+                        val_ty = _ptx_type(_val_arg.ty)
+                    elif isinstance(_val_arg, Const):
+                        # Use the Const's declared type (INT32→s32, UINT32→u32, FLOAT→f32)
+                        val_ty = _ptx_type(_val_arg.ty)
+                # PTX type constraints per operation:
+                # - and/or/xor/exch require b32 (bitwise, no sign semantics)
+                # - add/min/max use typed (s32/u32/f32 — sign matters)
+                # Override to b32 for bitwise-only operations.
+                if inst.func in ('atomicAnd', 'atomicOr', 'atomicXor', 'atomicExch'):
+                    # Keep bit width but strip sign: s32→b32, u32→b32, f32 stays f32
+                    if val_ty in ('s32', 'u32'):
+                        val_ty = 'b32'
+                    elif val_ty in ('s64', 'u64'):
+                        val_ty = 'b64'
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
-                self._lines.append(
-                    f'    atom.global.{ptx_op}.{val_ty} {dest}, [{addr}], {self._operand(inst.args[1], val_ty)};')
+                if inst.func == 'atomicSub':
+                    # PTX has no atom.sub. Implement as atom.add(-val).
+                    # PTX has no neg.u32 either, so emit sub.TYPE tmp, 0, val.
+                    val_arg = inst.args[1] if len(inst.args) > 1 else Const(INT32, 0)
+                    if isinstance(val_arg, Const):
+                        # Negate the constant directly — no extra instruction needed.
+                        neg_val_str = str(int(-val_arg.value)) if 'f' not in val_ty \
+                            else f'0f{self._float_hex(-float(val_arg.value))}'
+                        self._lines.append(
+                            f'    atom.{_atom_space}.add.{val_ty} {dest}, [{addr}], {neg_val_str};')
+                    else:
+                        # Emit: neg_tmp = 0 - val, then atom.add(neg_tmp)
+                        neg_tmp = kernel.new_value(f'_neg_{inst.dest.id if inst.dest else "x"}',
+                                                   val_arg.ty)
+                        zero_str = '0.0' if 'f' in val_ty else '0'
+                        self._lines.append(
+                            f'    sub.{val_ty} {self._reg(neg_tmp)}, {zero_str}, {self._operand(val_arg, val_ty)};')
+                        self._lines.append(
+                            f'    atom.{_atom_space}.add.{val_ty} {dest}, [{addr}], {self._reg(neg_tmp)};')
+                elif inst.func == 'atomicCAS':
+                    # atomicCAS(addr, compare, val) — 3-arg: PTX atom.cas.b32
+                    # atom.{space}.cas.b32 dest, [addr], compare, val;
+                    cmp_arg = inst.args[1] if len(inst.args) > 1 else Const(INT32, 0)
+                    new_arg = inst.args[2] if len(inst.args) > 2 else Const(INT32, 0)
+                    # CAS uses b32 type (bitwise comparison)
+                    self._lines.append(
+                        f'    atom.{_atom_space}.cas.b32 {dest}, [{addr}], '
+                        f'{self._operand(cmp_arg, "b32")}, {self._operand(new_arg, "b32")};')
+                else:
+                    ptx_op = atomic_ops.get(inst.func, 'add')
+                    self._lines.append(
+                        f'    atom.{_atom_space}.{ptx_op}.{val_ty} {dest}, [{addr}], {self._operand(inst.args[1], val_ty)};')
             elif inst.func in ('__shfl_sync', '__shfl_up_sync', '__shfl_down_sync', '__shfl_xor_sync'):
                 shfl_map = {
                     '__shfl_sync': 'idx',
@@ -801,6 +916,141 @@ class PTXEmitter:
                 sr = sr_map[inst.func]
                 self._lines.append(
                     f'    mov.u32 {self._reg(inst.dest)}, %{sr};')
+            elif inst.func in ('gridDim.x', 'gridDim.y', 'gridDim.z'):
+                sr_map = {'gridDim.x': 'nctaid.x', 'gridDim.y': 'nctaid.y',
+                          'gridDim.z': 'nctaid.z'}
+                sr = sr_map[inst.func]
+                self._lines.append(
+                    f'    mov.u32 {self._reg(inst.dest)}, %{sr};')
+            else:
+                # Math intrinsics and other function calls
+                _f32_approx_unary = {
+                    'sqrtf': 'sqrt.approx.f32', 'sqrt': 'sqrt.approx.f32',
+                    'rsqrtf': 'rsqrt.approx.f32', 'rsqrt': 'rsqrt.approx.f32',
+                    'rcpf': 'rcp.approx.f32',
+                    'sinf': 'sin.approx.f32', 'sin': 'sin.approx.f32',
+                    'cosf': 'cos.approx.f32', 'cos': 'cos.approx.f32',
+                    # exp2/log2 map directly to PTX ex2/lg2 (base-2, no scaling needed)
+                    'exp2f': 'ex2.approx.f32', 'exp2': 'ex2.approx.f32',
+                    'log2f': 'lg2.approx.f32', 'log2': 'lg2.approx.f32',
+                }
+                # expf(x) = 2^(x*log2e);  logf(x) = lg2(x)*ln2
+                # log10f(x) = lg2(x)*log10_2;  exp10f(x) = 2^(x*log2_10)
+                # These require two PTX instructions.
+                _f32_scaled_unary = {
+                    'expf':   ('ex2.approx.f32', '0f3FB8AA3B'),  # * log2(e)
+                    'exp':    ('ex2.approx.f32', '0f3FB8AA3B'),
+                    'logf':   ('lg2.approx.f32', '0f3F317218'),  # * ln(2)
+                    'log':    ('lg2.approx.f32', '0f3F317218'),
+                    'log10f': ('lg2.approx.f32', '0f3E9A209B'),  # * log10(2)
+                    'log10':  ('lg2.approx.f32', '0f3E9A209B'),
+                    'exp10f': ('ex2.approx.f32', '0f40549A78'),  # * log2(10)
+                    'exp10':  ('ex2.approx.f32', '0f40549A78'),
+                }
+                _f32_exact_unary = {
+                    'fabsf': 'abs.f32', 'fabs': 'abs.f32',
+                    'floorf': 'cvt.rmi.f32.f32', 'floor': 'cvt.rmi.f32.f32',
+                    'ceilf': 'cvt.rpi.f32.f32', 'ceil': 'cvt.rpi.f32.f32',
+                    'truncf': 'cvt.rzi.f32.f32', 'trunc': 'cvt.rzi.f32.f32',
+                    'roundf': 'cvt.rni.f32.f32', 'round': 'cvt.rni.f32.f32',
+                }
+                _f32_binary = {
+                    'fminf': 'min.f32', 'fmin': 'min.f32',
+                    'fmaxf': 'max.f32', 'fmax': 'max.f32',
+                }
+                dest = self._reg(inst.dest) if inst.dest else '%r0'
+                if inst.func in ('__threadfence',):
+                    # Global memory fence (visible to all threads)
+                    self._lines.append('    membar.gl;')
+                elif inst.func in ('__threadfence_block',):
+                    # Block-level memory fence
+                    self._lines.append('    membar.cta;')
+                elif inst.func in ('__syncwarp',):
+                    # Warp-level synchronization
+                    mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
+                    self._lines.append(f'    bar.warp.sync {mask};')
+                elif inst.func in ('__activemask',):
+                    # Returns bitmask of active lanes in warp
+                    self._lines.append(f'    activemask.b32 {dest};')
+                elif inst.func in ('__popc', '__popcll'):
+                    # Population count (number of 1 bits)
+                    ty = inst.dest.ty if inst.dest else INT32
+                    ptx_ty = 'b64' if (isinstance(ty, ScalarTy) and ty.size == 8) else 'b32'
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    popc.{ptx_ty} {dest}, {src};')
+                elif inst.func in ('__clz', '__clzll'):
+                    # Count leading zeros
+                    ty = inst.dest.ty if inst.dest else INT32
+                    ptx_ty = 'b64' if (isinstance(ty, ScalarTy) and ty.size == 8) else 'b32'
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    clz.{ptx_ty} {dest}, {src};')
+                elif inst.func in ('__brev', '__brevll'):
+                    # Bit reversal
+                    ty = inst.dest.ty if inst.dest else INT32
+                    ptx_ty = 'b64' if (isinstance(ty, ScalarTy) and ty.size == 8) else 'b32'
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    brev.{ptx_ty} {dest}, {src};')
+                elif inst.func in _f32_scaled_unary:
+                    # Two-instruction form: scale input then apply base-2 op.
+                    # e.g. expf(x): tmp = x * log2e; dest = ex2.approx(tmp)
+                    ptx_op, scale_hex = _f32_scaled_unary[inst.func]
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    tmp = kernel.new_value(f'_scale_{inst.dest.id if inst.dest else 0}',
+                                          FLOAT)
+                    self._lines.append(
+                        f'    mul.f32 {self._reg(tmp)}, {src}, {scale_hex};')
+                    self._lines.append(
+                        f'    {ptx_op} {dest}, {self._reg(tmp)};')
+                elif inst.func in _f32_approx_unary or inst.func in _f32_exact_unary:
+                    ptx_op = (_f32_approx_unary.get(inst.func)
+                              or _f32_exact_unary.get(inst.func))
+                    src = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    self._lines.append(f'    {ptx_op} {dest}, {src};')
+                elif inst.func in _f32_binary:
+                    ptx_op = _f32_binary[inst.func]
+                    a = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
+                    self._lines.append(f'    {ptx_op} {dest}, {a}, {b};')
+                elif inst.func in ('fmaf', 'fma'):
+                    # Fused multiply-add: fma(a, b, c) = a*b + c (single rounding)
+                    a = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
+                    c = self._operand(inst.args[2]) if len(inst.args) > 2 else '0f00000000'
+                    self._lines.append(f'    fma.rn.f32 {dest}, {a}, {b}, {c};')
+                elif inst.func in ('fmodf', 'fmod'):
+                    # fmod(x, y) = x - trunc(x/y)*y — no direct PTX opcode
+                    # Uses: div.approx, cvt.rzi (truncate-toward-zero), mul, sub
+                    x = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    y = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    q = kernel.new_value(f'_fmod_q_{n}', FLOAT)
+                    qt = kernel.new_value(f'_fmod_qt_{n}', FLOAT)
+                    qy = kernel.new_value(f'_fmod_qy_{n}', FLOAT)
+                    self._lines.append(f'    div.approx.f32 {self._reg(q)}, {x}, {y};')
+                    self._lines.append(f'    cvt.rzi.f32.f32 {self._reg(qt)}, {self._reg(q)};')
+                    self._lines.append(f'    mul.f32 {self._reg(qy)}, {self._reg(qt)}, {y};')
+                    self._lines.append(f'    sub.f32 {dest}, {x}, {self._reg(qy)};')
+                elif inst.func in ('tanf', 'tan'):
+                    # tan(x) = sin(x)/cos(x) — no direct PTX tan opcode
+                    x = self._operand(inst.args[0]) if inst.args else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    s = kernel.new_value(f'_tan_s_{n}', FLOAT)
+                    c = kernel.new_value(f'_tan_c_{n}', FLOAT)
+                    self._lines.append(f'    sin.approx.f32 {self._reg(s)}, {x};')
+                    self._lines.append(f'    cos.approx.f32 {self._reg(c)}, {x};')
+                    self._lines.append(f'    div.approx.f32 {dest}, {self._reg(s)}, {self._reg(c)};')
+                elif inst.func in ('abs',):
+                    ty = inst.dest.ty if inst.dest else INT32
+                    ptx_ty = _ptx_type(ty)
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    self._lines.append(f'    abs.{ptx_ty} {dest}, {src};')
+                elif inst.func in ('min', 'max'):
+                    ty = inst.dest.ty if inst.dest else INT32
+                    ptx_ty = _ptx_type(ty)
+                    ptx_op = 'min' if inst.func == 'min' else 'max'
+                    a = self._operand(inst.args[0], ptx_ty) if inst.args else '0'
+                    b = self._operand(inst.args[1], ptx_ty) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    {ptx_op}.{ptx_ty} {dest}, {a}, {b};')
 
     def _emit_term(self, term):
         if isinstance(term, RetTerm):

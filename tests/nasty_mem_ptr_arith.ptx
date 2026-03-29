@@ -1,0 +1,57 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry nasty_mem_ptr_arith(
+    .param .u64 evens, .param .u64 odds, .param .u64 out, .param .s32 n)
+{
+    .reg .f32 %f<2>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [evens];
+    ld.param.u64 %rd1, [odds];
+    ld.param.u64 %rd2, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    rem.s32 %r1, %r3, 2;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_5;
+    bra if_false_6;
+if_merge_4:
+    ret;
+if_true_5:
+    div.s32 %r4, %r3, 2;
+    shl.b32 %r0, %r4, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd0, %rd4;
+    ld.global.f32 %f0, [%rd3];
+    mov.f32 %f1, %f0;
+    bra if_merge_7;
+if_false_6:
+    div.s32 %r2, %r3, 2;
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd3, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd3];
+    mov.f32 %f1, %f0;
+    bra if_merge_7;
+if_merge_7:
+    shl.b32 %r4, %r3, 2;
+    cvt.s64.s32 %rd6, %r4;
+    add.u64 %rd3, %rd2, %rd6;
+    mul.f32 %f0, %f1, 0f3FC00000;
+    st.global.f32 [%rd3], %f0;
+    bra if_merge_4;
+}

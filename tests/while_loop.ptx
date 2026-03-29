@@ -5,27 +5,26 @@
 .visible .entry countdown(
     .param .u64 out, .param .s32 n)
 {
-    .reg .b32 %r<7>;
-    .reg .b64 %rd<9>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<1>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
-    ld.param.s32 %r1, [n];
-    add.s32 %r2, 0, 0;
+    ld.param.s32 %r0, [n];
+    mov.s32 %r1, 0;
     bra while_cond_2;
 while_cond_2:
-    setp.gt.s32 %p0, %r1, 0;
+    setp.gt.s32 %p0, %r0, 0;
     @%p0 bra while_body_3;
     bra while_exit_4;
 while_body_3:
-    add.s32 %r4, %r2, %r1;
-    sub.s32 %r5, %r1, 1;
+    add.s32 %r2, %r1, %r0;
+    sub.s32 %r3, %r0, 1;
+    mov.s32 %r0, %r3;
+    mov.s32 %r1, %r2;
     bra while_cond_2;
 while_exit_4:
-    add.s32 %r6, 0, 0;
-    cvt.u64.u32 %rd8, %r6;
-    add.u64 %rd7, %rd0, %rd8;
-    st.global.s32 [%rd7], %r4;
+    st.global.s32 [%rd0], %r1;
     ret;
 }

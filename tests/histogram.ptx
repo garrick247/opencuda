@@ -5,36 +5,34 @@
 .visible .entry histogram(
     .param .u64 hist, .param .u64 data, .param .s32 n)
 {
-    .reg .b32 %r<19>;
-    .reg .b64 %rd<21>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<5>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [hist];
     ld.param.u64 %rd1, [data];
-    ld.param.s32 %r2, [n];
-    mov.u32 %r4, %tid.x;
-    mov.u32 %r5, %ctaid.x;
-    mov.u32 %r6, %ntid.x;
-    mul.lo.s32 %r7, %r5, %r6;
-    add.s32 %r8, %r4, %r7;
-    setp.lt.s32 %p0, %r8, %r2;
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    setp.lt.u32 %p0, %r2, %r0;
     @%p0 bra if_true_2;
-    bra if_false_3;
-if_true_2:
-    shl.b32 %r11, %r8, 2;
-    cvt.u64.u32 %rd19, %r11;
-    add.u64 %rd12, %rd1, %rd19;
-    ld.global.u32 %r13, [%rd12];
-    and.b32 %r14, %r13, 255;
-    shl.b32 %r15, %r14, 2;
-    cvt.u64.u32 %rd20, %r15;
-    add.u64 %rd16, %rd0, %rd20;
-    ld.global.s32 %r17, [%rd16];
-    add.s32 %r18, %r17, 1;
-    st.global.s32 [%rd16], %r18;
     bra if_merge_4;
-if_false_3:
+if_true_2:
+    shl.b32 %r3, %r2, 2;
+    cvt.u64.u32 %rd3, %r3;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.u32 %r0, [%rd2];
+    and.b32 %r1, %r0, 255;
+    shl.b32 %r4, %r1, 2;
+    cvt.u64.u32 %rd4, %r4;
+    add.u64 %rd1, %rd0, %rd4;
+    ld.global.s32 %r2, [%rd1];
+    add.s32 %r3, %r2, 1;
+    st.global.s32 [%rd1], %r3;
     bra if_merge_4;
 if_merge_4:
     ret;

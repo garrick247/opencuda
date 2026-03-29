@@ -5,9 +5,9 @@
 .visible .entry cast_ops(
     .param .u64 fout, .param .u64 iout, .param .u64 fin, .param .u64 iin, .param .s32 n)
 {
-    .reg .f32 %f<22>;
-    .reg .b32 %r<19>;
-    .reg .b64 %rd<26>;
+    .reg .f32 %f<1>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -15,27 +15,25 @@ entry_1:
     ld.param.u64 %rd1, [iout];
     ld.param.u64 %rd2, [fin];
     ld.param.u64 %rd3, [iin];
-    ld.param.s32 %r4, [n];
-    mov.u32 %r6, %tid.x;
-    setp.lt.s32 %p0, %r6, %r4;
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
     @%p0 bra if_true_2;
-    bra if_false_3;
-if_true_2:
-    shl.b32 %r9, %r6, 2;
-    cvt.u64.u32 %rd22, %r9;
-    add.u64 %rd10, %rd2, %rd22;
-    ld.global.f32 %f11, [%rd10];
-    cvt.u64.u32 %rd23, %r9;
-    add.u64 %rd14, %rd3, %rd23;
-    ld.global.s32 %r15, [%rd14];
-    cvt.u64.u32 %rd24, %r9;
-    add.u64 %rd17, %rd1, %rd24;
-    st.global.s32 [%rd17], %r18;
-    cvt.u64.u32 %rd25, %r9;
-    add.u64 %rd20, %rd0, %rd25;
-    st.global.f32 [%rd20], %f21;
     bra if_merge_4;
-if_false_3:
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd4, %rd2, %rd5;
+    ld.global.f32 %f0, [%rd4];
+    add.u64 %rd2, %rd3, %rd5;
+    ld.global.s32 %r1, [%rd2];
+    add.u64 %rd4, %rd1, %rd5;
+    cvt.rzi.s32.f32 %r2, %f0;
+    st.global.s32 [%rd4], %r2;
+    add.u64 %rd3, %rd0, %rd5;
+    cvt.rn.f32.s32 %f0, %r1;
+    st.global.f32 [%rd3], %f0;
     bra if_merge_4;
 if_merge_4:
     ret;

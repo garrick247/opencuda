@@ -1,0 +1,97 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry register_pressure(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<12>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<12>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r1, %r3, 3;
+    shl.b32 %r4, %r1, 2;
+    cvt.s64.s32 %rd3, %r4;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    add.s32 %r0, %r1, 1;
+    shl.b32 %r2, %r0, 2;
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd2, %rd1, %rd4;
+    ld.global.f32 %f1, [%rd2];
+    add.s32 %r4, %r1, 2;
+    shl.b32 %r0, %r4, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd2, %rd1, %rd5;
+    ld.global.f32 %f2, [%rd2];
+    add.s32 %r2, %r1, 3;
+    shl.b32 %r4, %r2, 2;
+    cvt.s64.s32 %rd6, %r4;
+    add.u64 %rd2, %rd1, %rd6;
+    ld.global.f32 %f3, [%rd2];
+    add.s32 %r0, %r1, 4;
+    shl.b32 %r2, %r0, 2;
+    cvt.s64.s32 %rd7, %r2;
+    add.u64 %rd2, %rd1, %rd7;
+    ld.global.f32 %f4, [%rd2];
+    add.s32 %r4, %r1, 5;
+    shl.b32 %r0, %r4, 2;
+    cvt.s64.s32 %rd8, %r0;
+    add.u64 %rd2, %rd1, %rd8;
+    ld.global.f32 %f5, [%rd2];
+    add.s32 %r2, %r1, 6;
+    shl.b32 %r4, %r2, 2;
+    cvt.s64.s32 %rd9, %r4;
+    add.u64 %rd2, %rd1, %rd9;
+    ld.global.f32 %f6, [%rd2];
+    add.s32 %r0, %r1, 7;
+    shl.b32 %r2, %r0, 2;
+    cvt.s64.s32 %rd10, %r2;
+    add.u64 %rd2, %rd1, %rd10;
+    ld.global.f32 %f7, [%rd2];
+    add.f32 %f8, %f0, %f1;
+    add.f32 %f9, %f8, %f2;
+    add.f32 %f8, %f9, %f3;
+    add.f32 %f9, %f8, %f4;
+    add.f32 %f8, %f9, %f5;
+    add.f32 %f9, %f8, %f6;
+    add.f32 %f8, %f9, %f7;
+    mul.f32 %f9, %f0, %f1;
+    mul.f32 %f10, %f2, %f3;
+    add.f32 %f11, %f9, %f10;
+    mul.f32 %f9, %f4, %f5;
+    add.f32 %f10, %f11, %f9;
+    mul.f32 %f11, %f6, %f7;
+    add.f32 %f9, %f10, %f11;
+    add.f32 %f10, %f0, %f2;
+    add.f32 %f11, %f10, %f4;
+    add.f32 %f0, %f11, %f6;
+    add.f32 %f2, %f1, %f3;
+    add.f32 %f4, %f2, %f5;
+    add.f32 %f10, %f4, %f7;
+    mul.f32 %f6, %f0, %f10;
+    shl.b32 %r4, %r3, 2;
+    cvt.s64.s32 %rd11, %r4;
+    add.u64 %rd1, %rd0, %rd11;
+    add.f32 %f11, %f8, %f9;
+    add.f32 %f1, %f11, %f6;
+    st.global.f32 [%rd1], %f1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

@@ -1,0 +1,66 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry conditional_ldg(
+    .param .u64 a, .param .u64 b, .param .u64 out, .param .s32 n, .param .s32 mode)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [a];
+    ld.param.u64 %rd1, [b];
+    ld.param.u64 %rd2, [out];
+    ld.param.s32 %r0, [n];
+    ld.param.s32 %r1, [mode];
+    mov.u32 %r2, %tid.x;
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mul.lo.u32 %r5, %r3, %r4;
+    add.u32 %r3, %r2, %r5;
+    cvt.s32.u32 %r4, %r3;
+    setp.ge.s32 %p0, %r4, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    mov.f32 %f0, 0f00000000;
+    mov.s32 %r2, 0;
+    bra for_cond_5;
+for_cond_5:
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd3, %rd0, %rd4;
+    ld.global.nc.f32 %f1, [%rd3];
+    setp.eq.s32 %p1, %r1, 0;
+    @%p1 bra if_true_9;
+    bra if_false_10;
+for_inc_7:
+    add.s32 %r5, %r2, 1;
+    mov.s32 %r2, %r5;
+    bra for_cond_5;
+for_exit_8:
+    shl.b32 %r3, %r4, 2;
+    cvt.s64.s32 %rd5, %r3;
+    add.u64 %rd3, %rd2, %rd5;
+    st.global.f32 [%rd3], %f0;
+    ret;
+if_true_9:
+    add.u64 %rd3, %rd1, %rd4;
+    ld.global.nc.f32 %f2, [%rd3];
+    mul.f32 %f3, %f1, %f2;
+    add.f32 %f2, %f0, %f3;
+    mov.f32 %f0, %f2;
+    bra for_inc_7;
+if_false_10:
+    add.f32 %f3, %f0, %f1;
+    mov.f32 %f0, %f3;
+    bra for_inc_7;
+}

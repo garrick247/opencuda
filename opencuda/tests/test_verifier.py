@@ -66,21 +66,7 @@ ALL_CU_FILES = sorted(f for f in TESTS_DIR.glob('*.cu') if not f.name.startswith
 # These kernels produce invalid IR that ptxas accepts (PTX zero-initialises
 # registers, masking semantic errors) but our verifier correctly rejects.
 # The optimizer does NOT introduce these bugs — they pre-date v0.9.
-KNOWN_PARSER_BUGS = frozenset({
-    'switch_test',           # unterminated block from switch lowering (v0.4)
-    'branch_overlap',        # unary negation generates no instruction
-    'break_continue',        # variable defined only on one path
-    'merge_reuse',           # single-arm def used at diamond merge
-    'nasty_branch_widen',    # same
-    'nasty_ldg_cond',        # same
-    'nasty_mem_loop_store',  # unroller leaves stale loop-counter reference
-    'nasty_mem_merge_store', # single-arm def at merge
-    'nasty_mem_ptr_arith',   # same
-    'nasty_multi_exit',      # same
-    'nasty_while_update',    # single-arm def (collatz divergence)
-    'struct_test',           # same
-    'warp_test',             # single-arm def at merge
-})
+KNOWN_PARSER_BUGS = frozenset()
 
 
 # ---------------------------------------------------------------------------

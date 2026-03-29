@@ -1,0 +1,47 @@
+NvAPI_Initialize -> 0
+DXGI[0]: VendorId=0x8086 luid=00000000:00014894 desc=Intel(R) Graphics
+DXGI[1]: VendorId=0x10DE luid=00000000:00014CE9 desc=NVIDIA GeForce RTX 5090
+DXGI[2]: VendorId=0x1414 luid=00000000:00014C75 desc=Microsoft Basic Render Driver
+PreInitNvAdminViaLuid: OpenFromLuid(NVIDIA luid=00000000:00014CE9) -> 0x00000000  hAdapter=0x40000740
+PreInitNvAdminViaLuid: DrvReg -> 0x00000000
+PreInitNvAdminViaLuid: DrvReg buf:
+  [00] 41 44 56 4E 02 00 01 00 34 00 00 00 2A 2A 56 4E
+  [10] 0E 01 00 01 00 00 00 00 00 00 00 00 00 00 00 00
+  [20] 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00
+  [30] 00 02 00 00
+PreInitNvAdminViaLuid: DmaReg -> 0x00000000
+DXGI[0]: VendorId=0x8086 luid=00000000:00014894 desc=Intel(R) Graphics
+DXGI[1]: VendorId=0x10DE luid=00000000:00014CE9 desc=NVIDIA GeForce RTX 5090
+DXGI[2]: VendorId=0x1414 luid=00000000:00014C75 desc=Microsoft Basic Render Driver
+FindNvidiaAdapter: NVIDIA LUID=00000000:00014CE9
+FindNvidiaAdapter: 34 adapters
+PreInit: skipping NVIDIA display adapter [0] ha=0x40000C40 (pre-init handled by PreInitNvAdminViaLuid)
+PreInit DrvReg [1] ha=0x40000C80 -> 0xC000000D (ignored)
+PreInit DrvReg [2] ha=0x40000CC0 -> 0xC00000BB (ignored)
+FindNvidiaAdapter: [0] hAdapter=0x40000C40 src=4 luid=00000000:00014CE9 <-- NVIDIA
+FindNvidiaAdapter: [0]   hDevice=0x40000D00
+FindNvidiaAdapter: KMT#2 BEFORE KMT#1: NTSTATUS=0xC000000D
+FindNvidiaAdapter: KMT1=OK(0x00000000)
+FindNvidiaAdapter: KMT1 writeback (first 96 bytes):
+  [00] 41 44 56 4E 02 00 01 00 5C 24 00 00 2A 2A 56 4E
+  [10] 2B 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00
+  [20] 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00
+  [30] 00 00 00 00 00 00 03 FF 1B 12 80 20 18 24 00 00
+  [40] 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  [50] 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00
+FindNvidiaAdapter: no writeback diffs detected in payload
+opencuda_init: KMT#2 size=69: NTSTATUS=0xC000000D
+opencuda_init: KMT#2 size=48: NTSTATUS=0xC000000D
+before-nvcuda KMT#2 retry: NTSTATUS=0xC000000D
+nvcuda.dll cuInit -> 0
+after-nvcuda-init (existing device) KMT#2 retry: NTSTATUS=0xC000000D
+fresh-device CreateDevice -> 0x00000000  hDevice=0x400014C0
+fresh-device KMT#1 -> 0x00000000
+fresh-device KMT#2 -> 0xC000000D
+after-nvcuda-free (existing device) KMT#2 retry: NTSTATUS=0xC000000D
+opencuda_ctx_create: KMT#3 failed: NTSTATUS=0xC000000D
+opencuda_ctx_create failed
+opencuda Windows runtime — D3DKMTEscape path
+DMA layer init: ok=1 returned=136
+cuInit OK  adapter=0x40000C40  device=0x40000D00
+EXIT=1 

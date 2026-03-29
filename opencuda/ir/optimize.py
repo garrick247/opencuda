@@ -47,6 +47,26 @@ def _const_val(op: Operand):
     return None
 
 
+def _mask_int(value: int, ty) -> int:
+    """Mask an integer fold result to the type's bit width with correct sign.
+
+    Python integers are unbounded, so constant folding can produce values
+    that are out of range for the PTX type (e.g. 1 << 31 = 2147483648 for
+    INT32, but INT32_MAX is 2147483647). Without masking the emitter writes
+    a literal that ptxas rejects for signed types.
+    """
+    from ..ir.types import ScalarTy
+    if not isinstance(ty, ScalarTy) or ty.is_float:
+        return value
+    bits = ty.size * 8
+    mask = (1 << bits) - 1
+    v = int(value) & mask
+    # Sign-extend for signed types: if the high bit is set, subtract 2^bits
+    if ty.is_signed and (v >> (bits - 1)):
+        v -= (1 << bits)
+    return v
+
+
 def _fold_bin(op: BinOp, a, b, is_float: bool):
     if a is None or b is None:
         return None
@@ -58,8 +78,21 @@ def _fold_bin(op: BinOp, a, b, is_float: bool):
         if op == BinOp.ADD: return a + b
         if op == BinOp.SUB: return a - b
         if op == BinOp.MUL: return a * b
-        if op == BinOp.DIV and b != 0: return a // b if not is_float else a / b
-        if op == BinOp.MOD and b != 0: return a % b
+        if op == BinOp.DIV and b != 0:
+            if is_float:
+                return a / b
+            # C truncated division (toward zero), not Python floor division.
+            # Example: -7 / 2 = -3 in C, but -7 // 2 = -4 in Python.
+            q = abs(a) // abs(b)
+            return q if (a >= 0) == (b >= 0) else -q
+        if op == BinOp.MOD and b != 0:
+            if is_float:
+                return a % b
+            # C truncated remainder: result has sign of dividend.
+            # Example: -7 % 2 = -1 in C, but -7 % 2 = 1 in Python.
+            q = abs(a) // abs(b)
+            rem = abs(a) - q * abs(b)
+            return rem if a >= 0 else -rem
         if op == BinOp.AND: return int(a) & int(b)
         if op == BinOp.OR:  return int(a) | int(b)
         if op == BinOp.XOR: return int(a) ^ int(b)
@@ -125,7 +158,10 @@ def constant_fold(kernel: Kernel) -> int:
                         inst.rhs = Const(inst.dest.ty, 0.0)
                         inst.op = BinOp.ADD
                     else:
-                        inst.lhs = Const(inst.dest.ty, int(result))
+                        # Mask to type width: Python ints are unbounded but PTX
+                        # types are not (e.g. 1 << 31 = 2147483648, out of s32 range).
+                        masked = _mask_int(result, inst.dest.ty)
+                        inst.lhs = Const(inst.dest.ty, masked)
                         inst.rhs = Const(inst.dest.ty, 0)
                         inst.op = BinOp.ADD
                     folded += 1
@@ -328,7 +364,7 @@ def cse(kernel: Kernel) -> int:
                     written_ids.add(inst.dest.id)
 
             else:
-                # Apply replacements to memory instructions
+                # Apply replacements to memory and side-effecting instructions
                 if isinstance(inst, LoadInst):
                     if isinstance(inst.addr, Value) and inst.addr.id in replacements:
                         inst.addr = replacements[inst.addr.id]
@@ -337,6 +373,9 @@ def cse(kernel: Kernel) -> int:
                         inst.addr = replacements[inst.addr.id]
                     if isinstance(inst.value, Value) and inst.value.id in replacements:
                         inst.value = replacements[inst.value.id]
+                elif isinstance(inst, (PrintfInst, CallInst)):
+                    inst.args = [replacements[a] if isinstance(a, Value) and a.id in replacements else a
+                                 for a in inst.args]
 
             new_insts.append(inst)
         bb.instructions = new_insts
@@ -375,6 +414,9 @@ def cse(kernel: Kernel) -> int:
                     if isinstance(inst.value, Value):
                         inst.value = _chase(inst.value)
                 elif isinstance(inst, CallInst):
+                    inst.args = [_chase(a) if isinstance(a, Value) else a
+                                 for a in inst.args]
+                elif isinstance(inst, PrintfInst):
                     inst.args = [_chase(a) if isinstance(a, Value) else a
                                  for a in inst.args]
             t = bb.terminator
@@ -496,6 +538,10 @@ def identity_fold(kernel: Kernel) -> int:
                 inst.value = _resolve(inst.value)
             elif isinstance(inst, CvtInst):
                 inst.src = _resolve(inst.src)
+            elif isinstance(inst, CallInst):
+                inst.args = [_resolve(a) for a in inst.args]
+            elif isinstance(inst, PrintfInst):
+                inst.args = [_resolve(a) for a in inst.args]
             new_insts.append(inst)
         bb.instructions = new_insts
 
@@ -924,12 +970,16 @@ def optimize(module: Module, verbose: bool = False,
       4. dead_block_elim      — remove unreachable blocks before identity_fold
                                 so dead-block defs don't inflate def_count
       5. identity_fold        — copy-propagate single-def add-zero patterns
+      5b. constant_fold (2)   — fold newly-exposed Const-op-Const after
+                                identity_fold (e.g. 0-7 folds neg7, identity_fold
+                                propagates Const(-7) into div, fold-2 finishes it)
       6. dead_inst_elim       — remove instructions whose results are unused
                                 (iterates to fixpoint)
       7. licm                 — hoist loop-invariant pure BinInst/CvtInst to
                                 loop preheaders (conservative; v0.8)
       8. cse (round 2)        — catch expressions newly exposed by passes 4–7
       9. identity_fold (2)    — propagate copies created by round-2 CSE
+      9b. constant_fold (3)   — fold constants newly exposed by identity_fold-2
      10. dead_inst_elim (2)   — remove instructions whose results are unused
                                 after LICM + round-2 CSE+fold
      11. thread_empty_blocks  — forward unconditional branches through empty
@@ -968,6 +1018,10 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'dead_block_elim')
         n_idf = identity_fold(kernel)
         _gate(kernel, 'identity_fold')
+        # constant_fold-2: finish folding expressions where identity_fold just
+        # propagated a Const into a BinInst (e.g. neg7_val → Const(-7) in div)
+        n_fold2 = constant_fold(kernel)
+        _gate(kernel, 'constant_fold-2')
         n_die = dead_inst_elim(kernel)
         _gate(kernel, 'dead_inst_elim')
         n_licm = licm(kernel)
@@ -977,25 +1031,29 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'cse-2')
         n_idf2 = identity_fold(kernel)
         _gate(kernel, 'identity_fold-2')
+        # constant_fold-3: catch constants exposed by identity_fold-2
+        n_fold3 = constant_fold(kernel)
+        _gate(kernel, 'constant_fold-3')
         n_die2 = dead_inst_elim(kernel)
         _gate(kernel, 'dead_inst_elim-2')
         n_teb = thread_empty_blocks(kernel)
         _gate(kernel, 'thread_empty_blocks')
         if verbose:
-            total = (n_unroll + n_fold + n_cse + n_dbe + n_idf + n_die
-                     + n_licm + n_cse2 + n_idf2 + n_die2 + n_teb)
+            total = (n_unroll + n_fold + n_fold2 + n_fold3 + n_cse + n_dbe
+                     + n_idf + n_die + n_licm + n_cse2 + n_idf2 + n_die2 + n_teb)
             if total > 0:
                 parts = []
-                if n_unroll:       parts.append(f"{n_unroll} loops unrolled")
-                if n_fold:         parts.append(f"{n_fold} constants folded")
-                if n_cse:          parts.append(f"{n_cse} CSE eliminated")
-                if n_dbe:          parts.append(f"{n_dbe} dead blocks removed")
-                if n_idf:          parts.append(f"{n_idf} copies propagated")
-                if n_die:          parts.append(f"{n_die} dead insts removed")
-                if n_licm:         parts.append(f"{n_licm} LICM hoisted")
-                if n_cse2:         parts.append(f"{n_cse2} CSE-2 eliminated")
-                if n_idf2:         parts.append(f"{n_idf2} copies-2 propagated")
-                if n_die2:         parts.append(f"{n_die2} dead-2 insts removed")
-                if n_teb:          parts.append(f"{n_teb} empty blocks threaded")
+                if n_unroll:                 parts.append(f"{n_unroll} loops unrolled")
+                if n_fold + n_fold2 + n_fold3:
+                    parts.append(f"{n_fold + n_fold2 + n_fold3} constants folded")
+                if n_cse:                    parts.append(f"{n_cse} CSE eliminated")
+                if n_dbe:                    parts.append(f"{n_dbe} dead blocks removed")
+                if n_idf:                    parts.append(f"{n_idf} copies propagated")
+                if n_die:                    parts.append(f"{n_die} dead insts removed")
+                if n_licm:                   parts.append(f"{n_licm} LICM hoisted")
+                if n_cse2:                   parts.append(f"{n_cse2} CSE-2 eliminated")
+                if n_idf2:                   parts.append(f"{n_idf2} copies-2 propagated")
+                if n_die2:                   parts.append(f"{n_die2} dead-2 insts removed")
+                if n_teb:                    parts.append(f"{n_teb} empty blocks threaded")
                 print(f"[opt] {kernel.name}: {', '.join(parts)}")
     return module

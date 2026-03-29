@@ -1,0 +1,39 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry math_fmod_test(
+    .param .u64 out, .param .u64 x, .param .u64 y, .param .s32 n)
+{
+    .reg .f32 %f<6>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [x];
+    ld.param.u64 %rd2, [y];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd0, %rd4;
+    add.u64 %rd0, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd1, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd1];
+    div.approx.f32 %f3, %f0, %f1;
+    cvt.rzi.f32.f32 %f4, %f3;
+    mul.f32 %f5, %f4, %f1;
+    sub.f32 %f2, %f0, %f5;
+    st.global.f32 [%rd3], %f2;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

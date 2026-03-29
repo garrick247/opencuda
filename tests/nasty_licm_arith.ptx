@@ -1,0 +1,107 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry licm_arith_hoist(
+    .param .u64 out, .param .u64 a, .param .s32 n, .param .f32 base, .param .f32 step)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.s32 %r0, [n];
+    ld.param.f32 %f0, [base];
+    ld.param.f32 %f1, [step];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    cvt.s32.u32 %r3, %r2;
+    setp.ge.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    mov.s32 %r1, 0;
+    mul.f32 %f2, %f0, %f1;
+    add.f32 %f3, %f0, %f1;
+    bra for_cond_5;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    add.s32 %r4, %r3, %r1;
+    shl.b32 %r2, %r4, 2;
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd2, %rd0, %rd4;
+    add.u64 %rd3, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd3];
+    mul.f32 %f1, %f0, %f2;
+    add.f32 %f0, %f1, %f3;
+    st.global.f32 [%rd2], %f0;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r4, %r1, 1;
+    mov.s32 %r1, %r4;
+    bra for_cond_5;
+for_exit_8:
+    ret;
+}
+
+.visible .entry licm_arith_chain(
+    .param .u64 out, .param .u64 a, .param .s32 n, .param .f32 k)
+{
+    .reg .f32 %f<3>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [a];
+    ld.param.s32 %r0, [n];
+    ld.param.f32 %f0, [k];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    cvt.s32.u32 %r3, %r2;
+    setp.ge.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    mov.s32 %r1, 0;
+    mul.f32 %f1, %f0, 0f40000000;
+    mul.f32 %f0, %f1, 0f40000000;
+    bra for_cond_5;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    add.s32 %r4, %r3, %r1;
+    shl.b32 %r2, %r4, 2;
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd2, %rd0, %rd4;
+    add.u64 %rd3, %rd1, %rd4;
+    ld.global.f32 %f1, [%rd3];
+    mul.f32 %f2, %f1, %f0;
+    st.global.f32 [%rd2], %f2;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r4, %r1, 1;
+    mov.s32 %r1, %r4;
+    bra for_cond_5;
+for_exit_8:
+    ret;
+}

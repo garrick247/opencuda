@@ -6,27 +6,25 @@
     .param .u64 out, .param .u64 in)
 {
     .shared .f32 smem[256];
-    .reg .f32 %f<15>;
-    .reg .b32 %r<6>;
-    .reg .b64 %rd<18>;
+    .reg .f32 %f<1>;
+    .reg .b32 %r<2>;
+    .reg .b64 %rd<5>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd2, smem;
+    mov.u64 %rd1, smem;
 entry_1:
     ld.param.u64 %rd0, [out];
-    ld.param.u64 %rd1, [in];
-    mov.u32 %r4, %tid.x;
-    shl.b32 %r5, %r4, 2;
-    cvt.u64.u32 %rd15, %r5;
-    add.u64 %rd6, %rd2, %rd15;
-    cvt.u64.u32 %rd16, %r5;
-    add.u64 %rd8, %rd1, %rd16;
-    ld.global.f32 %f9, [%rd8];
-    st.shared.f32 [%rd6], %f9;
+    ld.param.u64 %rd2, [in];
+    mov.u32 %r0, %tid.x;
+    shl.b32 %r1, %r0, 2;
+    cvt.u64.u32 %rd4, %r1;
+    add.u64 %rd3, %rd1, %rd4;
+    add.u64 %rd1, %rd2, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    st.shared.f32 [%rd3], %f0;
     bar.sync 0;
-    cvt.u64.u32 %rd17, %r5;
-    add.u64 %rd11, %rd0, %rd17;
-    ld.shared.f32 %f14, [%rd6];
-    st.global.f32 [%rd11], %f14;
+    add.u64 %rd2, %rd0, %rd4;
+    ld.shared.f32 %f0, [%rd3];
+    st.global.f32 [%rd2], %f0;
     ret;
 }

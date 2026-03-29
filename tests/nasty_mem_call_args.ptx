@@ -1,0 +1,52 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry nasty_mem_call_args(
+    .param .u64 ia, .param .u64 fb, .param .u64 fc, .param .u64 id, .param .u64 out, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [ia];
+    ld.param.u64 %rd1, [fb];
+    ld.param.u64 %rd2, [fc];
+    ld.param.u64 %rd3, [id];
+    ld.param.u64 %rd4, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mul.lo.u32 %r4, %r2, %r3;
+    add.u32 %r2, %r1, %r4;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd6, %r1;
+    add.u64 %rd5, %rd0, %rd6;
+    ld.global.s32 %r4, [%rd5];
+    add.u64 %rd0, %rd1, %rd6;
+    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd5, %rd2, %rd6;
+    ld.global.f32 %f1, [%rd5];
+    add.u64 %rd1, %rd3, %rd6;
+    ld.global.s32 %r0, [%rd1];
+    add.u64 %rd0, %rd4, %rd6;
+    cvt.rn.f32.s32 %f2, %r4;
+    mul.f32 %f3, %f2, %f0;
+    cvt.rn.f32.s32 %f0, %r0;
+    mul.f32 %f2, %f1, %f0;
+    add.f32 %f1, %f3, %f2;
+    bra inline_mix_compute_merge_5;
+if_merge_4:
+    ret;
+inline_mix_compute_merge_5:
+    st.global.f32 [%rd0], %f1;
+    bra if_merge_4;
+}

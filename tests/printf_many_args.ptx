@@ -1,0 +1,57 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.extern .func (.param .b32 func_retval0) vprintf(.param .b64 fmt, .param .b64 valist);
+
+.global .align 1 .b8 _fmt_printf_many_args_0[21] = {97, 61, 37, 100, 32, 98, 61, 37, 100, 32, 99, 61, 37, 100, 32, 100, 61, 37, 100, 10, 0};
+
+.visible .entry printf_many_args(
+    .param .u64 data)
+{
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<12>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [data];
+    mov.u32 %r0, %tid.x;
+    setp.eq.u32 %p0, %r0, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ld.global.s32 %r0, [%rd0];
+    add.u64 %rd1, %rd0, 4;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd1, %rd0, 8;
+    ld.global.s32 %r2, [%rd1];
+    add.u64 %rd1, %rd0, 12;
+    ld.global.s32 %r3, [%rd1];
+    mov.u64 %rd2, _fmt_printf_many_args_0;
+    .local .align 8 .b8 _valist_0[32];
+    mov.u64 %rd3, _valist_0;
+    cvt.s64.s32 %rd4, %r0;
+    st.local.u64 [%rd3], %rd4;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd6, %rd3, 8;
+    st.local.u64 [%rd6], %rd5;
+    cvt.s64.s32 %rd7, %r2;
+    add.u64 %rd8, %rd3, 16;
+    st.local.u64 [%rd8], %rd7;
+    cvt.s64.s32 %rd9, %r3;
+    add.u64 %rd10, %rd3, 24;
+    st.local.u64 [%rd10], %rd9;
+    cvta.local.u64 %rd11, %rd3;
+    {
+    .param .b64 _p0_0;
+    .param .b64 _p1_0;
+    .param .b32 _rv_0;
+    st.param.b64 [_p0_0], %rd2;
+    st.param.b64 [_p1_0], %rd11;
+    call.uni (_rv_0), vprintf, (_p0_0, _p1_0);
+    ld.param.b32 %r4, [_rv_0];
+    }
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

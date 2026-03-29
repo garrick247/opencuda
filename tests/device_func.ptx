@@ -5,31 +5,30 @@
 .visible .entry apply_square(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<12>;
-    .reg .b32 %r<7>;
-    .reg .b64 %rd<14>;
+    .reg .f32 %f<2>;
+    .reg .b32 %r<2>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
     ld.param.u64 %rd1, [in];
-    ld.param.s32 %r2, [n];
-    mov.u32 %r4, %tid.x;
-    setp.lt.s32 %p0, %r4, %r2;
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    setp.lt.u32 %p0, %r1, %r0;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
-    shl.b32 %r6, %r4, 2;
-    cvt.u64.u32 %rd12, %r6;
-    add.u64 %rd7, %rd0, %rd12;
-    cvt.u64.u32 %rd13, %r6;
-    add.u64 %rd9, %rd1, %rd13;
-    ld.global.f32 %f10, [%rd9];
-    mul.f32 %f11, %f10, %f10;
-    st.global.f32 [%rd7], %f11;
-    bra if_merge_4;
-if_false_3:
-    bra if_merge_4;
+    shl.b32 %r0, %r1, 2;
+    cvt.u64.u32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd0];
+    mul.f32 %f1, %f0, %f0;
+    bra inline_square_merge_5;
 if_merge_4:
     ret;
+inline_square_merge_5:
+    st.global.f32 [%rd2], %f1;
+    bra if_merge_4;
 }

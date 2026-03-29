@@ -5,39 +5,39 @@
 .visible .entry dot_product(
     .param .u64 out, .param .u64 a, .param .u64 b, .param .s32 n)
 {
-    .reg .f32 %f<28>;
-    .reg .b32 %r<25>;
-    .reg .b64 %rd<31>;
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<6>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
     ld.param.u64 %rd1, [a];
     ld.param.u64 %rd2, [b];
-    ld.param.s32 %r3, [n];
-    mov.u32 %r5, %tid.x;
-    setp.lt.s32 %p0, %r5, %r3;
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
     @%p0 bra if_true_2;
-    bra if_false_3;
-if_true_2:
-    shl.b32 %r7, %r5, 2;
-    cvt.u64.u32 %rd28, %r7;
-    add.u64 %rd8, %rd0, %rd28;
-    shl.b32 %r9, %r5, 3;
-    cvt.u64.u32 %rd29, %r9;
-    add.u64 %rd10, %rd1, %rd29;
-    ld.global.u32 %r11, [%rd10];
-    cvt.u64.u32 %rd30, %r9;
-    add.u64 %rd14, %rd2, %rd30;
-    ld.global.u32 %r15, [%rd14];
-    mul.f32 %f17, %f12, %f16;
-    ld.global.u32 %r20, [%rd10];
-    ld.global.u32 %r24, [%rd14];
-    mul.f32 %f26, %f21, %f25;
-    add.f32 %f27, %f17, %f26;
-    st.global.f32 [%rd8], %f27;
     bra if_merge_4;
-if_false_3:
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd3, %rd0, %rd4;
+    shl.b32 %r1, %r2, 3;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd0, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd1, %rd2, %rd5;
+    ld.global.f32 %f1, [%rd1];
+    mul.f32 %f2, %f0, %f1;
+    add.u64 %rd2, %rd0, 4;
+    ld.global.f32 %f0, [%rd2];
+    add.u64 %rd0, %rd1, 4;
+    ld.global.f32 %f1, [%rd0];
+    mul.f32 %f3, %f0, %f1;
+    add.f32 %f0, %f2, %f3;
+    st.global.f32 [%rd3], %f0;
     bra if_merge_4;
 if_merge_4:
     ret;
