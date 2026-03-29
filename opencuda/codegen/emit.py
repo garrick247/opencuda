@@ -135,6 +135,14 @@ def _build_alloc_map(kernel: Kernel):
             live_start[op.id] = min(live_start.get(op.id, idx), idx)
             live_end[op.id] = max(live_end.get(op.id, idx), idx)
 
+    # Register local spill pointer Values as defined at position 0 so their
+    # live range starts at the beginning of the function (preamble), not at
+    # their first in-block use. Without this, the allocator may reuse their
+    # register for short-lived Values defined before the first in-block use.
+    if hasattr(kernel, '_local_decls'):
+        for _lname, _lty, _lcount, lval in kernel._local_decls:
+            _note_def(lval, 0)
+
     for i, inst in enumerate(flat):
         if isinstance(inst, (BinInst, CmpInst, CvtInst)):
             _note_def(inst.dest, i)
