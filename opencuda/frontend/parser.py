@@ -1716,23 +1716,25 @@ class Parser:
         field_arrays = {}  # base_name -> count for array members
         while not self._at(TokKind.RBRACE):
             fty = self._parse_type_with_ptr()
-            fname = self._expect(TokKind.IDENT).value
-            # Inline array member: float data[N] — expand to N scalar fields
-            # so struct layout (field_offset) accounts for the full byte span.
-            array_count = 1
-            if self._match(TokKind.LBRACKET):
-                sz_op = self._parse_assign_expr()
-                array_count = int(sz_op.value) if isinstance(sz_op, Const) else 1
-                self._expect(TokKind.RBRACKET)
+            # Handle comma-separated field names: float x, y, z;
+            while True:
+                fname = self._expect(TokKind.IDENT).value
+                # Inline array member: float data[N] — expand to N scalar fields
+                # so struct layout (field_offset) accounts for the full byte span.
+                array_count = 1
+                if self._match(TokKind.LBRACKET):
+                    sz_op = self._parse_assign_expr()
+                    array_count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                    self._expect(TokKind.RBRACKET)
+                if array_count > 1:
+                    for k in range(array_count):
+                        fields.append((f"{fname}_{k}", fty))
+                    field_arrays[fname] = array_count
+                else:
+                    fields.append((fname, fty))
+                if not self._match(TokKind.COMMA):
+                    break
             self._expect(TokKind.SEMI)
-            if array_count > 1:
-                # Expand: field_0, field_1, ..., field_{N-1} as scalars.
-                # This ensures correct byte offsets for subsequent fields.
-                for k in range(array_count):
-                    fields.append((f"{fname}_{k}", fty))
-                field_arrays[fname] = array_count
-            else:
-                fields.append((fname, fty))
         self._expect(TokKind.RBRACE)
         sty = StructTy(name, tuple(fields))
         self._struct_types[name] = sty
