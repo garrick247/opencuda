@@ -1854,6 +1854,9 @@ class Parser:
                     sz_op = self._parse_assign_expr()
                     array_count = int(sz_op.value) if isinstance(sz_op, Const) else 1
                     self._expect(TokKind.RBRACKET)
+                # Bitfield: field : width — consume and ignore width
+                if self._match(TokKind.COLON):
+                    self._parse_assign_expr()  # consume width expression
                 if array_count > 1:
                     for k in range(array_count):
                         fields.append((f"{fname}_{k}", fty))
