@@ -1,0 +1,169 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .global .align 4 .s32 g_flag;
+
+.visible .entry atomic_variety(
+    .param .u64 maxval, .param .u64 minval, .param .u64 exch_dst, .param .u64 cas_dst, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [maxval];
+    ld.param.u64 %rd1, [minval];
+    ld.param.u64 %rd2, [exch_dst];
+    ld.param.u64 %rd3, [cas_dst];
+    ld.param.u64 %rd4, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd6, %r0;
+    add.u64 %rd5, %rd4, %rd6;
+    ld.global.s32 %r1, [%rd5];
+    atom.global.max.s32 %r0, [%rd0], %r1;
+    atom.global.min.s32 %r0, [%rd1], %r1;
+    bra if_merge_4;
+if_merge_4:
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    atom.global.exch.b32 %r2, [%rd2], 42;
+    atom.global.cas.b32 %r1, [%rd3], 0, 99;
+    bra if_merge_7;
+if_merge_7:
+    ret;
+}
+
+.visible .entry bit_intrinsics(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<7>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.u32 %r1, [%rd2];
+    mul.lo.s32 %r0, %r2, 3;
+    shl.b32 %r2, %r0, 2;
+    cvt.s64.s32 %rd4, %r2;
+    add.u64 %rd1, %rd0, %rd4;
+    popc.b32 %r2, %r1;
+    st.global.s32 [%rd1], %r2;
+    add.s32 %r2, %r0, 1;
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd5, %r3;
+    add.u64 %rd2, %rd0, %rd5;
+    clz.b32 %r2, %r1;
+    st.global.s32 [%rd2], %r2;
+    add.s32 %r3, %r0, 2;
+    shl.b32 %r2, %r3, 2;
+    cvt.s64.s32 %rd6, %r2;
+    add.u64 %rd1, %rd0, %rd6;
+    neg.s32 %r4, %r1;
+    and.b32 %r5, %r1, %r4;
+    bfind.u32 %r6, %r5;
+    add.s32 %r0, %r6, 1;
+    st.global.s32 [%rd1], %r0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry threadfence_test(
+    .param .u64 out, .param .u64 data, .param .s32 n)
+{
+    .reg .b32 %r<2>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<3>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ld.global.s32 %r0, [%rd1];
+    st.global.s32 [%rd0], %r0;
+    membar.gl;
+    mov.u64 %rd2, g_flag;
+    cvta.to.global.u64 %rd2, %rd2;
+    st.global.s32 [%rd2], 1;
+    bra if_merge_4;
+if_merge_4:
+    bar.sync 0;
+    setp.eq.s32 %p0, %r1, 1;
+    ld.global.s32 %r1, [g_flag];
+    setp.eq.s32 %p1, %r1, 1;
+    and.pred %p2, %p0, %p1;
+    @%p2 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    add.u64 %rd2, %rd0, 4;
+    add.u64 %rd0, %rd1, 4;
+    ld.global.s32 %r0, [%rd0];
+    st.global.s32 [%rd2], %r0;
+    membar.cta;
+    bra if_merge_7;
+if_merge_7:
+    ret;
+}
+
+.visible .entry mixed_call(
+    .param .u64 out, .param .u64 data, .param .f32 alpha, .param .f32 beta, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [data];
+    ld.param.f32 %f0, [alpha];
+    ld.param.f32 %f1, [beta];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.f32 %f2, [%rd0];
+    mul.f32 %f3, %f0, %f2;
+    add.f32 %f0, %f3, %f1;
+    bra inline_apply_config_merge_5;
+if_merge_4:
+    ret;
+inline_apply_config_merge_5:
+    st.global.f32 [%rd2], %f0;
+    bra if_merge_4;
+}
