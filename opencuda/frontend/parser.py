@@ -232,10 +232,7 @@ class Parser:
 
         Returns the original operand unchanged when elem_size == 1 (char*).
         """
-        if isinstance(ptr_ty.pointee, StructTy):
-            elem_size = ptr_ty.pointee.total_size
-        else:
-            elem_size = getattr(ptr_ty.pointee, 'size', 4)
+        elem_size = getattr(ptr_ty.pointee, 'size', 4)
         if elem_size == 1:
             return int_op
         int_ty = int_op.ty if isinstance(int_op, (Value, Const)) else INT32
