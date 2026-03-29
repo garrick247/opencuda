@@ -203,7 +203,7 @@ def _build_alloc_map(kernel: Kernel):
         bb_flat_end[bb.label] = _pos + n_insts - 1
         _pos += n_insts
 
-    back_edges: list[tuple[int, int]] = []  # (loop_header_start, back_edge_end)
+    back_edges: list[tuple[int, int, int]] = []  # (header_start, header_end, latch_end)
     for bb in kernel.blocks:
         if bb.terminator is None:
             continue
@@ -215,12 +215,23 @@ def _build_alloc_map(kernel: Kernel):
             targets = [bb.terminator.true_bb, bb.terminator.false_bb]
         for tgt in targets:
             if tgt in bb_flat_start and bb_flat_start[tgt] <= src_start:
-                back_edges.append((bb_flat_start[tgt], bb_flat_end[bb.label]))
+                back_edges.append((bb_flat_start[tgt], bb_flat_end[tgt], bb_flat_end[bb.label]))
 
-    for header_start, loop_end in back_edges:
+    for header_start, header_end, loop_end in back_edges:
         for val_id, le in list(live_end.items()):
             ls = live_start.get(val_id, 0)
-            if ls <= header_start and header_start <= le <= loop_end:
+            if not (header_start <= le <= loop_end):
+                continue
+            # Classic case: value defined before the loop header.
+            classic = ls <= header_start
+            # Inline-merge case: value *used* within the header block (ls is
+            # inside [header_start, header_end]) but *defined* in the loop body
+            # (le > header_end).  This arises when an inline merge block is placed
+            # before the ternary/branch blocks that write its inputs in the flat
+            # instruction list, so the use appears at a lower flat index than the
+            # definition even though execution visits the definition first.
+            inline_merge = (ls <= header_end and le > header_end)
+            if classic or inline_merge:
                 live_end[val_id] = loop_end
 
     # Group vals by prefix bucket
