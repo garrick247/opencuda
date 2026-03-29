@@ -13,7 +13,7 @@ from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
                          CallInst, ParamInst, PrintfInst,
                          BinOp, CmpOp,
                          RetTerm, BrTerm, CondBrTerm)
-from ..ir.types import (Type, ScalarTy, PtrTy, ScalarType, AddrSpace,
+from ..ir.types import (Type, ScalarTy, PtrTy, StructTy, ScalarType, AddrSpace,
                          INT32, UINT32, INT64, UINT64, FLOAT, VOID, DOUBLE, HALF)
 
 
@@ -489,7 +489,21 @@ class PTXEmitter:
                     if decl not in self._module_preamble:
                         self._module_preamble.append(decl)
                 else:
-                    ptx.append(f'    .shared .{ptx_sty} {sname}[{scount}];')
+                    if isinstance(sty, StructTy):
+                        # Struct elements: declare as raw bytes with natural alignment.
+                        # PTX has no struct type; use .align X .b8 name[total_bytes].
+                        total_bytes = sty.size * scount
+                        struct_align = max(
+                            (ft.size for _, ft in sty.fields if hasattr(ft, 'size')),
+                            default=4)
+                        # Clamp to PTX valid alignment (power of 2, max 16)
+                        sa = 1
+                        while sa < struct_align and sa < 16:
+                            sa <<= 1
+                        ptx.append(
+                            f'    .shared .align {sa} .b8 {sname}[{total_bytes}];')
+                    else:
+                        ptx.append(f'    .shared .{ptx_sty} {sname}[{scount}];')
 
         # Local memory (stack) array declarations.
         # Use value ID in the PTX symbol to guarantee uniqueness — two inlined
