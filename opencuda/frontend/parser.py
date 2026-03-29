@@ -939,6 +939,20 @@ class Parser:
                                 index = scaled
                             elem_addr = self._new_val("elem_addr", cv.ty)
                             self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, index))
+                            # &g_struct_arr[idx].field — compute field address
+                            if (self._at(TokKind.DOT)
+                                    and isinstance(cv.ty, PtrTy)
+                                    and isinstance(cv.ty.pointee, StructTy)):
+                                self._advance()  # consume '.'
+                                field = self._expect(TokKind.IDENT).value
+                                elem_ty = cv.ty.pointee
+                                field_off = elem_ty.field_offset(field)
+                                field_ty = elem_ty.field_type(field)
+                                field_ptr_ty = PtrTy(field_ty, cv.ty.addr_space)
+                                field_addr = self._new_val("faddr", field_ptr_ty)
+                                self._emit(BinInst(field_addr, BinOp.ADD,
+                                                   elem_addr, Const(INT32, field_off)))
+                                return field_addr
                             return elem_addr
                         return addr_val
                 if name in self._variables:
