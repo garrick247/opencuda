@@ -435,6 +435,14 @@ class PTXEmitter:
                 ptx_sty = _ptx_type(sty)
                 ptx.append(f'    .shared .{ptx_sty} {sname}[{scount}];')
 
+        # Local memory (stack) array declarations
+        if hasattr(kernel, '_local_decls'):
+            for lname, lty, lcount, _val in kernel._local_decls:
+                elem_bytes = lty.size if hasattr(lty, 'size') else 4
+                total_bytes = elem_bytes * lcount
+                # PTX .local uses .align and .b8 storage
+                ptx.append(f'    .local .align {elem_bytes} .b8 {lname}_local[{total_bytes}];')
+
         # Register declarations
         for prefix, count in sorted(self._reg_counts.items()):
             if prefix == 'rd':
@@ -452,6 +460,17 @@ class PTXEmitter:
         pred_count = max(self._reg_counts.get('p', 1), 1)
         ptx.append(f'    .reg .pred %p<{pred_count}>;')
         ptx.append('')
+
+        # Initialize local (stack) array base pointers.
+        if hasattr(kernel, '_local_decls'):
+            local_inits = []
+            emitted_local_regs: set[str] = set()
+            for lname, _lty, _lcount, lval in kernel._local_decls:
+                reg = self._reg(lval)
+                if reg not in emitted_local_regs:
+                    emitted_local_regs.add(reg)
+                    local_inits.append(f'    mov.u64 {reg}, {lname}_local;')
+            body_lines = local_inits + body_lines
 
         # Initialize shared memory base addresses — one mov per unique phys register.
         # Multiple Values can alias to the same physical register after linear-scan
@@ -737,6 +756,8 @@ class PTXEmitter:
             if isinstance(inst.addr, Value) and isinstance(inst.addr.ty, PtrTy):
                 if inst.addr.ty.addr_space == AddrSpace.SHARED:
                     addr_space = 'shared'
+                elif inst.addr.ty.addr_space == AddrSpace.LOCAL:
+                    addr_space = 'local'
                 elif inst.addr.ty.addr_space == AddrSpace.CONST:
                     addr_space = 'global'
                     nc = True
@@ -762,6 +783,8 @@ class PTXEmitter:
             if isinstance(inst.addr, Value) and isinstance(inst.addr.ty, PtrTy):
                 if inst.addr.ty.addr_space == AddrSpace.SHARED:
                     addr_space = 'shared'
+                elif inst.addr.ty.addr_space == AddrSpace.LOCAL:
+                    addr_space = 'local'
             # Predicate registers cannot be stored directly — convert to 0/1 integer first.
             if isinstance(inst.value, Value) and inst.value.id in self._pred_ids:
                 val_str = self._pred_to_int(inst.value, ptx_ty, kernel)

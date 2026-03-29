@@ -906,6 +906,25 @@ class Parser:
                 while self._match(TokKind.STAR):
                     decl_ty = PtrTy(decl_ty, AddrSpace.GLOBAL)
                 name = self._expect(TokKind.IDENT).value
+
+                # Local array declaration: type name[N];
+                # Allocate in .local memory, expose as a pointer.
+                if self._at(TokKind.LBRACKET):
+                    self._advance()
+                    size_operand = self._parse_assign_expr()
+                    self._expect(TokKind.RBRACKET)
+                    size = int(size_operand.value) if isinstance(size_operand, Const) else 1
+                    arr_ty = PtrTy(decl_ty, AddrSpace.LOCAL)
+                    val = self._new_val(name, arr_ty)
+                    self._variables[name] = val
+                    # Store local array info for codegen
+                    if not hasattr(self._kernel, '_local_decls'):
+                        self._kernel._local_decls = []
+                    self._kernel._local_decls.append((name, decl_ty, size, val))
+                    if not self._match(TokKind.COMMA):
+                        break
+                    continue
+
                 val = self._new_val(name, decl_ty)
                 self._variables[name] = val
 
