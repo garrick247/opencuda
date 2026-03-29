@@ -2927,7 +2927,7 @@ class Parser:
                                    TokKind.STAR_EQ, TokKind.SLASH_EQ, TokKind.PERCENT_EQ,
                                    TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
                                    TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ,
-                                   TokKind.LBRACKET)
+                                   TokKind.LBRACKET, TokKind.DOT)
                     if _nxt and _nxt.kind in _assign_ops:
                         self._advance()  # consume ident
                         addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
@@ -2948,6 +2948,18 @@ class Parser:
                             elem_addr = self._new_val("addr", cv.ty)
                             self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, idx_expr))
                             return elem_addr
+                        # g_struct.field = val — compute field address for StoreInst
+                        if self._at(TokKind.DOT) and isinstance(cv.ty.pointee, StructTy):
+                            self._advance()  # consume '.'
+                            field = self._expect(TokKind.IDENT).value
+                            sty = cv.ty.pointee
+                            field_off = sty.field_offset(field)
+                            field_ty = sty.field_type(field)
+                            field_ptr_ty = PtrTy(field_ty, cv.ty.addr_space)
+                            field_addr = self._new_val("faddr", field_ptr_ty)
+                            self._emit(BinInst(field_addr, BinOp.ADD, addr_val,
+                                               Const(INT32, field_off)))
+                            return field_addr
                         return addr_val
             if name in self._variables:
                 var = self._variables[name]
