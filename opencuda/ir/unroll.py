@@ -18,6 +18,30 @@ from ..ir.nodes import (Kernel, BasicBlock, Value, Const, Operand,
                          RetTerm, BrTerm, CondBrTerm)
 
 
+def _resolve_const_value(val: Value, kernel: Kernel) -> int | None:
+    """Try to resolve a Value to an integer constant by tracing its definition.
+
+    Handles the common pattern where a local variable is initialized to a
+    constant literal before constant folding has run:
+        BinInst(dest=val, ADD, Const(N), Const(0))  →  N
+
+    Returns the integer value if resolvable, None otherwise.
+    """
+    for bb in kernel.blocks:
+        for inst in bb.instructions:
+            if not (isinstance(inst, BinInst) and inst.op == BinOp.ADD):
+                continue
+            if inst.dest.id != val.id:
+                continue
+            if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
+                if isinstance(inst.lhs, Const):
+                    return int(inst.lhs.value)
+            elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
+                if isinstance(inst.rhs, Const):
+                    return int(inst.rhs.value)
+    return None
+
+
 def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
     """Find for-loops with constant bounds that can be unrolled."""
     loops = []
@@ -47,6 +71,14 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
                 and isinstance(cmp_inst.lhs, Value)):
             bound = int(cmp_inst.rhs.value)
             induction_var = cmp_inst.lhs
+        elif (cmp_inst.op == CmpOp.LT
+                and isinstance(cmp_inst.rhs, Value)
+                and isinstance(cmp_inst.lhs, Value)):
+            # `i < len` where `len` is a constant-initialized variable
+            resolved = _resolve_const_value(cmp_inst.rhs, kernel)
+            if resolved is not None:
+                bound = resolved
+                induction_var = cmp_inst.lhs
         elif (cmp_inst.op == CmpOp.GT
                 and isinstance(cmp_inst.lhs, Const)
                 and isinstance(cmp_inst.rhs, Value)):
@@ -59,6 +91,14 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
             # `i <= N` is equivalent to `i < N+1`
             bound = int(cmp_inst.rhs.value) + 1
             induction_var = cmp_inst.lhs
+        elif (cmp_inst.op == CmpOp.LE
+                and isinstance(cmp_inst.rhs, Value)
+                and isinstance(cmp_inst.lhs, Value)):
+            # `i <= len` where `len` is a constant-initialized variable
+            resolved = _resolve_const_value(cmp_inst.rhs, kernel)
+            if resolved is not None:
+                bound = resolved + 1
+                induction_var = cmp_inst.lhs
         elif (cmp_inst.op == CmpOp.GE
                 and isinstance(cmp_inst.lhs, Const)
                 and isinstance(cmp_inst.rhs, Value)):
