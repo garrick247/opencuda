@@ -1036,6 +1036,11 @@ class Parser:
             self._advance()
             tok = self._peek()  # re-read after consuming qualifier(s)
 
+        # Bare block: { stmt; stmt; ... }  — anonymous compound statement
+        if tok.kind == TokKind.LBRACE:
+            self._parse_stmt_or_block()
+            return
+
         # __shared__ declaration: __shared__ type name[size], name[d0][d1]...,
         # or extern __shared__ type name[] (dynamic shared memory, size=0 sentinel).
         if tok.kind == TokKind.KW_SHARED:
