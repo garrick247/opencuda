@@ -2938,7 +2938,7 @@ class Parser:
                             idx_expr = self._parse_expr()
                             self._expect(TokKind.RBRACKET)
                             elem_ty = cv.ty.pointee
-                            elem_size = elem_ty.size if isinstance(elem_ty, ScalarTy) else 8
+                            elem_size = elem_ty.size if isinstance(elem_ty, ScalarTy) else elem_ty.size
                             if elem_size != 1:
                                 idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
                                 scaled = self._new_val("scale", idx_ty)
@@ -2947,6 +2947,17 @@ class Parser:
                                 idx_expr = scaled
                             elem_addr = self._new_val("addr", cv.ty)
                             self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, idx_expr))
+                            # g_struct_arr[idx].field = val — access field of array element
+                            if self._at(TokKind.DOT) and isinstance(elem_ty, StructTy):
+                                self._advance()  # consume '.'
+                                field = self._expect(TokKind.IDENT).value
+                                field_off = elem_ty.field_offset(field)
+                                field_ty = elem_ty.field_type(field)
+                                field_ptr_ty = PtrTy(field_ty, cv.ty.addr_space)
+                                field_addr = self._new_val("faddr", field_ptr_ty)
+                                self._emit(BinInst(field_addr, BinOp.ADD, elem_addr,
+                                                   Const(INT32, field_off)))
+                                return field_addr
                             return elem_addr
                         # g_struct.field = val — compute field address for StoreInst
                         if self._at(TokKind.DOT) and isinstance(cv.ty.pointee, StructTy):
