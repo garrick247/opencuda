@@ -68,6 +68,14 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
 
         if bound is None or not isinstance(induction_var, Value):
             continue
+
+        # The CmpInst we found must be the one the branch actually tests.
+        # If the terminator uses a different predicate (e.g. AND of two conditions),
+        # the loop has a compound condition and must not be unrolled.
+        term_cond = cond_bb.terminator.cond
+        if not (isinstance(term_cond, Value) and term_cond.id == cmp_inst.dest.id):
+            continue
+
         if bound <= 0 or bound > 64:
             continue
 
