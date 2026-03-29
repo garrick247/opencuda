@@ -2248,8 +2248,9 @@ class Parser:
         in all kernels. In PTX, __constant__ arrays are .const globals.
         """
         self._expect(TokKind.KW_CONSTANT)
-        # Optional qualifiers
-        while self._at(TokKind.KW_CONST) or self._at(TokKind.KW_STATIC):
+        # Optional qualifiers (including __device__ in reversed qualifier order)
+        while (self._at(TokKind.KW_CONST) or self._at(TokKind.KW_STATIC)
+               or self._at(TokKind.KW_DEVICE)):
             self._advance()
         ty = self._parse_type_with_ptr()
         name = self._expect(TokKind.IDENT).value
