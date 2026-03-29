@@ -842,34 +842,72 @@ class Parser:
                             lhs = dest
                 elif isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy) and isinstance(lhs.ty.pointee, StructTy):
                     sty = lhs.ty.pointee
-                    field_off = sty.field_offset(member)
-                    field_ty = sty.field_type(member)
-                    # ptr->field: compute address of field
-                    addr = self._new_val("faddr", PtrTy(field_ty, lhs.ty.addr_space))
-                    self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
-                    if isinstance(field_ty, StructTy):
-                        # Nested struct: return the pointer (so next .field access works)
-                        lhs = addr
-                    else:
-                        # Scalar field: load the value
-                        dest = self._new_val(f"{member}", field_ty)
+                    arr_info = self._struct_field_arrays.get(sty.name, {})
+                    if member in arr_info and self._at(TokKind.LBRACKET):
+                        # ptr.data[i] where data is an array member
+                        self._advance()  # consume '['
+                        idx_expr = self._parse_expr()
+                        self._expect(TokKind.RBRACKET)
+                        elem_ty = sty.field_type(f"{member}_0")
+                        n = arr_info[member]
+                        if isinstance(idx_expr, Const):
+                            k = int(idx_expr.value) % n
+                            field_off = sty.field_offset(f"{member}_{k}")
+                        else:
+                            field_off = sty.field_offset(f"{member}_0")
+                        addr = self._new_val("faddr", PtrTy(elem_ty, lhs.ty.addr_space))
+                        self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
+                        dest = self._new_val(f"{member}", elem_ty)
                         self._emit(LoadInst(dest, addr))
                         lhs = dest
+                    else:
+                        field_off = sty.field_offset(member)
+                        field_ty = sty.field_type(member)
+                        # ptr.field: compute address of field
+                        addr = self._new_val("faddr", PtrTy(field_ty, lhs.ty.addr_space))
+                        self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
+                        if isinstance(field_ty, StructTy):
+                            # Nested struct: return the pointer (so next .field access works)
+                            lhs = addr
+                        else:
+                            # Scalar field: load the value
+                            dest = self._new_val(f"{member}", field_ty)
+                            self._emit(LoadInst(dest, addr))
+                            lhs = dest
             elif self._match(TokKind.ARROW):
                 # ptr->field: sugar for (*ptr).field — lhs must be a pointer to struct.
                 member = self._expect(TokKind.IDENT).value
                 if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy) and isinstance(lhs.ty.pointee, StructTy):
                     sty = lhs.ty.pointee
-                    field_off = sty.field_offset(member)
-                    field_ty = sty.field_type(member)
-                    addr = self._new_val("faddr", PtrTy(field_ty, lhs.ty.addr_space))
-                    self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
-                    if isinstance(field_ty, StructTy):
-                        lhs = addr
-                    else:
-                        dest = self._new_val(f"{member}", field_ty)
+                    arr_info = self._struct_field_arrays.get(sty.name, {})
+                    if member in arr_info and self._at(TokKind.LBRACKET):
+                        # ptr->data[i] where data is an array member
+                        self._advance()  # consume '['
+                        idx_expr = self._parse_expr()
+                        self._expect(TokKind.RBRACKET)
+                        elem_ty = sty.field_type(f"{member}_0")
+                        n = arr_info[member]
+                        if isinstance(idx_expr, Const):
+                            k = int(idx_expr.value) % n
+                            field_off = sty.field_offset(f"{member}_{k}")
+                        else:
+                            field_off = sty.field_offset(f"{member}_0")
+                        addr = self._new_val("faddr", PtrTy(elem_ty, lhs.ty.addr_space))
+                        self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
+                        dest = self._new_val(f"{member}", elem_ty)
                         self._emit(LoadInst(dest, addr))
                         lhs = dest
+                    else:
+                        field_off = sty.field_offset(member)
+                        field_ty = sty.field_type(member)
+                        addr = self._new_val("faddr", PtrTy(field_ty, lhs.ty.addr_space))
+                        self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
+                        if isinstance(field_ty, StructTy):
+                            lhs = addr
+                        else:
+                            dest = self._new_val(f"{member}", field_ty)
+                            self._emit(LoadInst(dest, addr))
+                            lhs = dest
                 # else: non-struct pointer arrow — treat as unknown, leave lhs unchanged
             else:
                 break
