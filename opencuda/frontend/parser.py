@@ -939,21 +939,22 @@ class Parser:
                                 index = scaled
                             elem_addr = self._new_val("elem_addr", cv.ty)
                             self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, index))
-                            # &g_struct_arr[idx].field — compute field address
-                            if (self._at(TokKind.DOT)
-                                    and isinstance(cv.ty, PtrTy)
-                                    and isinstance(cv.ty.pointee, StructTy)):
+                            # &g_struct_arr[idx].field[.subfield...] — chain field addresses
+                            cur_addr2 = elem_addr
+                            cur_ty2 = cv.ty.pointee if isinstance(cv.ty, PtrTy) else None
+                            while (self._at(TokKind.DOT)
+                                   and isinstance(cur_ty2, StructTy)):
                                 self._advance()  # consume '.'
                                 field = self._expect(TokKind.IDENT).value
-                                elem_ty = cv.ty.pointee
-                                field_off = elem_ty.field_offset(field)
-                                field_ty = elem_ty.field_type(field)
+                                field_off = cur_ty2.field_offset(field)
+                                field_ty = cur_ty2.field_type(field)
                                 field_ptr_ty = PtrTy(field_ty, cv.ty.addr_space)
                                 field_addr = self._new_val("faddr", field_ptr_ty)
                                 self._emit(BinInst(field_addr, BinOp.ADD,
-                                                   elem_addr, Const(INT32, field_off)))
-                                return field_addr
-                            return elem_addr
+                                                   cur_addr2, Const(INT32, field_off)))
+                                cur_addr2 = field_addr
+                                cur_ty2 = field_ty
+                            return cur_addr2
                         return addr_val
                 if name in self._variables:
                     var = self._variables[name]
@@ -2961,30 +2962,38 @@ class Parser:
                                 idx_expr = scaled
                             elem_addr = self._new_val("addr", cv.ty)
                             self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, idx_expr))
-                            # g_struct_arr[idx].field = val — access field of array element
-                            if self._at(TokKind.DOT) and isinstance(elem_ty, StructTy):
+                            # g_struct_arr[idx].field[.subfield...] = val
+                            cur_addr = elem_addr
+                            cur_ty = elem_ty
+                            while self._at(TokKind.DOT) and isinstance(cur_ty, StructTy):
                                 self._advance()  # consume '.'
                                 field = self._expect(TokKind.IDENT).value
-                                field_off = elem_ty.field_offset(field)
-                                field_ty = elem_ty.field_type(field)
+                                field_off = cur_ty.field_offset(field)
+                                field_ty = cur_ty.field_type(field)
                                 field_ptr_ty = PtrTy(field_ty, cv.ty.addr_space)
                                 field_addr = self._new_val("faddr", field_ptr_ty)
-                                self._emit(BinInst(field_addr, BinOp.ADD, elem_addr,
+                                self._emit(BinInst(field_addr, BinOp.ADD, cur_addr,
                                                    Const(INT32, field_off)))
-                                return field_addr
-                            return elem_addr
-                        # g_struct.field = val — compute field address for StoreInst
+                                cur_addr = field_addr
+                                cur_ty = field_ty
+                            return cur_addr
+                        # g_struct.field[.subfield...] = val — compute field address
                         if self._at(TokKind.DOT) and isinstance(cv.ty.pointee, StructTy):
-                            self._advance()  # consume '.'
-                            field = self._expect(TokKind.IDENT).value
-                            sty = cv.ty.pointee
-                            field_off = sty.field_offset(field)
-                            field_ty = sty.field_type(field)
-                            field_ptr_ty = PtrTy(field_ty, cv.ty.addr_space)
-                            field_addr = self._new_val("faddr", field_ptr_ty)
-                            self._emit(BinInst(field_addr, BinOp.ADD, addr_val,
-                                               Const(INT32, field_off)))
-                            return field_addr
+                            cur_addr = addr_val
+                            cur_ty = cv.ty.pointee
+                            addr_space = cv.ty.addr_space
+                            while self._at(TokKind.DOT) and isinstance(cur_ty, StructTy):
+                                self._advance()  # consume '.'
+                                field = self._expect(TokKind.IDENT).value
+                                field_off = cur_ty.field_offset(field)
+                                field_ty = cur_ty.field_type(field)
+                                field_ptr_ty = PtrTy(field_ty, addr_space)
+                                field_addr = self._new_val("faddr", field_ptr_ty)
+                                self._emit(BinInst(field_addr, BinOp.ADD, cur_addr,
+                                                   Const(INT32, field_off)))
+                                cur_addr = field_addr
+                                cur_ty = field_ty
+                            return cur_addr
                         return addr_val
             if name in self._variables:
                 var = self._variables[name]
