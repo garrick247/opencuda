@@ -14,22 +14,15 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     mov.s32 %r0, 0;
-    mov.s32 %r1, 0;
     bra for_cond_5;
 if_merge_4:
     ret;
 for_cond_5:
-    setp.le.s32 %p0, %r1, 3;
-    @%p0 bra for_body_6;
+    add.s32 %r1, %r0, 1;
+    add.s32 %r2, %r1, 2;
+    add.s32 %r1, %r2, 3;
+    mov.s32 %r0, %r1;
     bra for_exit_8;
-for_body_6:
-    add.s32 %r2, %r0, %r1;
-    mov.s32 %r0, %r2;
-    bra for_inc_7;
-for_inc_7:
-    add.s32 %r2, %r1, 1;
-    mov.s32 %r1, %r2;
-    bra for_cond_5;
 for_exit_8:
     st.global.s32 [%rd0], %r0;
     bra if_merge_4;

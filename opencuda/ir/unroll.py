@@ -53,6 +53,18 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
             # `N > i` is equivalent to `i < N`
             bound = int(cmp_inst.lhs.value)
             induction_var = cmp_inst.rhs
+        elif (cmp_inst.op == CmpOp.LE
+                and isinstance(cmp_inst.rhs, Const)
+                and isinstance(cmp_inst.lhs, Value)):
+            # `i <= N` is equivalent to `i < N+1`
+            bound = int(cmp_inst.rhs.value) + 1
+            induction_var = cmp_inst.lhs
+        elif (cmp_inst.op == CmpOp.GE
+                and isinstance(cmp_inst.lhs, Const)
+                and isinstance(cmp_inst.rhs, Value)):
+            # `N >= i` is equivalent to `i <= N` → `i < N+1`
+            bound = int(cmp_inst.lhs.value) + 1
+            induction_var = cmp_inst.rhs
 
         if bound is None or not isinstance(induction_var, Value):
             continue
