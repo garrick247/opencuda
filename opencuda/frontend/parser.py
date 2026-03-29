@@ -908,7 +908,13 @@ class Parser:
                     break
             has_unsigned_suffix = 'u' in suffix
             has_ll_suffix = 'll' in suffix or 'l' in suffix
-            val = int(raw.rstrip('uUlL'), 0)
+            stripped = raw.rstrip('uUlL')
+            # Python 3 requires 0o prefix for octal; C uses 0 prefix.
+            # Convert C-style octal 0755 → 0o755 before parsing.
+            if (len(stripped) > 1 and stripped[0] == '0'
+                    and stripped[1] not in ('x', 'X', 'b', 'B', 'o', 'O')):
+                stripped = '0o' + stripped[1:]
+            val = int(stripped, 0)
             # C standard §6.4.4.1 type selection:
             # - ll/LL suffix OR value > UINT32_MAX → 64-bit type
             # - u/U suffix  → unsigned (UINT32 or UINT64)
