@@ -628,10 +628,25 @@ class Parser:
                         # Store current value
                         self._emit(StoreInst(addr=spill_val, value=var))
                         return spill_val
-            # Generic fallback
+            # Generic fallback: &expr where expr is a scalar (e.g. &b.min_x for struct field)
             operand = self._parse_unary_expr()
             if isinstance(operand, Value) and isinstance(operand.ty, PtrTy):
                 return operand
+            if (isinstance(operand, Value) and isinstance(operand.ty, ScalarTy)
+                    and self._kernel is not None):
+                # Spill the scalar to .local memory and return a pointer to it
+                spill_name = f"_spill_{operand.name}"
+                local_ty = PtrTy(operand.ty, AddrSpace.LOCAL)
+                if spill_name not in self._variables:
+                    spill_val = self._new_val(spill_name, local_ty)
+                    self._variables[spill_name] = spill_val
+                    if not hasattr(self._kernel, '_local_decls'):
+                        self._kernel._local_decls = []
+                    self._kernel._local_decls.append((spill_name, operand.ty, 1, spill_val))
+                else:
+                    spill_val = self._variables[spill_name]
+                self._emit(StoreInst(addr=spill_val, value=operand))
+                return spill_val
             return operand
         if self._match(TokKind.STAR):
             operand = self._parse_unary_expr()
