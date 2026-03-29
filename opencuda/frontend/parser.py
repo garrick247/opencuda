@@ -2787,7 +2787,7 @@ class Parser:
                     return var  # return pointer; StoreInst will be emitted by caller
         if tok.kind == TokKind.IDENT:
             name = tok.value
-            # Global device variable lvalue: g_counter = val; or g_counter += val;
+            # Global device variable lvalue: g_counter = val; or g_arr[i] = val;
             # The variable lives in _global_consts as a SymbolRef, not _variables.
             # Return its address so the assignment handler can emit StoreInst.
             if (name not in self._variables and name in self._global_consts):
@@ -2803,6 +2803,22 @@ class Parser:
                         self._advance()  # consume ident
                         addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
                         self._emit(GlobalAddrInst(addr_val, cv.sym_name, cv.ty.addr_space))
+                        # g_arr[idx] = val — consume subscript and compute element address
+                        if self._at(TokKind.LBRACKET):
+                            self._advance()  # consume '['
+                            idx_expr = self._parse_expr()
+                            self._expect(TokKind.RBRACKET)
+                            elem_ty = cv.ty.pointee
+                            elem_size = elem_ty.size if isinstance(elem_ty, ScalarTy) else 8
+                            if elem_size != 1:
+                                idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
+                                scaled = self._new_val("scale", idx_ty)
+                                self._emit(BinInst(scaled, BinOp.MUL, idx_expr,
+                                                   Const(idx_ty, elem_size)))
+                                idx_expr = scaled
+                            elem_addr = self._new_val("addr", cv.ty)
+                            self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, idx_expr))
+                            return elem_addr
                         return addr_val
             if name in self._variables:
                 var = self._variables[name]
