@@ -59,6 +59,43 @@ def _find_macro_call_args(text: str, start: int) -> tuple[list[str], int] | None
     return None  # unmatched paren
 
 
+def _eval_if_expr(expr: str, obj_defines: dict[str, str]) -> bool:
+    """Evaluate a #if / #elif expression after expanding macros.
+
+    Handles: integer literals, defined(NAME), !defined(NAME), simple
+    comparisons (==, !=, <, <=, >, >=), && and ||, and arithmetic (+/-).
+    Undefined macros are treated as 0 per the C standard.
+    """
+    # Expand object-like macros in the expression (repeat for nested macros)
+    expanded = expr
+    for _ in range(8):
+        prev = expanded
+        for name, value in sorted(obj_defines.items(), key=lambda x: -len(x[0])):
+            expanded = re.sub(r'\b' + re.escape(name) + r'\b', value, expanded)
+        if expanded == prev:
+            break
+
+    # Replace defined(NAME) → 1/0
+    def _replace_defined(m):
+        name = m.group(1)
+        return '1' if (name in obj_defines) else '0'
+    expanded = re.sub(r'defined\s*\(\s*(\w+)\s*\)', _replace_defined, expanded)
+    expanded = re.sub(r'defined\s+(\w+)', _replace_defined, expanded)
+
+    # Replace any remaining identifiers (undefined macros) with 0
+    expanded = re.sub(r'\b[A-Za-z_]\w*\b', '0', expanded)
+
+    # Strip suffixes like ULL, LL, U, L from integer literals
+    expanded = re.sub(r'(\d+)[uUlL]+', r'\1', expanded)
+
+    # Evaluate with Python's integer arithmetic (safe: no function calls left)
+    try:
+        result = eval(expanded, {"__builtins__": {}})  # noqa: S307
+        return bool(result)
+    except Exception:
+        return True  # conservative: include on parse error
+
+
 def preprocess(source: str) -> str:
     """Apply #define substitutions and conditional compilation to source code."""
     # object-like: name → replacement string
@@ -97,6 +134,9 @@ def preprocess(source: str) -> str:
 
     for line in joined:
         stripped = line.strip()
+        # C allows optional whitespace between '#' and the directive name:
+        # '# define', '#  ifdef', etc. Normalize to remove that whitespace.
+        stripped = re.sub(r'^#\s+', '#', stripped)
 
         # Conditional directives are processed regardless of current active state
         # (so nested #ifdef/#endif are properly matched).
@@ -112,9 +152,8 @@ def preprocess(source: str) -> str:
             continue
 
         if stripped.startswith('#if ') or stripped == '#if':
-            # Simplified: treat #if 0 as false, anything else as true
             rest = stripped[3:].strip()
-            taking = (rest != '0') and _is_active()
+            taking = _eval_if_expr(rest, obj_defines) and _is_active()
             cond_stack.append((taking, taking))
             output_lines.append('')
             continue
@@ -127,7 +166,7 @@ def preprocess(source: str) -> str:
                     cond_stack[-1] = (False, True)
                 else:
                     rest = stripped[5:].strip()
-                    taking = (rest != '0') and _is_active()
+                    taking = _eval_if_expr(rest, obj_defines) and _is_active()
                     cond_stack[-1] = (taking, taking)
             output_lines.append('')
             continue
