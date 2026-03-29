@@ -1214,6 +1214,17 @@ class Parser:
                     return_merge = self._new_block(f"inline_{name}_merge")
                     self._inline_return_target = (return_dest, return_merge.label)
 
+                    # Isolate the inlined body from the caller's scope stack.
+                    # Without this, _declare_local() calls inside the inlined
+                    # body add variable names to the CALLER's current scope set.
+                    # At the caller's scope exit, those names would be treated
+                    # as shadowing declarations and the outer binding would be
+                    # restored — erasing any modifications the caller made to
+                    # same-named variables before the call (e.g. an accumulator
+                    # named 'result' when abs_val also declares 'result').
+                    saved_scope_stack = self._scope_locals_stack
+                    self._scope_locals_stack = []
+
                     # Parse entire body using normal statement parsing
                     self._pos = dfunc['body_start']
                     self._expect(TokKind.LBRACE)
@@ -1230,6 +1241,7 @@ class Parser:
                     self._pos = saved_pos
                     self._variables = saved_vars
                     self._inline_return_target = saved_inline_target
+                    self._scope_locals_stack = saved_scope_stack
                     return return_dest
                 else:
                     # Infer return type for known math intrinsics; fallback INT32.
