@@ -1489,11 +1489,12 @@ class Parser:
                 self._loop_writeback(loop_vars)
                 self._cur_block.terminator = BrTerm(inc_bb.label)
 
-            # Emit increment
+            # Emit increment (may be empty: for(init; cond;))
             self._cur_block = inc_bb
             saved_pos = self._pos
             self._pos = inc_start
-            self._parse_expr()
+            if self._toks[inc_start].kind != TokKind.RPAREN:
+                self._parse_expr()
             self._pos = saved_pos
 
             # Write back any variables modified by the increment expression
