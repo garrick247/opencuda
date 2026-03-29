@@ -482,14 +482,21 @@ class Parser:
                 # iterations.  Mirrors the same materialization done for scalar
                 # declarations with const initializers (int i = 0 → BinInst+Value).
                 prev = self._variables[update_name]
-                if (isinstance(rhs, Const)
-                        and isinstance(prev, Value)
+                if (isinstance(prev, Value)
                         and isinstance(prev.ty, ScalarTy)
                         and isinstance(rhs.ty, ScalarTy)):
-                    mat = self._new_val(update_name, prev.ty)
-                    _zero = Const(prev.ty, 0.0 if prev.ty.is_float else 0)
-                    self._emit(BinInst(mat, BinOp.ADD, rhs, _zero))
-                    rhs = mat
+                    if (isinstance(rhs, Const)
+                            or (isinstance(rhs, Value) and rhs.name != update_name)):
+                        # Materialize: emit an identity copy so the target has its
+                        # own dedicated register.  This is critical for loop-carry:
+                        # if rhs is a different-named Value (e.g. s.count = n assigns
+                        # the n param to s_count), the loop writeback would otherwise
+                        # use the rhs register as the canonical entry, modifying the
+                        # wrong register on writeback (e.g. decrementing n itself).
+                        mat = self._new_val(update_name, prev.ty)
+                        _zero = Const(prev.ty, 0.0 if prev.ty.is_float else 0)
+                        self._emit(BinInst(mat, BinOp.ADD, rhs, _zero))
+                        rhs = mat
                 self._variables[update_name] = rhs
                 # Struct-to-struct assignment: propagate per-field values so that
                 # downstream field accesses (acc.tx, acc.ty, ...) see the new values.
@@ -511,6 +518,15 @@ class Parser:
                                 _new_fv, BinOp.ADD, _src_f,
                                 Const(_fty, 0.0 if _fty.is_float else 0)))
                             self._variables[_dest_fkey] = _new_fv
+                    # Restore the struct sentinel with the LHS variable name so
+                    # subsequent "s.field" lookups build field_key = "s_field"
+                    # (not "rhs_name_field" when rhs is an inline return sentinel).
+                    cur_sent = self._variables.get(update_name)
+                    if (isinstance(cur_sent, Value)
+                            and isinstance(cur_sent.ty, StructTy)
+                            and cur_sent.name != update_name):
+                        fresh_sent = self._new_val(update_name, cur_sent.ty)
+                        self._variables[update_name] = fresh_sent
             return rhs
         # Compound assignment: +=, -=, *=
         for tok_kind, op in [(TokKind.PLUS_EQ, BinOp.ADD),
@@ -2461,7 +2477,9 @@ class Parser:
                                    TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
                                    TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ)
                     if (assign_pos < len(self._toks)
-                            and self._toks[assign_pos].kind in _assign_ops):
+                            and (self._toks[assign_pos].kind in _assign_ops
+                                 or self._toks[assign_pos].kind in (
+                                     TokKind.PLUSPLUS, TokKind.MINUSMINUS))):
                         compound_name = f"{cand}_{field_name}"
                         if compound_name in self._variables:
                             _stmt_lhs_name = compound_name
@@ -2513,6 +2531,22 @@ class Parser:
             elif isinstance(lhs, Value):
                 update_name = _stmt_lhs_name or lhs.name
                 if update_name in self._variables:
+                    prev = self._variables[update_name]
+                    # For scalar assignments where rhs is a Value with a different
+                    # name, emit an identity copy to decouple the target register
+                    # from the source.  Without this, loop-carried writeback would
+                    # use the source register as the canonical entry Value and
+                    # incorrectly modify it instead of the target (e.g. s.count = n
+                    # followed by s.count-- would decrement the n param register).
+                    if (isinstance(rhs, Value)
+                            and isinstance(prev, Value)
+                            and isinstance(prev.ty, ScalarTy)
+                            and isinstance(rhs.ty, ScalarTy)
+                            and rhs.name != update_name):
+                        mat = self._new_val(update_name, prev.ty)
+                        self._emit(BinInst(mat, BinOp.ADD, rhs,
+                                           Const(prev.ty, 0.0 if prev.ty.is_float else 0)))
+                        rhs = mat
                     self._variables[update_name] = rhs
                     # For struct-to-struct assignment, propagate per-field values
                     # so downstream field accesses (v.x, v.y, ...) see the new values.
@@ -2531,6 +2565,16 @@ class Parser:
                                     _new_fv, BinOp.ADD, _src_f,
                                     Const(_fty, 0.0 if _fty.is_float else 0)))
                                 self._variables[_dest_fkey] = _new_fv
+                        # Restore the struct sentinel with the LHS variable name so
+                        # subsequent "s.field" lookups build field_key = "s_field"
+                        # (not "rhs_name_field" when rhs came from an inline return
+                        # with a different sentinel name, e.g. "add_sample_ret").
+                        cur_sent = self._variables.get(update_name)
+                        if (isinstance(cur_sent, Value)
+                                and isinstance(cur_sent.ty, StructTy)
+                                and cur_sent.name != update_name):
+                            fresh_sent = self._new_val(update_name, cur_sent.ty)
+                            self._variables[update_name] = fresh_sent
             # Comma-separated assignments: a = 0, b = 0; (for-loop init style)
             while self._match(TokKind.COMMA):
                 lhs2_name = self._peek().value if self._at(TokKind.IDENT) else None
