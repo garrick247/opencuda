@@ -197,6 +197,8 @@ def preprocess(source: str) -> str:
             name = m.group(1)
             params = [p.strip() for p in m.group(2).split(',') if p.strip()]
             body = m.group(3).strip()
+            # Strip trailing // comment from body so it doesn't infect expansions.
+            body = re.sub(r'\s*//.*$', '', body)
             func_defines[name] = (params, body)
             output_lines.append('')  # preserve line numbers
             continue
@@ -205,6 +207,8 @@ def preprocess(source: str) -> str:
         m = re.match(r'#define\s+(\w+)\s+(.*)', stripped)
         if m:
             name, value = m.group(1), m.group(2).strip()
+            # Strip trailing // comment from value.
+            value = re.sub(r'\s*//.*$', '', value).strip()
             obj_defines[name] = value
             output_lines.append('')
             continue
