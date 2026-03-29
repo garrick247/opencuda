@@ -547,8 +547,25 @@ class Parser:
                             addr = self._new_val("addr", var.ty)
                             self._emit(BinInst(addr, BinOp.ADD, var, index))
                             return addr  # return address, no load
-                        # Not array index, restore
-                        self._pos = saved
+                        # Not array index: &ptr_var → return the pointer itself
+                        self._advance()  # consume ident
+                        return var
+                    elif isinstance(var.ty, ScalarTy):
+                        # &scalar_local — spill to .local, return pointer to it
+                        self._advance()  # consume ident
+                        spill_name = f"_spill_{name}"
+                        local_ty = PtrTy(var.ty, AddrSpace.LOCAL)
+                        if spill_name not in self._variables:
+                            spill_val = self._new_val(spill_name, local_ty)
+                            self._variables[spill_name] = spill_val
+                            if not hasattr(self._kernel, '_local_decls'):
+                                self._kernel._local_decls = []
+                            self._kernel._local_decls.append((spill_name, var.ty, 1, spill_val))
+                        else:
+                            spill_val = self._variables[spill_name]
+                        # Store current value
+                        self._emit(StoreInst(addr=spill_val, value=var))
+                        return spill_val
             # Generic fallback
             operand = self._parse_unary_expr()
             if isinstance(operand, Value) and isinstance(operand.ty, PtrTy):
@@ -2037,6 +2054,20 @@ class Parser:
             sz_op = self._parse_assign_expr()
             size = int(sz_op.value) if isinstance(sz_op, Const) else 1
             self._expect(TokKind.RBRACKET)
+        # Optional initializer: = { ... } or = expr — skip for module-level constants
+        if self._match(TokKind.ASSIGN):
+            depth = 0
+            while not self._at(TokKind.EOF):
+                if self._peek().kind == TokKind.LBRACE:
+                    depth += 1; self._advance()
+                elif self._peek().kind == TokKind.RBRACE:
+                    depth -= 1; self._advance()
+                    if depth == 0:
+                        break
+                elif depth == 0 and self._peek().kind == TokKind.SEMI:
+                    break
+                else:
+                    self._advance()
         self._match(TokKind.SEMI)
         # Register as a module-level constant pointer (AddrSpace.CONST or GLOBAL)
         # Kernels that reference this name get a pointer Value they can index into.
@@ -2072,7 +2103,11 @@ class Parser:
                 else:
                     # Module-level __device__ variable: consume __device__ + qualifiers,
                     # parse the declaration, register as a global symbol ref.
+                    is_const = False
                     while self._at(TokKind.KW_DEVICE) or self._at(TokKind.KW_STATIC):
+                        self._advance()
+                    if self._at(TokKind.KW_CONSTANT):
+                        is_const = True
                         self._advance()
                     ty = self._parse_type_with_ptr()
                     name = self._expect(TokKind.IDENT).value
@@ -2082,10 +2117,25 @@ class Parser:
                         sz_op = self._parse_assign_expr()
                         count = int(sz_op.value) if isinstance(sz_op, Const) else 1
                         self._expect(TokKind.RBRACKET)
+                    # Optional initializer: = { ... } or = expr — skip for module-level
+                    if self._match(TokKind.ASSIGN):
+                        depth = 0
+                        while not self._at(TokKind.EOF):
+                            if self._peek().kind == TokKind.LBRACE:
+                                depth += 1; self._advance()
+                            elif self._peek().kind == TokKind.RBRACE:
+                                depth -= 1; self._advance()
+                                if depth == 0:
+                                    break
+                            elif depth == 0 and self._peek().kind == TokKind.SEMI:
+                                break
+                            else:
+                                self._advance()
                     self._match(TokKind.SEMI)
-                    ptr_ty = PtrTy(ty, AddrSpace.GLOBAL)
+                    addr = AddrSpace.CONST if is_const else AddrSpace.GLOBAL
+                    ptr_ty = PtrTy(ty, addr)
                     self._global_consts[name] = SymbolRef(name, ptr_ty)
-                    mod.global_vars.append((name, ty, count, AddrSpace.GLOBAL))
+                    mod.global_vars.append((name, ty, count, addr))
             elif self._at(TokKind.KW_SHARED):
                 # Module-level extern __shared__ type name[]; — dynamic shared memory.
                 # Register as a pending declaration injected into every kernel that follows.

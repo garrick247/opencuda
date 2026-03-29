@@ -226,9 +226,14 @@ def preprocess(source: str) -> str:
                 if not changed:
                     break
 
-        # Apply object-like substitutions (whole-word only)
-        for name, value in sorted(obj_defines.items(), key=lambda x: -len(x[0])):
-            result = re.sub(r'\b' + re.escape(name) + r'\b', value, result)
+        # Apply object-like substitutions (whole-word only).
+        # Repeat until stable to handle macros whose values reference other macros.
+        for _ in range(8):
+            prev = result
+            for name, value in sorted(obj_defines.items(), key=lambda x: -len(x[0])):
+                result = re.sub(r'\b' + re.escape(name) + r'\b', value, result)
+            if result == prev:
+                break
 
         output_lines.append(result)
 
