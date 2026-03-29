@@ -1440,15 +1440,28 @@ def ir_to_ptx(module: Module) -> dict[str, str]:
     if module.global_vars:
         decl_lines = []
         for (sym_name, elem_ty, count, addr_space) in module.global_vars:
-            ptx_ty = _ptx_type(elem_ty)
-            align = elem_ty.size if isinstance(elem_ty, ScalarTy) else 8
             space = 'const' if addr_space == AddrSpace.CONST else 'global'
-            if count > 1:
+            if isinstance(elem_ty, StructTy):
+                # Struct global: allocate raw bytes for the full struct (× count).
+                # Using .u32 would only allocate 4 bytes regardless of struct size.
+                struct_align = max(
+                    (ft.size for _, ft in elem_ty.fields if hasattr(ft, 'size')),
+                    default=4)
+                sa = 1
+                while sa < struct_align and sa < 16:
+                    sa <<= 1
+                total_bytes = elem_ty.size * count
                 decl_lines.append(
-                    f'.visible .{space} .align {align} .{ptx_ty} {sym_name}[{count}];')
+                    f'.visible .{space} .align {sa} .b8 {sym_name}[{total_bytes}];')
             else:
-                decl_lines.append(
-                    f'.visible .{space} .align {align} .{ptx_ty} {sym_name};')
+                ptx_ty = _ptx_type(elem_ty)
+                align = elem_ty.size if isinstance(elem_ty, ScalarTy) else 8
+                if count > 1:
+                    decl_lines.append(
+                        f'.visible .{space} .align {align} .{ptx_ty} {sym_name}[{count}];')
+                else:
+                    decl_lines.append(
+                        f'.visible .{space} .align {align} .{ptx_ty} {sym_name};')
         emitter._module_preamble = decl_lines + emitter._module_preamble
 
     # Collect module-level preamble (global var decls, printf globals, vprintf extern)
