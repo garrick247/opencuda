@@ -1168,7 +1168,8 @@ class Parser:
                 else:
                     # Infer return type for known math intrinsics; fallback INT32.
                     _void_stmts   = ('__threadfence', '__threadfence_block',
-                                     '__threadfence_system')
+                                     '__threadfence_system',
+                                     '__nanosleep', '__trap', '__brkpt')
                     _float_unary  = ('sqrtf','rsqrtf','rcpf','fabsf','sinf','cosf',
                                      'tanf','expf','exp2f','exp10f','logf','log2f','log10f',
                                      'floorf','ceilf','roundf','truncf',
@@ -1186,6 +1187,7 @@ class Parser:
                                      '__syncthreads_or')
                     _int_ops      = ('__popc', '__popcll', '__clz', '__clzll',
                                      '__brev', '__brevll', '__ffs', '__ffsll')
+                    _clock_ops    = ('clock64', '__clock64', 'clock')
                     if name in _void_stmts:
                         self._emit(CallInst(None, name, args))
                         return Const(VOID, 0)
@@ -1213,6 +1215,12 @@ class Parser:
                             ret_ty = UINT32
                         else:
                             ret_ty = INT32
+                        dest = self._new_val(name, ret_ty)
+                        self._emit(CallInst(dest, name, args))
+                        return dest
+                    elif name in _clock_ops:
+                        # clock64() → u64; clock() → u32
+                        ret_ty = UINT64 if '64' in name else UINT32
                         dest = self._new_val(name, ret_ty)
                         self._emit(CallInst(dest, name, args))
                         return dest

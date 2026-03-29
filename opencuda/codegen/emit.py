@@ -1167,12 +1167,30 @@ class PTXEmitter:
                     'fmaxf': 'max.f32', 'fmax': 'max.f32',
                 }
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
-                if inst.func in ('__threadfence',):
+                if inst.func in ('__nanosleep',):
+                    # Turing+ warp-level sleep: nanosleep.approx.u32 delay_ns
+                    ns_arg = inst.args[0] if inst.args else None
+                    ns = self._operand(ns_arg) if ns_arg is not None else '0'
+                    self._lines.append(f'    nanosleep.u32 {ns};')
+                elif inst.func in ('__trap',):
+                    self._lines.append('    trap;')
+                elif inst.func in ('__brkpt',):
+                    self._lines.append('    brkpt;')
+                elif inst.func in ('clock64', '__clock64'):
+                    # 64-bit hardware cycle counter
+                    self._lines.append(f'    mov.u64 {dest}, %clock64;')
+                elif inst.func in ('clock',):
+                    # 32-bit hardware cycle counter
+                    self._lines.append(f'    mov.u32 {dest}, %clock;')
+                elif inst.func in ('__threadfence',):
                     # Global memory fence (visible to all threads)
                     self._lines.append('    membar.gl;')
                 elif inst.func in ('__threadfence_block',):
                     # Block-level memory fence
                     self._lines.append('    membar.cta;')
+                elif inst.func in ('__threadfence_system',):
+                    # System-wide memory fence (GPU + CPU)
+                    self._lines.append('    membar.sys;')
                 elif inst.func in ('__syncwarp',):
                     # Warp-level synchronization
                     mask = self._operand(inst.args[0]) if inst.args else '0xffffffff'
