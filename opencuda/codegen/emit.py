@@ -940,7 +940,7 @@ class PTXEmitter:
                 self._lines.append(f'    mov.u64 {self._reg(valist_local)}, _valist_{n};')
 
                 for i, arg in enumerate(inst.args):
-                    arg_ty = arg.ty if isinstance(arg, Value) else INT32
+                    arg_ty = arg.ty if isinstance(arg, (Value, Const)) else INT32
                     if _is_float(arg_ty) and not _is_64bit(arg_ty):
                         # Promote f32 → f64
                         promoted = kernel.new_value(f'_va_arg_{n}_{i}', DOUBLE)

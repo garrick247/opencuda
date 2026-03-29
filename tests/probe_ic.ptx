@@ -1,0 +1,156 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry atomic_all(
+    .param .u64 out_add, .param .u64 out_max, .param .u64 out_min, .param .u64 out_and, .param .u64 out_or, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out_add];
+    ld.param.u64 %rd1, [out_max];
+    ld.param.u64 %rd2, [out_min];
+    ld.param.u64 %rd3, [out_and];
+    ld.param.u64 %rd4, [out_or];
+    ld.param.u64 %rd5, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd7, %r0;
+    add.u64 %rd6, %rd5, %rd7;
+    ld.global.s32 %r1, [%rd6];
+    atom.global.add.s32 %r2, [%rd0], %r1;
+    atom.global.max.s32 %r0, [%rd1], %r1;
+    atom.global.min.s32 %r2, [%rd2], %r1;
+    cvt.u32.s32 %r0, %r1;
+    atom.global.and.b32 %r2, [%rd3], %r0;
+    atom.global.or.b32 %r1, [%rd4], %r0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry float_atomic(
+    .param .u64 sum, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<2>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [sum];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    atom.global.add.f32 %f1, [%rd0], %f0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry exch_cas(
+    .param .u64 lock, .param .u64 data, .param .s32 new_val, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<2>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [lock];
+    ld.param.u64 %rd1, [data];
+    ld.param.s32 %r0, [new_val];
+    ld.param.s32 %r1, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra do_body_5;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+do_body_5:
+    atom.global.cas.b32 %r1, [%rd0], 0, 1;
+    bra do_cond_6;
+do_cond_6:
+    setp.ne.s32 %p0, %r1, 0;
+    @%p0 bra do_body_5;
+    bra do_exit_7;
+do_exit_7:
+    st.global.s32 [%rd1], %r0;
+    atom.global.exch.b32 %r2, [%rd0], 0;
+    bra if_merge_4;
+}
+
+.visible .entry shared_histogram(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .shared .s32 hist[16];
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<8>;
+    .reg .pred %p<1>;
+
+    mov.u64 %rd1, hist;
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd2, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, 16;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd3, %rd1, %rd4;
+    st.shared.s32 [%rd3], 0;
+    bra if_merge_4;
+if_merge_4:
+    bar.sync 0;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd3, %rd2, %rd5;
+    ld.global.s32 %r1, [%rd3];
+    and.b32 %r0, %r1, 15;
+    shl.b32 %r1, %r0, 2;
+    cvt.s64.s32 %rd6, %r1;
+    add.u64 %rd2, %rd1, %rd6;
+    atom.shared.add.s32 %r0, [%rd2], 1;
+    bra if_merge_7;
+if_merge_7:
+    bar.sync 0;
+    setp.lt.s32 %p0, %r2, 16;
+    @%p0 bra if_true_8;
+    bra if_merge_10;
+if_true_8:
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd7, %r1;
+    add.u64 %rd3, %rd0, %rd7;
+    add.u64 %rd2, %rd1, %rd7;
+    ld.shared.s32 %r0, [%rd2];
+    st.global.s32 [%rd3], %r0;
+    bra if_merge_10;
+if_merge_10:
+    ret;
+}
