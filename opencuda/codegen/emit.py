@@ -1478,6 +1478,62 @@ class PTXEmitter:
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
                     acc = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
                     self._lines.append(f'    sad.{ptx_ty} {dest}, {a}, {b}, {acc};')
+                elif inst.func == 'warpSize':
+                    # CUDA warp size is always 32 (SM constant).
+                    self._lines.append(f'    mov.u32 {dest}, 32;')
+                elif inst.func in ('__mul24',):
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    mul24.lo.s32 {dest}, {a}, {b};')
+                elif inst.func in ('__umul24',):
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    mul24.lo.u32 {dest}, {a}, {b};')
+                elif inst.func in ('__mulhi',):
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    mul.hi.s32 {dest}, {a}, {b};')
+                elif inst.func in ('__umulhi',):
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    self._lines.append(f'    mul.hi.u32 {dest}, {a}, {b};')
+                elif inst.func in ('__hadd',):
+                    # Halving add (no overflow): (a + b) >> 1 (signed arithmetic shift)
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    n = inst.dest.id if inst.dest else 0
+                    tmp = kernel.new_value(f'_hadd_tmp_{n}', INT32)
+                    self._lines.append(f'    add.s32 {self._reg(tmp)}, {a}, {b};')
+                    self._lines.append(f'    shr.s32 {dest}, {self._reg(tmp)}, 1;')
+                elif inst.func in ('__rhadd',):
+                    # Rounding halving add: (a + b + 1) >> 1 (unsigned)
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    n = inst.dest.id if inst.dest else 0
+                    tmp = kernel.new_value(f'_rhadd_tmp_{n}', UINT32)
+                    self._lines.append(f'    add.u32 {self._reg(tmp)}, {a}, {b};')
+                    self._lines.append(f'    add.u32 {self._reg(tmp)}, {self._reg(tmp)}, 1;')
+                    self._lines.append(f'    shr.u32 {dest}, {self._reg(tmp)}, 1;')
+                elif inst.func in ('__byte_perm',):
+                    # Byte permutation: prmt.b32 dest, a, b, selector
+                    a = self._operand(inst.args[0]) if inst.args else '0'
+                    b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    sel = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                    self._lines.append(f'    prmt.b32 {dest}, {a}, {b}, {sel};')
+                elif inst.func in ('__funnelshift_l', '__funnelshift_lc'):
+                    # Funnel shift left: shf.l.wrap.b32 dest, lo, hi, shift
+                    lo = self._operand(inst.args[0]) if inst.args else '0'
+                    hi = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    sh = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                    clamp = 'clamp' if inst.func.endswith('c') else 'wrap'
+                    self._lines.append(f'    shf.l.{clamp}.b32 {dest}, {lo}, {hi}, {sh};')
+                elif inst.func in ('__funnelshift_r', '__funnelshift_rc'):
+                    # Funnel shift right: shf.r.wrap.b32 dest, lo, hi, shift
+                    lo = self._operand(inst.args[0]) if inst.args else '0'
+                    hi = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    sh = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                    clamp = 'clamp' if inst.func.endswith('c') else 'wrap'
+                    self._lines.append(f'    shf.r.{clamp}.b32 {dest}, {lo}, {hi}, {sh};')
 
     def _emit_term(self, term):
         if isinstance(term, RetTerm):

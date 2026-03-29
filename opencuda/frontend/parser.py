@@ -1783,6 +1783,11 @@ class Parser:
                                      '__int_as_float', '__uint_as_float',
                                      '__longlong_as_double', '__ulonglong_as_double')
                     _sad_ops      = ('__sad', '__usad')
+                    _int_binary2  = ('__mul24', '__mulhi', '__hadd')
+                    _uint_binary2 = ('__umul24', '__umulhi', '__rhadd',
+                                     '__byte_perm',
+                                     '__funnelshift_l', '__funnelshift_r',
+                                     '__funnelshift_lc', '__funnelshift_rc')
                     if name in _void_stmts:
                         self._emit(CallInst(None, name, args))
                         return Const(VOID, 0)
@@ -1827,6 +1832,10 @@ class Parser:
                         ret_ty = DOUBLE if 'double' in name else FLOAT
                     elif name in _sad_ops:
                         ret_ty = UINT32 if name == '__usad' else INT32
+                    elif name in _int_binary2:
+                        ret_ty = INT32
+                    elif name in _uint_binary2:
+                        ret_ty = UINT32
                     elif name in _float_unary:
                         ret_ty = FLOAT
                     elif name in _float_binary:
@@ -1892,6 +1901,12 @@ class Parser:
             # Built-in names (threadIdx, blockIdx, blockDim)
             if name in ('threadIdx', 'blockIdx', 'blockDim', 'gridDim'):
                 return Value(name, INT32)  # placeholder, resolved by .member access
+
+            # warpSize: CUDA built-in constant = 32 (PTX %warpsize register)
+            if name == 'warpSize':
+                dest = self._new_val('warpSize', UINT32)
+                self._emit(CallInst(dest, 'warpSize', []))
+                return dest
 
             raise ParseError(f"Line {tok.line}: undefined variable '{name}'")
 
