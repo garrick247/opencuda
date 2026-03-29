@@ -168,15 +168,21 @@ class Parser:
         Both qualifiers must be present: const alone doesn't exclude aliasing,
         and __restrict__ alone doesn't make the data read-only.
         """
-        # Track const on the pointee (before or immediately after the base type)
+        # Track const on the pointee (before or immediately after the base type).
+        # volatile is silently consumed — at the PTX level every ld/st is already
+        # emitted as-is; there is no instruction to skip due to a volatile qualifier.
+        self._match(TokKind.KW_VOLATILE)  # volatile before type (e.g. volatile int *)
         pointee_const = self._match(TokKind.KW_CONST)
+        self._match(TokKind.KW_VOLATILE)  # volatile after const (e.g. const volatile T *)
         base = self._parse_type()
-        # "float const *" — const after base type also means pointee-const
+        # "float const *" or "float volatile *" — qualifier after base type
         if self._match(TokKind.KW_CONST):
             pointee_const = True
+        self._match(TokKind.KW_VOLATILE)
         while self._match(TokKind.STAR):
             # "float * const" — const AFTER star means pointer-const, not pointee-const
             ptr_const = self._match(TokKind.KW_CONST)  # noqa: F841 (consumed, not used)
+            self._match(TokKind.KW_VOLATILE)            # "float * volatile" — skip
             base = PtrTy(base, AddrSpace.GLOBAL)
         # __restrict__ qualifier
         has_restrict = (self._at(TokKind.IDENT) and self._peek().value == '__restrict__')
@@ -749,7 +755,18 @@ class Parser:
                         self._emit(CallInst(dest, name, args))
                         return dest
                     elif name in _int_ops:
-                        ret_ty = UINT32 if name in ('__popcll', '__brevll') else INT32
+                        # __popc/__clz: int result, arg width determines PTX type
+                        # __brev:   unsigned int result (same width as arg)
+                        # __brevll: unsigned long long result (64-bit)
+                        # __popcll/__clzll: int result, but arg is 64-bit
+                        if name == '__brevll':
+                            ret_ty = UINT64
+                        elif name in ('__popcll', '__clzll'):
+                            ret_ty = INT32
+                        elif name == '__brev':
+                            ret_ty = UINT32
+                        else:
+                            ret_ty = INT32
                         dest = self._new_val(name, ret_ty)
                         self._emit(CallInst(dest, name, args))
                         return dest
@@ -809,10 +826,13 @@ class Parser:
     def _parse_stmt(self):
         tok = self._peek()
 
-        # const declaration: skip the 'const' keyword and parse as normal
-        if tok.kind == TokKind.KW_CONST:
+        # const/volatile declaration: skip the qualifier and parse as normal
+        if tok.kind in (TokKind.KW_CONST, TokKind.KW_VOLATILE):
             self._advance()
-            tok = self._peek()  # re-read after consuming 'const'
+            # Allow both (e.g. const volatile or volatile const)
+            if self._at(TokKind.KW_CONST) or self._at(TokKind.KW_VOLATILE):
+                self._advance()
+            tok = self._peek()  # re-read after consuming qualifier(s)
 
         # __shared__ declaration: __shared__ type name[size];
         if tok.kind == TokKind.KW_SHARED:
@@ -834,39 +854,48 @@ class Parser:
             self._kernel._shared_decls.append((name, ty, size))
             return
 
-        # Variable declaration: type name [= expr];
+        # Variable declaration: type name [= expr] [, name2 [= expr2]] ...;
+        # Handles both single and multiple comma-separated declarators.
         if tok.kind in (TokKind.KW_INT, TokKind.KW_UNSIGNED, TokKind.KW_FLOAT,
                         TokKind.KW_DOUBLE, TokKind.KW_VOID, TokKind.KW_LONG,
                         TokKind.KW_HALF):
             ty = self._parse_type_with_ptr()
-            name = self._expect(TokKind.IDENT).value
-            val = self._new_val(name, ty)
-            self._variables[name] = val
+            while True:
+                # Each declarator may have its own pointer stars: int *a, b, *c;
+                decl_ty = ty
+                while self._match(TokKind.STAR):
+                    decl_ty = PtrTy(decl_ty, AddrSpace.GLOBAL)
+                name = self._expect(TokKind.IDENT).value
+                val = self._new_val(name, decl_ty)
+                self._variables[name] = val
 
-            if self._match(TokKind.ASSIGN):
-                rhs = self._parse_expr()
-                # For simplicity: treat the variable as the RHS value directly
-                self._variables[name] = rhs if isinstance(rhs, Value) else val
-                if isinstance(rhs, Const):
-                    # Need to materialize the constant
-                    self._emit(BinInst(val, BinOp.ADD, rhs, Const(ty, 0)))
-                    self._variables[name] = val
-                elif isinstance(rhs, Value) and rhs != val:
-                    # If rhs type matches declared type, use rhs directly (no copy).
-                    # If there is a same-width signedness mismatch (e.g. int x = uint_expr),
-                    # insert a CvtInst so that the variable carries the declared type.
-                    # This ensures pointer arithmetic uses cvt.s64.s32 (sign-extending)
-                    # rather than cvt.u64.u32 (zero-extending) for int-typed indices.
-                    rhs_ty = rhs.ty
-                    if (isinstance(ty, ScalarTy) and isinstance(rhs_ty, ScalarTy)
-                            and ty != rhs_ty
-                            and ty.size == rhs_ty.size
-                            and not ty.is_float and not rhs_ty.is_float):
-                        # Same-width integer type mismatch: coerce to declared type
-                        self._emit(CvtInst(val, rhs))
+                if self._match(TokKind.ASSIGN):
+                    rhs = self._parse_assign_expr()
+                    # For simplicity: treat the variable as the RHS value directly
+                    self._variables[name] = rhs if isinstance(rhs, Value) else val
+                    if isinstance(rhs, Const):
+                        # Need to materialize the constant
+                        self._emit(BinInst(val, BinOp.ADD, rhs, Const(decl_ty, 0)))
                         self._variables[name] = val
-                    else:
-                        self._variables[name] = rhs
+                    elif isinstance(rhs, Value) and rhs != val:
+                        # If rhs type matches declared type, use rhs directly (no copy).
+                        # If there is a same-width signedness mismatch (e.g. int x = uint_expr),
+                        # insert a CvtInst so that the variable carries the declared type.
+                        # This ensures pointer arithmetic uses cvt.s64.s32 (sign-extending)
+                        # rather than cvt.u64.u32 (zero-extending) for int-typed indices.
+                        rhs_ty = rhs.ty
+                        if (isinstance(decl_ty, ScalarTy) and isinstance(rhs_ty, ScalarTy)
+                                and decl_ty != rhs_ty
+                                and decl_ty.size == rhs_ty.size
+                                and not decl_ty.is_float and not rhs_ty.is_float):
+                            # Same-width integer type mismatch: coerce to declared type
+                            self._emit(CvtInst(val, rhs))
+                            self._variables[name] = val
+                        else:
+                            self._variables[name] = rhs
+
+                if not self._match(TokKind.COMMA):
+                    break
             self._expect(TokKind.SEMI)
             return
 

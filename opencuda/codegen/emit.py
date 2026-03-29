@@ -297,11 +297,18 @@ class PTXEmitter:
         if isinstance(op, Value):
             return self._reg(op)
         if isinstance(op, Const):
+            is_f64 = (force_type == 'f64') or (
+                force_type is None and isinstance(op.ty, ScalarTy)
+                and op.ty.is_float and op.ty.size == 8)
             is_fp = force_type in ('f32', 'f64') if force_type else (
                 isinstance(op.ty, ScalarTy) and op.ty.is_float)
             is_half = force_type == 'f16'
             if is_half:
                 return f'0h{_half_hex(float(op.value))}'
+            if is_f64:
+                # Use 0d (64-bit IEEE double) literal to preserve double precision.
+                # 0f literals are 32-bit and lose precision for non-exact values.
+                return f'0d{self._double_hex(float(op.value))}'
             if is_fp:
                 return f'0f{self._float_hex(float(op.value))}'
             return str(int(op.value))
@@ -309,6 +316,9 @@ class PTXEmitter:
 
     def _float_hex(self, f: float) -> str:
         return struct.pack('>f', f).hex().upper()
+
+    def _double_hex(self, f: float) -> str:
+        return struct.pack('>d', f).hex().upper()
 
     def _coerce_to_float(self, op: Operand, target_fty: str, kernel: Kernel) -> str:
         """Return a PTX operand string that is guaranteed to be of target_fty type.
@@ -549,6 +559,12 @@ class PTXEmitter:
             # Float mul doesn't need .lo qualifier
             if inst.op == BinOp.MUL and _is_float(ty):
                 ptx_op = 'mul'
+            # Float division: PTX requires a modifier.
+            # f32: div.approx.f32 (fast, ~22-bit relative error) — matches CUDA default.
+            # f64: div.rn.f64 (IEEE round-to-nearest) — rounding modifier mandatory for f64.
+            if inst.op == BinOp.DIV and _is_float(ty):
+                fty = _ptx_type(ty)
+                ptx_op = 'div.approx' if fty == 'f32' else 'div.rn'
             # Half precision arithmetic
             if _is_half(ty):
                 half_op_map = {
@@ -973,22 +989,27 @@ class PTXEmitter:
                     # Returns bitmask of active lanes in warp
                     self._lines.append(f'    activemask.b32 {dest};')
                 elif inst.func in ('__popc', '__popcll'):
-                    # Population count (number of 1 bits)
-                    ty = inst.dest.ty if inst.dest else INT32
-                    ptx_ty = 'b64' if (isinstance(ty, ScalarTy) and ty.size == 8) else 'b32'
-                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    # Population count: PTX type = source width (dest is always 32-bit).
+                    # popc.b32 dest, src32  or  popc.b64 dest, src64
+                    src_arg = inst.args[0] if inst.args else None
+                    src_ty = src_arg.ty if isinstance(src_arg, (Value, Const)) else INT32
+                    ptx_ty = 'b64' if (isinstance(src_ty, ScalarTy) and src_ty.size == 8) else 'b32'
+                    src = self._operand(src_arg) if src_arg is not None else '0'
                     self._lines.append(f'    popc.{ptx_ty} {dest}, {src};')
                 elif inst.func in ('__clz', '__clzll'):
-                    # Count leading zeros
-                    ty = inst.dest.ty if inst.dest else INT32
-                    ptx_ty = 'b64' if (isinstance(ty, ScalarTy) and ty.size == 8) else 'b32'
-                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    # Count leading zeros: PTX type = source width (dest is always 32-bit).
+                    src_arg = inst.args[0] if inst.args else None
+                    src_ty = src_arg.ty if isinstance(src_arg, (Value, Const)) else INT32
+                    ptx_ty = 'b64' if (isinstance(src_ty, ScalarTy) and src_ty.size == 8) else 'b32'
+                    src = self._operand(src_arg) if src_arg is not None else '0'
                     self._lines.append(f'    clz.{ptx_ty} {dest}, {src};')
                 elif inst.func in ('__brev', '__brevll'):
-                    # Bit reversal
-                    ty = inst.dest.ty if inst.dest else INT32
-                    ptx_ty = 'b64' if (isinstance(ty, ScalarTy) and ty.size == 8) else 'b32'
-                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    # Bit reversal: PTX type = source width = dest width.
+                    # brev.b32 for __brev, brev.b64 for __brevll.
+                    src_arg = inst.args[0] if inst.args else None
+                    src_ty = src_arg.ty if isinstance(src_arg, (Value, Const)) else INT32
+                    ptx_ty = 'b64' if (isinstance(src_ty, ScalarTy) and src_ty.size == 8) else 'b32'
+                    src = self._operand(src_arg) if src_arg is not None else '0'
                     self._lines.append(f'    brev.{ptx_ty} {dest}, {src};')
                 elif inst.func in _f32_scaled_unary:
                     # Two-instruction form: scale input then apply base-2 op.

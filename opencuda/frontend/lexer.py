@@ -36,6 +36,7 @@ class TokKind(Enum):
     KW_STRUCT   = auto()
     KW_TYPEDEF  = auto()
     KW_CONST    = auto()
+    KW_VOLATILE = auto()
     KW_BREAK    = auto()
     KW_CONTINUE = auto()
     KW_DO       = auto()
@@ -127,6 +128,7 @@ _KEYWORDS = {
     'struct': TokKind.KW_STRUCT,
     'typedef': TokKind.KW_TYPEDEF,
     'const': TokKind.KW_CONST,
+    'volatile': TokKind.KW_VOLATILE,
     'break': TokKind.KW_BREAK,
     'continue': TokKind.KW_CONTINUE,
     'do': TokKind.KW_DO,
