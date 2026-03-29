@@ -1174,6 +1174,8 @@ class Parser:
                     _int_binary   = ('min','max')
                     _uint_return  = ('__activemask',)
                     _sync_ops     = ('__syncwarp',)
+                    _sync_reduce  = ('__syncthreads_count', '__syncthreads_and',
+                                     '__syncthreads_or')
                     _int_ops      = ('__popc', '__popcll', '__clz', '__clzll',
                                      '__brev', '__brevll', '__ffs', '__ffsll')
                     if name in _void_stmts:
@@ -1182,6 +1184,10 @@ class Parser:
                     elif name in _sync_ops:
                         self._emit(CallInst(None, name, args))
                         return Const(VOID, 0)
+                    elif name in _sync_reduce:
+                        dest = self._new_val(name, INT32)
+                        self._emit(CallInst(dest, name, args))
+                        return dest
                     elif name in _uint_return:
                         dest = self._new_val(name, UINT32)
                         self._emit(CallInst(dest, name, args))

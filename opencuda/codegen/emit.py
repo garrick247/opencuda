@@ -1173,6 +1173,30 @@ class PTXEmitter:
                 elif inst.func in ('__activemask',):
                     # Returns bitmask of active lanes in warp
                     self._lines.append(f'    activemask.b32 {dest};')
+                elif inst.func in ('__syncthreads_count', '__syncthreads_and',
+                                   '__syncthreads_or'):
+                    # Barrier + integer reduction across a CTA.
+                    # PTX: bar.red.op.type d, a, b  (a=barrier name, b=predicate)
+                    src_arg = inst.args[0] if inst.args else None
+                    src = self._operand(src_arg) if src_arg is not None else '0'
+                    n = inst.dest.id if inst.dest else 0
+                    # Convert integer predicate to pred register
+                    p_tmp = kernel.new_value(f'_sp_{n}', ScalarTy(ScalarType.BOOL))
+                    self._pred_ids.add(p_tmp.id)
+                    self._lines.append(f'    setp.ne.s32 {self._reg(p_tmp)}, {src}, 0;')
+                    if inst.func == '__syncthreads_count':
+                        self._lines.append(f'    bar.red.popc.u32 {dest}, 0, {self._reg(p_tmp)};')
+                    elif inst.func == '__syncthreads_and':
+                        # bar.red.and/or.pred result is a predicate; convert to int
+                        p_out = kernel.new_value(f'_sp_out_{n}', ScalarTy(ScalarType.BOOL))
+                        self._pred_ids.add(p_out.id)
+                        self._lines.append(f'    bar.red.and.pred {self._reg(p_out)}, 0, {self._reg(p_tmp)};')
+                        self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_out)};')
+                    else:
+                        p_out = kernel.new_value(f'_sp_out_{n}', ScalarTy(ScalarType.BOOL))
+                        self._pred_ids.add(p_out.id)
+                        self._lines.append(f'    bar.red.or.pred {self._reg(p_out)}, 0, {self._reg(p_tmp)};')
+                        self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_out)};')
                 elif inst.func in ('__popc', '__popcll'):
                     # Population count: PTX type = source width (dest is always 32-bit).
                     # popc.b32 dest, src32  or  popc.b64 dest, src64
