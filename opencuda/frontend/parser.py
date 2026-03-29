@@ -1608,15 +1608,20 @@ class Parser:
                         self._emit(CallInst(dest, name, args))
                         return dest
                     return Const(INT32, 0)
-                elif name == '__ldg':
-                    # __ldg(ptr) — load with non-coherent (read-only) cache
+                elif name in ('__ldg', '__ldcg', '__ldcs', '__ldlu', '__ldca'):
+                    # Cache-hint loads: __ldg(ptr) → ld.global.nc; others → ld.global
                     if args:
                         ptr_arg = args[0]
                         if isinstance(ptr_arg, Value) and isinstance(ptr_arg.ty, PtrTy):
-                            # Re-wrap with CONST addr space for nc load
-                            nc_ptr = Value(ptr_arg.name, PtrTy(ptr_arg.ty.pointee, AddrSpace.CONST), ptr_arg.id)
-                            dest = self._new_val("ldg", ptr_arg.ty.pointee)
-                            self._emit(LoadInst(dest, nc_ptr))
+                            if name == '__ldg':
+                                # Re-wrap with CONST addr space for nc load
+                                nc_ptr = Value(ptr_arg.name, PtrTy(ptr_arg.ty.pointee, AddrSpace.CONST), ptr_arg.id)
+                                dest = self._new_val("ldg", ptr_arg.ty.pointee)
+                                self._emit(LoadInst(dest, nc_ptr))
+                            else:
+                                # Drop cache hint — emit regular global load
+                                dest = self._new_val(name[2:], ptr_arg.ty.pointee)
+                                self._emit(LoadInst(dest, ptr_arg))
                             return dest
                     return Const(INT32, 0)
                 elif name == 'printf':
