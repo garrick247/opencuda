@@ -2416,23 +2416,34 @@ class Parser:
                         self._kernel._local_decls = []
                     self._kernel._local_decls.append((name, decl_ty, size, val))
                     # Optional aggregate initializer: int arr[N] = {e0, e1, ...};
+                    # Supports nested braces for multi-dim arrays (flattened):
+                    #   int m[4][4] = {{1,2,3,4},{5,6,7,8},...}
                     if self._match(TokKind.ASSIGN):
                         if self._at(TokKind.LBRACE):
                             self._advance()  # consume '{'
                             elem_sz = decl_ty.size if isinstance(decl_ty, ScalarTy) else 8
                             init_idx = 0
-                            while not self._at(TokKind.RBRACE) and not self._at(TokKind.EOF):
-                                elem_val = self._parse_assign_expr()
-                                if init_idx < size:
-                                    offset = Const(INT32, init_idx * elem_sz)
-                                    elem_addr = self._new_val("earr", arr_ty)
-                                    self._emit(BinInst(elem_addr, BinOp.ADD, val, offset))
-                                    if isinstance(elem_val, Const) and elem_val.ty != decl_ty:
-                                        elem_val = Const(decl_ty, elem_val.value)
-                                    self._emit(StoreInst(addr=elem_addr, value=elem_val))
-                                init_idx += 1
-                                if not self._match(TokKind.COMMA):
-                                    break
+                            def _emit_flat_elems(depth=0):
+                                nonlocal init_idx
+                                while not self._at(TokKind.RBRACE) and not self._at(TokKind.EOF):
+                                    if self._at(TokKind.LBRACE):
+                                        # nested row brace — recurse to flatten
+                                        self._advance()
+                                        _emit_flat_elems(depth + 1)
+                                        self._expect(TokKind.RBRACE)
+                                    else:
+                                        elem_val = self._parse_assign_expr()
+                                        if init_idx < size:
+                                            offset = Const(INT32, init_idx * elem_sz)
+                                            elem_addr = self._new_val("earr", arr_ty)
+                                            self._emit(BinInst(elem_addr, BinOp.ADD, val, offset))
+                                            if isinstance(elem_val, Const) and elem_val.ty != decl_ty:
+                                                elem_val = Const(decl_ty, elem_val.value)
+                                            self._emit(StoreInst(addr=elem_addr, value=elem_val))
+                                        init_idx += 1
+                                    if not self._match(TokKind.COMMA):
+                                        break
+                            _emit_flat_elems()
                             self._expect(TokKind.RBRACE)
                     if not self._match(TokKind.COMMA):
                         break
