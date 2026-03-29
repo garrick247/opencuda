@@ -178,6 +178,12 @@ def constant_fold(kernel: Kernel) -> int:
                     inst.rhs = Const(inst.dest.ty, 0)
                     folded += 1
 
+                # Identity: x / 1 → x (integer only — float 1.0 division is not guaranteed exact)
+                elif not is_float and inst.op == BinOp.DIV and rv == 1 and isinstance(inst.lhs, Value):
+                    inst.op = BinOp.ADD
+                    inst.rhs = Const(inst.dest.ty, 0)
+                    folded += 1
+
                 # Strength reduction: mul by power of 2 → shift left (integers only)
                 elif not is_float and inst.op == BinOp.MUL and rv is not None and isinstance(rv, int) and rv > 0 and (rv & (rv-1)) == 0:
                     shift = rv.bit_length() - 1
