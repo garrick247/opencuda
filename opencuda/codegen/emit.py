@@ -728,6 +728,8 @@ class PTXEmitter:
             elif _is_64bit(ty):
                 # Widen any 32-bit Value operands to match the 64-bit instruction type.
                 # Without this, mul.lo.s64 %rd, %rd, %r  (32-bit %r) is rejected by ptxas.
+                # EXCEPTION: shift amount (rhs of SHL/SHR) must remain 32-bit in PTX —
+                # shl.b64 / shr.bXX take a b32 shift count, not a b64 register.
                 def _bin64_operand(op, tgt_ptx):
                     if isinstance(op, Value) and not _is_64bit(op.ty):
                         wid = self._widen_cache.get(op.id)
@@ -740,10 +742,28 @@ class PTXEmitter:
                             self._widen_cache[op.id] = wid
                         return self._reg(wid)
                     return self._operand(op, tgt_ptx, kernel)
-                self._lines.append(
-                    f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
-                    f'{_bin64_operand(inst.lhs, ptx_ty)}, '
-                    f'{_bin64_operand(inst.rhs, ptx_ty)};')
+                # For shifts, lhs is the value (needs widening), rhs is the amount (stays 32-bit).
+                if inst.op in (BinOp.SHL, BinOp.SHR):
+                    lhs_str = _bin64_operand(inst.lhs, ptx_ty)
+                    # Shift amount must be b32 in PTX — do NOT widen to 64-bit.
+                    # If rhs is already a 64-bit Value (e.g. widened earlier),
+                    # we need a narrow: but that shouldn't happen in practice.
+                    # Just use _operand with b32 hint.
+                    if isinstance(inst.rhs, Value) and _is_64bit(inst.rhs.ty):
+                        # Unlikely but handle: truncate back to 32-bit
+                        narrow = kernel.new_value(f'_sham{inst.dest.id}', UINT32)
+                        self._lines.append(
+                            f'    cvt.u32.u64 {self._reg(narrow)}, {self._reg(inst.rhs)};')
+                        rhs_str = self._reg(narrow)
+                    else:
+                        rhs_str = self._operand(inst.rhs, 'b32', kernel)
+                    self._lines.append(
+                        f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, {lhs_str}, {rhs_str};')
+                else:
+                    self._lines.append(
+                        f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
+                        f'{_bin64_operand(inst.lhs, ptx_ty)}, '
+                        f'{_bin64_operand(inst.rhs, ptx_ty)};')
             else:
                 self._lines.append(
                     f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
