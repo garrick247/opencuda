@@ -2787,6 +2787,23 @@ class Parser:
                     return var  # return pointer; StoreInst will be emitted by caller
         if tok.kind == TokKind.IDENT:
             name = tok.value
+            # Global device variable lvalue: g_counter = val; or g_counter += val;
+            # The variable lives in _global_consts as a SymbolRef, not _variables.
+            # Return its address so the assignment handler can emit StoreInst.
+            if (name not in self._variables and name in self._global_consts):
+                cv = self._global_consts[name]
+                if isinstance(cv, SymbolRef) and isinstance(cv.ty, PtrTy):
+                    _nxt = self._toks[self._pos + 1] if self._pos + 1 < len(self._toks) else None
+                    _assign_ops = (TokKind.ASSIGN, TokKind.PLUS_EQ, TokKind.MINUS_EQ,
+                                   TokKind.STAR_EQ, TokKind.SLASH_EQ, TokKind.PERCENT_EQ,
+                                   TokKind.AMP_EQ, TokKind.PIPE_EQ, TokKind.CARET_EQ,
+                                   TokKind.LSHIFT_EQ, TokKind.RSHIFT_EQ,
+                                   TokKind.LBRACKET)
+                    if _nxt and _nxt.kind in _assign_ops:
+                        self._advance()  # consume ident
+                        addr_val = self._new_val(f"{cv.sym_name}_ptr", cv.ty)
+                        self._emit(GlobalAddrInst(addr_val, cv.sym_name, cv.ty.addr_space))
+                        return addr_val
             if name in self._variables:
                 var = self._variables[name]
                 if isinstance(var.ty, PtrTy):
