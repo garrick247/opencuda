@@ -505,7 +505,13 @@ class Parser:
     # -- Expression parsing (precedence climbing) ----------------------------
 
     def _parse_expr(self) -> Operand:
-        return self._parse_assign_expr()
+        result = self._parse_assign_expr()
+        while self._match(TokKind.COMMA):
+            # Comma operator: evaluate left for side effects, discard its
+            # result, evaluate right and return it.  Used in patterns like
+            # while (i++, i < n) and general comma expressions.
+            result = self._parse_assign_expr()
+        return result
 
     def _parse_assign_expr(self) -> Operand:
         # Capture the original source-level variable name before parsing the LHS.
@@ -1118,6 +1124,9 @@ class Parser:
                 size = expr_ty.size if hasattr(expr_ty, 'size') else 4
             self._expect(TokKind.RPAREN)
             return Const(INT32, size)
+        if self._match(TokKind.PLUS):
+            # Unary +: no-op in C — just return the operand unchanged
+            return self._parse_unary_expr()
         if self._match(TokKind.MINUS):
             operand = self._parse_unary_expr()
             # Include Const types: -1LL → dest should be INT64, not INT32
@@ -1540,9 +1549,9 @@ class Parser:
             if self._match(TokKind.LPAREN):
                 args = []
                 if not self._at(TokKind.RPAREN):
-                    args.append(self._parse_expr())
+                    args.append(self._parse_assign_expr())
                     while self._match(TokKind.COMMA):
-                        args.append(self._parse_expr())
+                        args.append(self._parse_assign_expr())
                 self._expect(TokKind.RPAREN)
 
                 if name == '__syncthreads':
