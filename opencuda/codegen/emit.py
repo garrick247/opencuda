@@ -745,13 +745,19 @@ class PTXEmitter:
             # SHR needs sign-awareness: shr.s32 for INT32 (arithmetic, sign-extending),
             # shr.b32 for UINT32 (logical, zero-filling).
             # A C int value of -4 >> 1 must give -2, not 2147483646.
+            # Sub-word note: PTX has no b8/b16 ALU — promote to b32.
             if inst.op in (BinOp.AND, BinOp.OR, BinOp.XOR, BinOp.SHL):
-                ptx_ty = f'b{ty.size * 8}' if isinstance(ty, ScalarTy) else 'b32'
-            elif inst.op == BinOp.SHR:
-                if isinstance(ty, ScalarTy) and ty.is_signed:
-                    ptx_ty = f's{ty.size * 8}'  # arithmetic right shift
+                if isinstance(ty, ScalarTy) and ty.size <= 2:
+                    ptx_ty = 'b32'
                 else:
                     ptx_ty = f'b{ty.size * 8}' if isinstance(ty, ScalarTy) else 'b32'
+            elif inst.op == BinOp.SHR:
+                if isinstance(ty, ScalarTy) and ty.is_signed:
+                    bits = max(ty.size * 8, 32)  # promote s8/s16 → s32
+                    ptx_ty = f's{bits}'
+                else:
+                    bits = max(ty.size * 8, 32)  # promote u8/u16 → b32
+                    ptx_ty = f'b{bits}'
 
             # Pointer arithmetic: use u64 for add/sub
             if _is_ptr(ty) and inst.op in (BinOp.ADD, BinOp.SUB):

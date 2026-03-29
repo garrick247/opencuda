@@ -14,8 +14,8 @@ from typing import Optional
 
 from .lexer import Token, TokKind, lex  # noqa: F401 (TokKind members used throughout)
 from ..ir.types import (Type, ScalarTy, PtrTy, AddrSpace, ScalarType, StructTy,
-                         INT8, UINT8, INT32, UINT32, FLOAT, VOID, INT64, UINT64,
-                         DOUBLE, HALF)
+                         INT8, UINT8, INT16, UINT16, INT32, UINT32, FLOAT, VOID,
+                         INT64, UINT64, DOUBLE, HALF)
 from ..ir.nodes import (Module, Kernel, KernelParam, BasicBlock,
                          Value, Const, Operand, SymbolRef, GlobalAddrInst,
                          BinInst, CmpInst, LoadInst, StoreInst,
@@ -382,6 +382,7 @@ class Parser:
                 pass
             elif self._match(TokKind.KW_SHORT):
                 self._match(TokKind.KW_INT)
+                return UINT16
             elif self._match(TokKind.KW_CHAR):
                 return UINT8
             elif self._match(TokKind.KW_LONG):
@@ -396,13 +397,23 @@ class Parser:
         elif tok.kind == TokKind.KW_SHORT:
             self._advance()
             self._match(TokKind.KW_INT)  # optional trailing 'int'
-            return INT32  # treat 'short' as int32 (no sub-word PTX registers)
+            return INT16
         elif tok.kind == TokKind.KW_SIGNED:
             self._advance()
-            # signed [int | char | long | short] — consume optional base type
-            self._match(TokKind.KW_INT) or self._match(TokKind.KW_CHAR) \
-                or self._match(TokKind.KW_SHORT) or self._match(TokKind.KW_LONG)
-            return INT32
+            # signed [int | char | long | short] — preserve sub-word sizes
+            if self._match(TokKind.KW_CHAR):
+                return INT8
+            elif self._match(TokKind.KW_SHORT):
+                self._match(TokKind.KW_INT)
+                return INT16
+            elif self._match(TokKind.KW_LONG):
+                if self._match(TokKind.KW_LONG):
+                    self._match(TokKind.KW_INT)
+                    return INT64
+                return INT32
+            else:
+                self._match(TokKind.KW_INT)
+                return INT32
         elif tok.kind == TokKind.KW_CHAR:
             self._advance()
             return INT8
