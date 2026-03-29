@@ -1343,10 +1343,15 @@ class PTXEmitter:
                     src_arg = inst.args[0] if inst.args else None
                     src = self._operand(src_arg) if src_arg is not None else '0'
                     n = inst.dest.id if inst.dest else 0
-                    # Convert integer predicate to pred register
-                    p_tmp = kernel.new_value(f'_sp_{n}', ScalarTy(ScalarType.BOOL))
-                    self._pred_ids.add(p_tmp.id)
-                    self._lines.append(f'    setp.ne.s32 {self._reg(p_tmp)}, {src}, 0;')
+                    # If source is already a predicate register, use it directly;
+                    # otherwise convert integer to predicate via setp.ne.
+                    src_is_pred = (isinstance(src_arg, Value) and src_arg.id in self._pred_ids)
+                    if src_is_pred:
+                        p_tmp = src_arg  # reuse existing pred register
+                    else:
+                        p_tmp = kernel.new_value(f'_sp_{n}', ScalarTy(ScalarType.BOOL))
+                        self._pred_ids.add(p_tmp.id)
+                        self._lines.append(f'    setp.ne.s32 {self._reg(p_tmp)}, {src}, 0;')
                     if inst.func == '__syncthreads_count':
                         self._lines.append(f'    bar.red.popc.u32 {dest}, 0, {self._reg(p_tmp)};')
                     elif inst.func == '__syncthreads_and':
