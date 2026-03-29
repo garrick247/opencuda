@@ -293,8 +293,15 @@ class PTXEmitter:
         self._reg_counts[prefix] = max(self._reg_counts.get(prefix, 0), phys + 1)
         return f'%{prefix}{phys}'
 
-    def _operand(self, op: Operand, force_type: str = None) -> str:
+    def _operand(self, op: Operand, force_type: str = None, kernel=None) -> str:
         if isinstance(op, Value):
+            # If this value is a predicate register being used in an integer context,
+            # emit selp to convert pred → 0/1 integer.  Predicates cannot be used
+            # directly as operands to add/mul/cvt/st — only to @pred bra and setp.
+            if (kernel is not None
+                    and op.id in self._pred_ids
+                    and force_type not in (None, 'pred')):
+                return self._pred_to_int(op, force_type if force_type else 's32', kernel)
             return self._reg(op)
         if isinstance(op, Const):
             is_f64 = (force_type == 'f64') or (
@@ -352,6 +359,16 @@ class PTXEmitter:
         else:
             # Fallback: trust the caller (may produce invalid PTX for unusual combos)
             return self._reg(op)
+        return self._reg(tmp)
+
+    def _pred_to_int(self, op: 'Value', dest_ty: str, kernel: 'Kernel') -> str:
+        """Convert a predicate register to a 0/1 integer using selp.
+        PTX predicate registers cannot be used as integer operands directly.
+        Returns the operand string for the converted integer value.
+        """
+        tmp = kernel.new_value(f'_pred_int_{op.id}', INT32)
+        self._lines.append(
+            f'    selp.{dest_ty} {self._reg(tmp)}, 1, 0, {self._reg(op)};')
         return self._reg(tmp)
 
     def emit_kernel(self, kernel: Kernel) -> str:
@@ -536,7 +553,7 @@ class PTXEmitter:
                         src = self._coerce_to_float(inst.lhs, fty, kernel)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
                     else:
-                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.lhs, ptx_ty)};')
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.lhs, ptx_ty, kernel)};')
                     return
                 elif lhs_zero and not isinstance(inst.rhs, Const) and not _is_half(ty):
                     # mov D, V  (add D, 0, V)
@@ -546,7 +563,7 @@ class PTXEmitter:
                         src = self._coerce_to_float(inst.rhs, fty, kernel)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
                     else:
-                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.rhs, ptx_ty)};')
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.rhs, ptx_ty, kernel)};')
                     return
 
             op_map = {
@@ -650,11 +667,13 @@ class PTXEmitter:
             elif _is_64bit(ty):
                 self._lines.append(
                     f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
-                    f'{self._operand(inst.lhs, ptx_ty)}, {self._operand(inst.rhs, ptx_ty)};')
+                    f'{self._operand(inst.lhs, ptx_ty, kernel)}, '
+                    f'{self._operand(inst.rhs, ptx_ty, kernel)};')
             else:
                 self._lines.append(
                     f'    {ptx_op}.{ptx_ty} {self._reg(inst.dest)}, '
-                    f'{self._operand(inst.lhs, ptx_ty)}, {self._operand(inst.rhs, ptx_ty)};')
+                    f'{self._operand(inst.lhs, ptx_ty, kernel)}, '
+                    f'{self._operand(inst.rhs, ptx_ty, kernel)};')
 
         elif isinstance(inst, CmpInst):
             # Determine comparison type from BOTH operands (C integer promotion).
@@ -705,8 +724,10 @@ class PTXEmitter:
             src_ptx = _ptx_type(src_ty)
             dst_ptx = _ptx_type(dst_ty)
             rnd = _cvt_modifier(dst_ty, src_ty)
+            # Predicate → integer: emit selp first, then cvt on the selp result
+            src_op = self._operand(inst.src, src_ptx, kernel)
             self._lines.append(
-                f'    cvt{rnd}.{dst_ptx}.{src_ptx} {self._reg(inst.dest)}, {self._operand(inst.src)};')
+                f'    cvt{rnd}.{dst_ptx}.{src_ptx} {self._reg(inst.dest)}, {src_op};')
 
         elif isinstance(inst, LoadInst):
             ty = inst.dest.ty
@@ -741,9 +762,13 @@ class PTXEmitter:
             if isinstance(inst.addr, Value) and isinstance(inst.addr.ty, PtrTy):
                 if inst.addr.ty.addr_space == AddrSpace.SHARED:
                     addr_space = 'shared'
+            # Predicate registers cannot be stored directly — convert to 0/1 integer first.
+            if isinstance(inst.value, Value) and inst.value.id in self._pred_ids:
+                val_str = self._pred_to_int(inst.value, ptx_ty, kernel)
+            else:
+                val_str = self._operand(inst.value, ptx_ty)
             self._lines.append(
-                f'    st.{addr_space}.{ptx_ty} [{self._operand(inst.addr)}], '
-                f'{self._operand(inst.value, ptx_ty)};')
+                f'    st.{addr_space}.{ptx_ty} [{self._operand(inst.addr)}], {val_str};')
 
         elif isinstance(inst, PrintfInst):
             # Emit vprintf sequence
