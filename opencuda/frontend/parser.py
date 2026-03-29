@@ -474,7 +474,43 @@ class Parser:
             # since lhs.name may be an alias created by a prior assignment.
             update_name = _lhs_orig_name or (lhs.name if isinstance(lhs, Value) else None)
             if update_name and update_name in self._variables:
+                # Materialize constants: if rhs is a Const and the previous binding
+                # was a Value, emit a BinInst copy so the variable keeps a Value
+                # binding.  This is critical for loop-carry: if struct fields are
+                # assigned literal constants (acc.x = 0.0f), they must remain Values
+                # in _variables so _loop_writeback can track and carry them across
+                # iterations.  Mirrors the same materialization done for scalar
+                # declarations with const initializers (int i = 0 → BinInst+Value).
+                prev = self._variables[update_name]
+                if (isinstance(rhs, Const)
+                        and isinstance(prev, Value)
+                        and isinstance(prev.ty, ScalarTy)
+                        and isinstance(rhs.ty, ScalarTy)):
+                    mat = self._new_val(update_name, prev.ty)
+                    _zero = Const(prev.ty, 0.0 if prev.ty.is_float else 0)
+                    self._emit(BinInst(mat, BinOp.ADD, rhs, _zero))
+                    rhs = mat
                 self._variables[update_name] = rhs
+                # Struct-to-struct assignment: propagate per-field values so that
+                # downstream field accesses (acc.tx, acc.ty, ...) see the new values.
+                # This handles the case where _parse_lvalue_or_expr falls through to
+                # _parse_expr for StructTy variables, meaning _parse_stmt's assignment
+                # handler never runs.
+                if isinstance(rhs, Value) and isinstance(rhs.ty, StructTy):
+                    field_map = self._inline_struct_return_fields.get(rhs.id, {})
+                    for _fname, _fty in rhs.ty.fields:
+                        if not isinstance(_fty, ScalarTy):
+                            continue
+                        _src_f = field_map.get(_fname)
+                        if _src_f is None:
+                            _src_f = self._variables.get(f"{rhs.name}_{_fname}")
+                        _dest_fkey = f"{update_name}_{_fname}"
+                        if _src_f is not None and _dest_fkey in self._variables:
+                            _new_fv = self._new_val(_dest_fkey, _fty)
+                            self._emit(BinInst(
+                                _new_fv, BinOp.ADD, _src_f,
+                                Const(_fty, 0.0 if _fty.is_float else 0)))
+                            self._variables[_dest_fkey] = _new_fv
             return rhs
         # Compound assignment: +=, -=, *=
         for tok_kind, op in [(TokKind.PLUS_EQ, BinOp.ADD),
