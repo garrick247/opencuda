@@ -1191,8 +1191,26 @@ class PTXEmitter:
                 val = self._operand(inst.args[1]) if len(inst.args) > 1 else '%r0'
                 delta = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
-                self._lines.append(
-                    f'    shfl.sync.{mode}.b32 {dest}, {val}, {delta}, 31, {mask};')
+                # PTX shfl only supports b32; for 64-bit operands split lo/hi.
+                val_ty = inst.args[1].ty if len(inst.args) > 1 and isinstance(inst.args[1], Value) else None
+                is64 = val_ty is not None and isinstance(val_ty, ScalarTy) and val_ty.size == 8
+                if is64 and dest.startswith('%rd'):
+                    n = inst.dest.id if inst.dest else 0
+                    lo_in  = kernel.new_value(f'_shfl_lo_in_{n}', INT32)
+                    hi_in  = kernel.new_value(f'_shfl_hi_in_{n}', INT32)
+                    lo_out = kernel.new_value(f'_shfl_lo_out_{n}', INT32)
+                    hi_out = kernel.new_value(f'_shfl_hi_out_{n}', INT32)
+                    # Unpack 64-bit val into hi/lo 32-bit registers
+                    self._lines.append(f'    mov.b64 {{{self._reg(lo_in)}, {self._reg(hi_in)}}}, {val};')
+                    self._lines.append(
+                        f'    shfl.sync.{mode}.b32 {self._reg(lo_out)}, {self._reg(lo_in)}, {delta}, 31, {mask};')
+                    self._lines.append(
+                        f'    shfl.sync.{mode}.b32 {self._reg(hi_out)}, {self._reg(hi_in)}, {delta}, 31, {mask};')
+                    # Repack into 64-bit dest
+                    self._lines.append(f'    mov.b64 {dest}, {{{self._reg(lo_out)}, {self._reg(hi_out)}}};')
+                else:
+                    self._lines.append(
+                        f'    shfl.sync.{mode}.b32 {dest}, {val}, {delta}, 31, {mask};')
             elif inst.func in ('__ballot_sync', '__all_sync', '__any_sync'):
                 # PTX vote.sync.* requires a predicate register for the condition arg.
                 # If the condition is already a predicate (from CmpInst), use it directly;
