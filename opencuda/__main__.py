@@ -73,7 +73,8 @@ def main():
             all_ptx.append('')
         out = args.out or str(source_path.with_suffix('.ptx'))
         Path(out).write_text('\n'.join(all_ptx), encoding='utf-8')
-        print(f"[opencuda] Wrote PTX: {out} ({len(ptx_map)} kernels)")
+        kernel_count = sum(1 for k in ptx_map if not k.startswith('__'))
+        print(f"[opencuda] Wrote PTX: {out} ({kernel_count} kernels)")
         if args.verbose:
             print('\n'.join(all_ptx))
     else:
