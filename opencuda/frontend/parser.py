@@ -682,14 +682,17 @@ class Parser:
                     sty = lhs.ty.pointee
                     field_off = sty.field_offset(member)
                     field_ty = sty.field_type(member)
-                    # ptr->field: compute address and load
-                    offset_val = self._new_val("foff", INT32)
-                    self._emit(BinInst(offset_val, BinOp.ADD, lhs, Const(INT32, field_off)))
+                    # ptr->field: compute address of field
                     addr = self._new_val("faddr", PtrTy(field_ty, lhs.ty.addr_space))
                     self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
-                    dest = self._new_val(f"{member}", field_ty)
-                    self._emit(LoadInst(dest, addr))
-                    lhs = dest
+                    if isinstance(field_ty, StructTy):
+                        # Nested struct: return the pointer (so next .field access works)
+                        lhs = addr
+                    else:
+                        # Scalar field: load the value
+                        dest = self._new_val(f"{member}", field_ty)
+                        self._emit(LoadInst(dest, addr))
+                        lhs = dest
             else:
                 break
         return lhs
@@ -1460,8 +1463,9 @@ class Parser:
     def _parse_lvalue_or_expr(self) -> Operand:
         """Parse an expression that might be an lvalue (address for assignment).
 
-        For ptr[index], returns the ADDRESS (PtrTy) without loading.
-        For other expressions, returns the value normally.
+        For ptr[index] and ptr[index].field chains, returns the ADDRESS
+        (PtrTy) without loading the scalar, so callers can emit StoreInst.
+        For other expressions, falls through to _parse_expr (returns a value).
         """
         tok = self._peek()
         if tok.kind == TokKind.IDENT:
@@ -1481,6 +1485,20 @@ class Parser:
                             index = scaled
                         addr = self._new_val("addr", var.ty)
                         self._emit(BinInst(addr, BinOp.ADD, var, index))
+                        # Follow chained .field access (e.g. p[tid].pos.x)
+                        # keeping the result as a pointer (address) so that
+                        # the caller can emit a StoreInst / compound read-modify-write.
+                        while (self._at(TokKind.DOT)
+                               and isinstance(addr.ty, PtrTy)
+                               and isinstance(addr.ty.pointee, StructTy)):
+                            self._advance()  # consume DOT
+                            member = self._expect(TokKind.IDENT).value
+                            sty = addr.ty.pointee
+                            field_off = sty.field_offset(member)
+                            field_ty = sty.field_type(member)
+                            new_addr = self._new_val("faddr", PtrTy(field_ty, addr.ty.addr_space))
+                            self._emit(BinInst(new_addr, BinOp.ADD, addr, Const(INT32, field_off)))
+                            addr = new_addr
                         return addr  # Return ADDRESS, not loaded value
         # Fall back to normal expression parsing
         return self._parse_expr()
