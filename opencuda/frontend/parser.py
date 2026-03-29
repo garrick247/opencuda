@@ -1345,9 +1345,38 @@ class Parser:
                                             (orig_name, saved_vars[orig_name].ty, arg))
                                     break
 
-                    # Bind arguments to parameters
+                    # Bind arguments to parameters.
+                    # For struct arguments, member access inside the inline body
+                    # uses "{lhs.name}_{field}" as the lookup key, where lhs.name
+                    # is the Value's .name attribute on the sentinel.  If we just
+                    # store `_variables[pname] = arg` (where arg.name may differ
+                    # from pname), then `param.field` resolves to `arg.name_field`
+                    # rather than `pname_field`.  Two problems follow:
+                    #   1. If the inline body declares a local with arg.name (e.g.
+                    #      `Vec3 r;` inside cross() when caller also has `Vec3 r`),
+                    #      the field keys get overwritten by the new declaration,
+                    #      and the formula reads zero-stubs instead of loaded values.
+                    #   2. The inline scope's new field Values collide with the
+                    #      caller's field Values sharing the same key.
+                    # Fix: for struct params, create a fresh sentinel with name=pname
+                    # and pre-bind pname_field → caller's field value so that the
+                    # inline body's accesses use isolated, correctly-valued keys.
                     for (pname, pty), arg in zip(dfunc['params'], args):
-                        self._variables[pname] = arg
+                        if isinstance(pty, StructTy) and isinstance(arg, Value):
+                            # Fresh sentinel so that `param.field` → `pname_field`
+                            param_sentinel = self._new_val(pname, pty)
+                            self._variables[pname] = param_sentinel
+                            # Pre-bind per-field keys from caller
+                            for _fname, _fty in pty.fields:
+                                if not isinstance(_fty, ScalarTy):
+                                    continue
+                                caller_field_key = f"{arg.name}_{_fname}"
+                                param_field_key  = f"{pname}_{_fname}"
+                                if caller_field_key in self._variables:
+                                    self._variables[param_field_key] = \
+                                        self._variables[caller_field_key]
+                        else:
+                            self._variables[pname] = arg
 
                     # Create return destination and merge block
                     ret_ty = dfunc['ret_ty']
