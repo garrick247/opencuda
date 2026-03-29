@@ -941,15 +941,23 @@ class Parser:
             self._advance()
             tok = self._peek()  # re-read after consuming qualifier(s)
 
-        # __shared__ declaration: __shared__ type name[size];
+        # __shared__ declaration: __shared__ type name[size] or name[d0][d1]...;
         if tok.kind == TokKind.KW_SHARED:
             self._advance()
             ty = self._parse_type()
             name = self._expect(TokKind.IDENT).value
             self._expect(TokKind.LBRACKET)
-            size_tok = self._expect(TokKind.INT_LIT)
-            size = int(size_tok.value)
+            size_op = self._parse_assign_expr()
+            size = int(size_op.value) if isinstance(size_op, Const) else 1
             self._expect(TokKind.RBRACKET)
+            # Handle multi-dimensional arrays [d0][d1]... — collapse all dims
+            # into one flat array of total_elements elements.
+            while self._at(TokKind.LBRACKET):
+                self._advance()
+                dim_op = self._parse_assign_expr()
+                dim = int(dim_op.value) if isinstance(dim_op, Const) else 1
+                size *= dim
+                self._expect(TokKind.RBRACKET)
             self._expect(TokKind.SEMI)
             # Create a shared-memory pointer variable
             smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED)
