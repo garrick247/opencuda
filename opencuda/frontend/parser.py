@@ -1306,16 +1306,29 @@ class Parser:
                         self._expect(TokKind.RBRACKET)
                         elem_ty = sty.field_type(f"{member}_0")
                         n = arr_info[member]
+                        addr = self._new_val("faddr", PtrTy(elem_ty, lhs.ty.addr_space))
                         if isinstance(idx_expr, Const):
                             k = int(idx_expr.value) % n
                             field_off = sty.field_offset(f"{member}_{k}")
+                            self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
                         else:
-                            field_off = sty.field_offset(f"{member}_0")
-                        addr = self._new_val("faddr", PtrTy(elem_ty, lhs.ty.addr_space))
-                        self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
-                        dest = self._new_val(f"{member}", elem_ty)
-                        self._emit(LoadInst(dest, addr))
-                        lhs = dest
+                            # Dynamic index: base + idx * elem_size
+                            base_off = sty.field_offset(f"{member}_0")
+                            base_addr = self._new_val("base", PtrTy(elem_ty, lhs.ty.addr_space))
+                            self._emit(BinInst(base_addr, BinOp.ADD, lhs, Const(INT32, base_off)))
+                            elem_size = elem_ty.size
+                            idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
+                            scaled = self._new_val("scale", idx_ty)
+                            self._emit(BinInst(scaled, BinOp.MUL, idx_expr,
+                                               Const(idx_ty, elem_size)))
+                            self._emit(BinInst(addr, BinOp.ADD, base_addr, scaled))
+                        if isinstance(elem_ty, StructTy):
+                            # Struct element: keep as pointer for chained .field access
+                            lhs = addr
+                        else:
+                            dest = self._new_val(f"{member}", elem_ty)
+                            self._emit(LoadInst(dest, addr))
+                            lhs = dest
                     else:
                         field_off = sty.field_offset(member)
                         field_ty = sty.field_type(member)
@@ -1343,16 +1356,29 @@ class Parser:
                         self._expect(TokKind.RBRACKET)
                         elem_ty = sty.field_type(f"{member}_0")
                         n = arr_info[member]
+                        addr = self._new_val("faddr", PtrTy(elem_ty, lhs.ty.addr_space))
                         if isinstance(idx_expr, Const):
                             k = int(idx_expr.value) % n
                             field_off = sty.field_offset(f"{member}_{k}")
+                            self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
                         else:
-                            field_off = sty.field_offset(f"{member}_0")
-                        addr = self._new_val("faddr", PtrTy(elem_ty, lhs.ty.addr_space))
-                        self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
-                        dest = self._new_val(f"{member}", elem_ty)
-                        self._emit(LoadInst(dest, addr))
-                        lhs = dest
+                            # Dynamic index: base + idx * elem_size
+                            base_off = sty.field_offset(f"{member}_0")
+                            base_addr = self._new_val("base", PtrTy(elem_ty, lhs.ty.addr_space))
+                            self._emit(BinInst(base_addr, BinOp.ADD, lhs, Const(INT32, base_off)))
+                            elem_size = elem_ty.size
+                            idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
+                            scaled = self._new_val("scale", idx_ty)
+                            self._emit(BinInst(scaled, BinOp.MUL, idx_expr,
+                                               Const(idx_ty, elem_size)))
+                            self._emit(BinInst(addr, BinOp.ADD, base_addr, scaled))
+                        if isinstance(elem_ty, StructTy):
+                            # Struct element: keep as pointer for chained .field access
+                            lhs = addr
+                        else:
+                            dest = self._new_val(f"{member}", elem_ty)
+                            self._emit(LoadInst(dest, addr))
+                            lhs = dest
                     else:
                         field_off = sty.field_offset(member)
                         field_ty = sty.field_type(member)
@@ -2999,8 +3025,9 @@ class Parser:
                 var = self._variables[name]
                 if isinstance(var.ty, PtrTy):
                     self._advance()
-                    # ptr->field lvalue: compute address for StoreInst
-                    if (self._at(TokKind.ARROW)
+                    # ptr->field or ptr.field lvalue: compute address for StoreInst
+                    # __shared__ vars are PtrTy; dot and arrow both mean field access.
+                    if ((self._at(TokKind.ARROW) or self._at(TokKind.DOT))
                             and isinstance(var.ty.pointee, StructTy)):
                         self._advance()  # consume '->'
                         member = self._expect(TokKind.IDENT).value
