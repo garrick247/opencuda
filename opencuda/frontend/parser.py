@@ -1890,6 +1890,8 @@ class Parser:
                     # Half-precision (__half) intrinsics
                     _half_unary   = ('__habs', '__hneg', '__hsqrt', '__hrcp',
                                      '__hrsqrt', '__hexp', '__hlog',
+                                     '__hceil', '__hfloor', '__hrint', '__htrunc',
+                                     '__hcos', '__hsin', '__hexp2', '__hlog2', '__hlog10',
                                      '__half2float', '__low2float', '__high2float')
                     _half_binary  = ('__hmul', '__hmul_rn', '__hmul_sat',
                                      '__hadd_rn', '__hsub', '__hsub_rn',

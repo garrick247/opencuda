@@ -1903,9 +1903,10 @@ class PTXEmitter:
                 elif inst.func in ('__hneg',):
                     src = self._operand(inst.args[0]) if inst.args else '0h0000'
                     self._lines.append(f'    neg.f16 {dest}, {src};')
-                elif inst.func in ('__hrcp', '__hsqrt', '__hrsqrt', '__hexp', '__hlog'):
-                    # PTX has no native rcp/sqrt/rsqrt/exp/log for f16;
-                    # promote to f32, apply f32 op, demote back to f16.
+                elif inst.func in ('__hrcp', '__hsqrt', '__hrsqrt', '__hexp', '__hlog',
+                                    '__hceil', '__hfloor', '__hrint', '__htrunc',
+                                    '__hcos', '__hsin', '__hlog2', '__hlog10'):
+                    # PTX has no native f16 versions; promote to f32, apply, demote.
                     n = inst.dest.id if inst.dest else 0
                     src = self._operand(inst.args[0]) if inst.args else '0h0000'
                     f32_in  = kernel.new_value(f'_hf32in_{n}', FLOAT)
@@ -1927,7 +1928,29 @@ class PTXEmitter:
                         lg2 = kernel.new_value(f'_hlg2_{n}', FLOAT)
                         self._lines.append(f'    lg2.approx.f32 {self._reg(lg2)}, {self._reg(f32_in)};')
                         self._lines.append(f'    mul.f32 {self._reg(f32_out)}, {self._reg(lg2)}, 0f3F317218;')
+                    elif inst.func == '__hlog2':
+                        self._lines.append(f'    lg2.approx.f32 {self._reg(f32_out)}, {self._reg(f32_in)};')
+                    elif inst.func == '__hlog10':
+                        # log10(x) = lg2(x) * log10(2)
+                        lg2 = kernel.new_value(f'_hlg2_{n}', FLOAT)
+                        self._lines.append(f'    lg2.approx.f32 {self._reg(lg2)}, {self._reg(f32_in)};')
+                        self._lines.append(f'    mul.f32 {self._reg(f32_out)}, {self._reg(lg2)}, 0f3E9A209B;')
+                    elif inst.func == '__hcos':
+                        self._lines.append(f'    cos.approx.f32 {self._reg(f32_out)}, {self._reg(f32_in)};')
+                    elif inst.func == '__hsin':
+                        self._lines.append(f'    sin.approx.f32 {self._reg(f32_out)}, {self._reg(f32_in)};')
+                    elif inst.func in ('__hceil', '__hfloor', '__hrint', '__htrunc'):
+                        # Round via cvt to int then back to f32
+                        int_tmp = kernel.new_value(f'_hint_{n}', INT32)
+                        rmode = {'__hceil': 'rpi', '__hfloor': 'rmi',
+                                 '__hrint': 'rni', '__htrunc': 'rzi'}[inst.func]
+                        self._lines.append(f'    cvt.{rmode}.s32.f32 {self._reg(int_tmp)}, {self._reg(f32_in)};')
+                        self._lines.append(f'    cvt.rn.f32.s32 {self._reg(f32_out)}, {self._reg(int_tmp)};')
                     self._lines.append(f'    cvt.rn.f16.f32 {dest}, {self._reg(f32_out)};')
+                elif inst.func in ('__hexp2',):
+                    # ex2.approx.f16 is a valid PTX instruction for sm_120
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    self._lines.append(f'    ex2.approx.f16 {dest}, {src};')
                 elif inst.func in ('__hgt', '__hlt', '__hge', '__hle', '__heq', '__hne'):
                     _hcmp_map = {
                         '__hgt': 'gt', '__hlt': 'lt', '__hge': 'ge',
