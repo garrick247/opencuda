@@ -276,6 +276,13 @@ class Parser:
             self._advance()
             return self._struct_types[tok.value]
 
+        # Template type parameter (T, U, etc.) — treat as float32.
+        # C++ templates are not fully supported; this allows parsing template
+        # function bodies that use a type parameter as return/param type.
+        if tok.kind == TokKind.IDENT and tok.value.isupper() and len(tok.value) <= 2:
+            self._advance()
+            return FLOAT
+
         raise ParseError(f"Line {tok.line}: expected type, got '{tok.value}'")
 
     def _parse_type_with_ptr(self) -> Type:
@@ -975,6 +982,17 @@ class Parser:
         if tok.kind == TokKind.IDENT:
             name = tok.value
             self._advance()
+
+            # C++ namespace::name scope resolution — strip namespace qualifier,
+            # use only the unqualified name that follows.
+            while (self._at(TokKind.COLON)
+                   and self._pos + 1 < len(self._toks)
+                   and self._toks[self._pos + 1].kind == TokKind.COLON):
+                self._advance()  # consume first ':'
+                self._advance()  # consume second ':'
+                if self._at(TokKind.IDENT):
+                    name = self._peek().value
+                    self._advance()
 
             # C++ nullptr → null pointer constant (UINT64 0)
             if name == 'nullptr':
@@ -2414,6 +2432,27 @@ class Parser:
             # Skip leading storage class qualifiers (static, inline) before __global__/__device__
             while self._at(TokKind.KW_STATIC):
                 self._advance()
+            # Skip C++ namespace IDENT { ... } — treat contents as module-level
+            if self._at(TokKind.IDENT) and self._peek().value == 'namespace':
+                self._advance()  # consume 'namespace'
+                if self._at(TokKind.IDENT):
+                    self._advance()  # consume namespace name
+                if self._at(TokKind.LBRACE):
+                    self._advance()  # consume '{' — contents parsed normally; '}' consumed by fallback
+                continue
+            # Skip C++ template<...> prefix — we treat templates as plain functions
+            if self._at(TokKind.IDENT) and self._peek().value == 'template':
+                self._advance()  # consume 'template'
+                if self._at(TokKind.LT):
+                    self._advance()
+                    depth = 1
+                    while depth > 0 and not self._at(TokKind.EOF):
+                        if self._peek().kind == TokKind.LT: depth += 1
+                        elif self._peek().kind == TokKind.GT: depth -= 1
+                        self._advance()
+                    # Register all identifiers inside <...> as template-param typedefs → float
+                    # (already consumed; just continue to parse the following function)
+                continue
             if self._at(TokKind.KW_GLOBAL):
                 mod.kernels.append(self._parse_kernel())
             elif self._at(TokKind.KW_DEVICE):
