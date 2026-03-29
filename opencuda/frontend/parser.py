@@ -2561,13 +2561,27 @@ class Parser:
             if self._match(tok_kind):
                 if isinstance(lhs, Value):
                     if isinstance(lhs.ty, PtrTy):
-                        # Pointer advance: increment by element size
-                        step = lhs.ty.pointee.size if isinstance(lhs.ty.pointee, ScalarTy) else 1
-                        new_ptr = self._new_val(f"{lhs.name}_inc", lhs.ty)
-                        self._emit(BinInst(new_ptr, op, lhs, Const(UINT64, step)))
+                        # Distinguish pointer-variable advance (p++) from
+                        # array-element increment (arr[i]++).  For element
+                        # increment the lhs is a computed address not tracked
+                        # in _variables; for pointer advance it IS the tracked
+                        # variable (or matches via _stmt_lhs_name).
                         update_name = _stmt_lhs_name or lhs.name
-                        if update_name in self._variables:
+                        is_ptr_var = (update_name in self._variables
+                                      and update_name not in self._shared_scalars)
+                        if is_ptr_var:
+                            # Pointer variable advance: p++ → p += sizeof(*p)
+                            step = lhs.ty.pointee.size if isinstance(lhs.ty.pointee, ScalarTy) else 1
+                            new_ptr = self._new_val(f"{lhs.name}_inc", lhs.ty)
+                            self._emit(BinInst(new_ptr, op, lhs, Const(UINT64, step)))
                             self._variables[update_name] = new_ptr
+                        else:
+                            # Element address: arr[i]++ → load, add 1, store back
+                            cur = self._new_val("cur", lhs.ty.pointee)
+                            self._emit(LoadInst(cur, lhs))
+                            result = self._new_val("compound", cur.ty)
+                            self._emit(BinInst(result, op, cur, Const(cur.ty, 1)))
+                            self._emit(StoreInst(addr=lhs, value=result))
                     else:
                         new_val = self._new_val(f"{lhs.name}_inc", lhs.ty)
                         self._emit(BinInst(new_val, op, lhs, Const(lhs.ty, 1)))
