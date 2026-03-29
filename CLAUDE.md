@@ -73,7 +73,6 @@ CUDA C (.cu)
 ## Known Limitations
 
 - `float16` is parsed but emitted as `f32`
-- Device function inlining does not support multiple return points inside if-blocks
 - Integer division/remainder emits PTX `div`/`rem` and relies on OpenPTXas for SASS expansion
 - Register allocation is naive (by value ID); no coloring, no spilling
 - No texture/surface memory, cooperative groups, or tensor operations
