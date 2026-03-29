@@ -3633,6 +3633,15 @@ class Parser:
             while True:
                 pty = self._parse_type_with_ptr()
                 pname = self._expect_ident().value
+                # Array parameter: int arr[N] decays to int *arr in C.
+                # Consume optional [N] and convert type to pointer.
+                if self._at(TokKind.LBRACKET):
+                    self._advance()  # consume '['
+                    while not self._at(TokKind.RBRACKET):
+                        self._advance()  # consume size/expr tokens
+                    self._advance()  # consume ']'
+                    if not isinstance(pty, PtrTy):
+                        pty = PtrTy(pty, 0)
                 params.append((pname, pty))
                 if not self._match(TokKind.COMMA):
                     break
