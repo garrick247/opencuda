@@ -3157,18 +3157,43 @@ class Parser:
                             idx_expr = self._parse_expr()
                             self._expect(TokKind.RBRACKET)
                             elem_ty = cv.ty.pointee
-                            elem_size = elem_ty.size if isinstance(elem_ty, ScalarTy) else elem_ty.size
-                            if elem_size != 1:
+                            # 2D array: if row stride registered and a second '[' follows,
+                            # multiply by row_stride (not elem_size) and keep as pointer.
+                            row_stride = self._array_row_strides.get(cv.sym_name)
+                            if row_stride is not None and self._at(TokKind.LBRACKET):
                                 idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
                                 scaled = self._new_val("scale", idx_ty)
                                 self._emit(BinInst(scaled, BinOp.MUL, idx_expr,
-                                                   Const(idx_ty, elem_size)))
-                                idx_expr = scaled
-                            elem_addr = self._new_val("addr", cv.ty)
-                            self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, idx_expr))
-                            # g_struct_arr[idx].field[.subfield...] = val
-                            cur_addr = elem_addr
-                            cur_ty = elem_ty
+                                                   Const(idx_ty, row_stride)))
+                                row_addr = self._new_val("raddr", cv.ty)
+                                self._emit(BinInst(row_addr, BinOp.ADD, addr_val, scaled))
+                                # Consume second subscript [col]
+                                self._advance()  # consume '['
+                                col_expr = self._parse_expr()
+                                self._expect(TokKind.RBRACKET)
+                                elem_size = elem_ty.size if isinstance(elem_ty, ScalarTy) else 8
+                                if elem_size != 1:
+                                    col_ty = col_expr.ty if isinstance(col_expr, Value) else INT32
+                                    scaled2 = self._new_val("scale", col_ty)
+                                    self._emit(BinInst(scaled2, BinOp.MUL, col_expr,
+                                                       Const(col_ty, elem_size)))
+                                    col_expr = scaled2
+                                elem_addr = self._new_val("addr", cv.ty)
+                                self._emit(BinInst(elem_addr, BinOp.ADD, row_addr, col_expr))
+                                cur_addr = elem_addr
+                                cur_ty = elem_ty
+                            else:
+                                elem_size = elem_ty.size if isinstance(elem_ty, ScalarTy) else elem_ty.size
+                                if elem_size != 1:
+                                    idx_ty = idx_expr.ty if isinstance(idx_expr, Value) else INT32
+                                    scaled = self._new_val("scale", idx_ty)
+                                    self._emit(BinInst(scaled, BinOp.MUL, idx_expr,
+                                                       Const(idx_ty, elem_size)))
+                                    idx_expr = scaled
+                                elem_addr = self._new_val("addr", cv.ty)
+                                self._emit(BinInst(elem_addr, BinOp.ADD, addr_val, idx_expr))
+                                cur_addr = elem_addr
+                                cur_ty = elem_ty
                             while self._at(TokKind.DOT) and isinstance(cur_ty, StructTy):
                                 self._advance()  # consume '.'
                                 field = self._expect(TokKind.IDENT).value
@@ -3807,12 +3832,28 @@ class Parser:
                     if isinstance(ty, PtrTy) and ty.volatile:
                         is_volatile = True
                     name = self._expect(TokKind.IDENT).value
-                    # Optional array size [N]
+                    # Optional array size [N] or multi-dim [N][M]...
                     count = 1
                     if self._match(TokKind.LBRACKET):
                         sz_op = self._parse_assign_expr()
-                        count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                        d0 = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                        count = d0
                         self._expect(TokKind.RBRACKET)
+                        # Additional dimensions: [M][K]...
+                        inner_dims = []
+                        while self._at(TokKind.LBRACKET):
+                            self._advance()
+                            dim_op = self._parse_assign_expr()
+                            dim = int(dim_op.value) if isinstance(dim_op, Const) else 1
+                            inner_dims.append(dim)
+                            count *= dim
+                            self._expect(TokKind.RBRACKET)
+                        if inner_dims:
+                            elem_size = ty.size if isinstance(ty, ScalarTy) else 8
+                            inner_prod = 1
+                            for d in inner_dims:
+                                inner_prod *= d
+                            self._array_row_strides[name] = inner_prod * elem_size
                     # Optional initializer: = { ... } or = expr — skip for module-level
                     if self._match(TokKind.ASSIGN):
                         depth = 0

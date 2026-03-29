@@ -37,18 +37,18 @@ __global__ void macro_version(int *out, int n) {
 }
 
 // ------------------------------------------------------------------
-// Flat global array used as logical 2D (row-major).
+// True 2D global array: g_matrix[ROWS][COLS] — tests multi-dim subscript.
 
 #define ROWS 4
 #define COLS 8
-__device__ int g_matrix[ROWS * COLS];
+__device__ int g_matrix[ROWS][COLS];
 
 __global__ void write_matrix(int n) {
     int tid = threadIdx.x;
     if (tid < ROWS * COLS) {
         int r = tid / COLS;
         int c = tid % COLS;
-        g_matrix[r * COLS + c] = r * COLS + c;
+        g_matrix[r][c] = r * COLS + c;
     }
 }
 
@@ -57,7 +57,7 @@ __global__ void read_matrix(int *out, int n) {
     if (tid < n && tid < ROWS * COLS) {
         int r = tid / COLS;
         int c = tid % COLS;
-        out[tid] = g_matrix[r * COLS + c];
+        out[tid] = g_matrix[r][c];
     }
 }
 
