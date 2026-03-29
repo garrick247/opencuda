@@ -747,6 +747,22 @@ class Parser:
                         dest = self._new_val(f"{member}", field_ty)
                         self._emit(LoadInst(dest, addr))
                         lhs = dest
+            elif self._match(TokKind.ARROW):
+                # ptr->field: sugar for (*ptr).field — lhs must be a pointer to struct.
+                member = self._expect(TokKind.IDENT).value
+                if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy) and isinstance(lhs.ty.pointee, StructTy):
+                    sty = lhs.ty.pointee
+                    field_off = sty.field_offset(member)
+                    field_ty = sty.field_type(member)
+                    addr = self._new_val("faddr", PtrTy(field_ty, lhs.ty.addr_space))
+                    self._emit(BinInst(addr, BinOp.ADD, lhs, Const(INT32, field_off)))
+                    if isinstance(field_ty, StructTy):
+                        lhs = addr
+                    else:
+                        dest = self._new_val(f"{member}", field_ty)
+                        self._emit(LoadInst(dest, addr))
+                        lhs = dest
+                # else: non-struct pointer arrow — treat as unknown, leave lhs unchanged
             else:
                 break
         return lhs
@@ -1614,6 +1630,30 @@ class Parser:
                 var = self._variables[name]
                 if isinstance(var.ty, PtrTy):
                     self._advance()
+                    # ptr->field lvalue: compute address for StoreInst
+                    if (self._at(TokKind.ARROW)
+                            and isinstance(var.ty.pointee, StructTy)):
+                        self._advance()  # consume '->'
+                        member = self._expect(TokKind.IDENT).value
+                        sty = var.ty.pointee
+                        field_off = sty.field_offset(member)
+                        field_ty = sty.field_type(member)
+                        addr = self._new_val("faddr", PtrTy(field_ty, var.ty.addr_space))
+                        self._emit(BinInst(addr, BinOp.ADD, var, Const(INT32, field_off)))
+                        # Chain further ->field or .field accesses
+                        while (self._at(TokKind.DOT) or self._at(TokKind.ARROW)):
+                            self._advance()
+                            sub_member = self._expect(TokKind.IDENT).value
+                            if isinstance(addr.ty, PtrTy) and isinstance(addr.ty.pointee, StructTy):
+                                ssty = addr.ty.pointee
+                                s_off = ssty.field_offset(sub_member)
+                                s_ty = ssty.field_type(sub_member)
+                                new_addr = self._new_val("faddr", PtrTy(s_ty, addr.ty.addr_space))
+                                self._emit(BinInst(new_addr, BinOp.ADD, addr, Const(INT32, s_off)))
+                                addr = new_addr
+                            else:
+                                break
+                        return addr  # Return ADDRESS for StoreInst
                     if self._match(TokKind.LBRACKET):
                         index = self._parse_expr()
                         self._expect(TokKind.RBRACKET)
