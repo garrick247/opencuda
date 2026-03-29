@@ -1251,6 +1251,12 @@ class PTXEmitter:
                     # exp2/log2 map directly to PTX ex2/lg2 (base-2, no scaling needed)
                     'exp2f': 'ex2.approx.f32', 'exp2': 'ex2.approx.f32',
                     'log2f': 'lg2.approx.f32', 'log2': 'lg2.approx.f32',
+                    # Rounding-mode sqrt/rcp variants
+                    '__fsqrt_rn': 'sqrt.rn.f32', '__fsqrt_rd': 'sqrt.rd.f32',
+                    '__fsqrt_ru': 'sqrt.ru.f32', '__fsqrt_rz': 'sqrt.rz.f32',
+                    '__frcp_rn':  'rcp.rn.f32',  '__frcp_rd':  'rcp.rd.f32',
+                    '__frcp_ru':  'rcp.ru.f32',  '__frcp_rz':  'rcp.rz.f32',
+                    '__frsqrt_rn': 'rsqrt.approx.f32',
                 }
                 # f64 variants: only sqrt.rn.f64 and rsqrt.approx.f64 are direct PTX.
                 # All other double-precision transcendentals require cvt→f32→approx→cvt.
@@ -1461,13 +1467,17 @@ class PTXEmitter:
                     a = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
                     self._lines.append(f'    {ptx_op} {dest}, {a}, {b};')
-                elif inst.func in ('fmaf', 'fma'):
+                elif inst.func in ('fmaf', 'fma',
+                                   '__fmaf_rn', '__fmaf_rd', '__fmaf_ru', '__fmaf_rz',
+                                   '__fma_rn', '__fma_rd', '__fma_ru', '__fma_rz'):
                     # Fused multiply-add: fma(a, b, c) = a*b + c (single rounding)
                     fma_ty = 'f64' if _first_arg_is_f64 else 'f32'
+                    _fn = inst.func
+                    _rnd = _fn[-2:] if _fn.endswith(('rn','rd','ru','rz')) else 'rn'
                     a = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
                     c = self._operand(inst.args[2]) if len(inst.args) > 2 else '0f00000000'
-                    self._lines.append(f'    fma.rn.{fma_ty} {dest}, {a}, {b}, {c};')
+                    self._lines.append(f'    fma.{_rnd}.{fma_ty} {dest}, {a}, {b}, {c};')
                 elif inst.func in ('fmodf', 'fmod'):
                     # fmod(x, y) = x - trunc(x/y)*y — no direct PTX opcode
                     # Uses: div.approx, cvt.rzi (truncate-toward-zero), mul, sub
