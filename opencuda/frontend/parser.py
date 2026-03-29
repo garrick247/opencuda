@@ -41,6 +41,9 @@ class Parser:
         self._break_snapshots: list[Optional[dict]] = []  # vars snapshot at break scope entry
         self._continue_targets: list[str] = []       # stack of continue target labels
         self._inline_return_target = None  # (return_dest_val, return_merge_label) or None
+        # Module-level compile-time constants (enum values, etc.)
+        # These are visible in all kernels as Const operands without IR instructions.
+        self._global_consts: dict[str, Const] = {}
 
     # -- Token helpers -------------------------------------------------------
 
@@ -471,6 +474,23 @@ class Parser:
                 dest = self._new_val("deref", operand.ty.pointee)
                 self._emit(LoadInst(dest, operand))
                 return dest
+        if self._match(TokKind.KW_SIZEOF):
+            # sizeof(type) or sizeof(expr) — return size as INT32 constant.
+            # Always parens: sizeof(T) or sizeof(expr).
+            self._expect(TokKind.LPAREN)
+            # Try to parse a type first; if that fails, parse an expression.
+            saved = self._pos
+            size = None
+            try:
+                ty = self._parse_type_with_ptr()
+                size = ty.size if hasattr(ty, 'size') else 4
+            except Exception:
+                self._pos = saved
+                expr = self._parse_expr()
+                expr_ty = expr.ty if isinstance(expr, (Value, Const)) else INT32
+                size = expr_ty.size if hasattr(expr_ty, 'size') else 4
+            self._expect(TokKind.RPAREN)
+            return Const(INT32, size)
         if self._match(TokKind.MINUS):
             operand = self._parse_unary_expr()
             # Include Const types: -1LL → dest should be INT64, not INT32
@@ -492,6 +512,23 @@ class Parser:
             dest = self._new_val("lnot", INT32)
             self._emit(CmpInst(dest, CmpOp.EQ, operand, Const(INT32, 0)))
             return dest
+        # Prefix ++i / --i — increment/decrement before use
+        if self._match(TokKind.PLUSPLUS):
+            operand = self._parse_unary_expr()
+            if isinstance(operand, Value):
+                new_val = self._new_val(f"{operand.name}_preinc", operand.ty)
+                self._emit(BinInst(new_val, BinOp.ADD, operand, Const(operand.ty, 1)))
+                self._variables[operand.name] = new_val
+                return new_val  # pre-increment returns the new value
+            return operand
+        if self._match(TokKind.MINUSMINUS):
+            operand = self._parse_unary_expr()
+            if isinstance(operand, Value):
+                new_val = self._new_val(f"{operand.name}_predec", operand.ty)
+                self._emit(BinInst(new_val, BinOp.SUB, operand, Const(operand.ty, 1)))
+                self._variables[operand.name] = new_val
+                return new_val  # pre-decrement returns the new value
+            return operand
         # Cast: (type)expr
         if self._at(TokKind.LPAREN):
             saved = self._pos
@@ -798,6 +835,10 @@ class Parser:
             # Variable reference
             if name in self._variables:
                 return self._variables[name]
+
+            # Module-level compile-time constants (enum values, etc.)
+            if name in self._global_consts:
+                return self._global_consts[name]
 
             # Built-in names (threadIdx, blockIdx, blockDim)
             if name in ('threadIdx', 'blockIdx', 'blockDim', 'gridDim'):
@@ -1421,6 +1462,33 @@ class Parser:
         self._struct_types[name] = sty
         return sty
 
+    def _parse_enum_def(self):
+        """Parse: enum [Name] { IDENT [= val] [, ...] } [;]
+        Registers each enumerator as a module-level INT32 constant.
+        No IR instructions are emitted — enum values are folded at parse time.
+        """
+        self._expect(TokKind.KW_ENUM)
+        # Optional tag name
+        if self._at(TokKind.IDENT) and not self._at(TokKind.LBRACE):
+            self._advance()  # consume tag, ignored
+        self._expect(TokKind.LBRACE)
+        counter = 0
+        while not self._at(TokKind.RBRACE):
+            name = self._expect(TokKind.IDENT).value
+            if self._match(TokKind.ASSIGN):
+                val_const = self._parse_assign_expr()
+                if isinstance(val_const, Const):
+                    counter = int(val_const.value)
+                else:
+                    counter = 0  # non-const enum initializer: use 0 as fallback
+            # Store as a compile-time constant (no IR emission)
+            self._global_consts[name] = Const(INT32, counter)
+            counter += 1
+            if not self._match(TokKind.COMMA):
+                break
+        self._expect(TokKind.RBRACE)
+        self._match(TokKind.SEMI)  # optional trailing semicolon
+
     def _parse_typedef(self):
         """Parse: typedef struct Name Name;  or  typedef type name;"""
         self._expect(TokKind.KW_TYPEDEF)
@@ -1484,6 +1552,8 @@ class Parser:
                 self._parse_struct_def()
             elif self._at(TokKind.KW_TYPEDEF):
                 self._parse_typedef()
+            elif self._at(TokKind.KW_ENUM):
+                self._parse_enum_def()
             else:
                 self._advance()
         return mod

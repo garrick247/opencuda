@@ -43,6 +43,8 @@ class TokKind(Enum):
     KW_SWITCH   = auto()
     KW_CASE     = auto()
     KW_DEFAULT  = auto()
+    KW_SIZEOF   = auto()
+    KW_ENUM     = auto()
 
     # Operators
     PLUS     = auto()
@@ -135,6 +137,8 @@ _KEYWORDS = {
     'switch': TokKind.KW_SWITCH,
     'case': TokKind.KW_CASE,
     'default': TokKind.KW_DEFAULT,
+    'sizeof': TokKind.KW_SIZEOF,
+    'enum': TokKind.KW_ENUM,
 }
 
 _TOKEN_RE = re.compile(r"""
