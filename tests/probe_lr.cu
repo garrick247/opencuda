@@ -20,8 +20,7 @@ __global__ void atomic64_int(int *out, int *in, int n) {
 
 // atomicMin / atomicMax on shared memory
 __global__ void atomic_shared_minmax(int *out, int *in, int n) {
-    __shared__ int shared_min;
-    __shared__ int shared_max;
+    __shared__ int shared_min, shared_max;
     int tid = threadIdx.x;
     if (tid == 0) {
         shared_min = in[0];

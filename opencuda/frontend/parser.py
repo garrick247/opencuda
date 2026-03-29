@@ -1495,15 +1495,26 @@ class Parser:
             ty = self._parse_type()
             name = self._expect(TokKind.IDENT).value
             # __shared__ scalar: __shared__ float total; — treat as size-1 array
-            # (allocated in .shared, accessed as ptr[0])
-            if self._match(TokKind.SEMI):
+            # (allocated in .shared, accessed as ptr[0]).
+            # Also handles comma-separated: __shared__ int a, b;
+            def _declare_shared_scalar(n):
                 smem_ty = PtrTy(ty, AddrSpace.SHARED)
-                val = self._new_val(name, smem_ty)
-                self._variables[name] = val
-                self._shared_scalars.add(name)
+                v = self._new_val(n, smem_ty)
+                self._variables[n] = v
+                self._shared_scalars.add(n)
                 if not hasattr(self._kernel, '_shared_decls'):
                     self._kernel._shared_decls = []
-                self._kernel._shared_decls.append((name, ty, 1))
+                self._kernel._shared_decls.append((n, ty, 1))
+
+            if self._match(TokKind.SEMI):
+                _declare_shared_scalar(name)
+                return
+            if self._at(TokKind.COMMA):
+                _declare_shared_scalar(name)
+                while self._match(TokKind.COMMA):
+                    extra = self._expect(TokKind.IDENT).value
+                    _declare_shared_scalar(extra)
+                self._expect(TokKind.SEMI)
                 return
             self._expect(TokKind.LBRACKET)
             # extern __shared__ float sdata[]; — empty brackets → dynamic
