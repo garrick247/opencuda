@@ -58,6 +58,13 @@ class Parser:
         # Module-level compile-time constants (enum values, etc.)
         # These are visible in all kernels as Const operands without IR instructions.
         self._global_consts: dict[str, Const] = {}
+        # Kernel-scoped identity-copy chain: maps dest Value id → source Value for
+        # every BinInst(dest, ADD, src, Const(0)) emitted in the current kernel.
+        # Used by _loop_writeback to trace through materialization intermediates
+        # and correctly sequence parallel copies even when the materialization
+        # instructions live in a different block than the writeback block.
+        # Reset at the start of each kernel.
+        self._copy_chain_global: dict[int, "Value"] = {}
         # Module-level extern __shared__ declarations: list of (name, scalar_ty).
         # Injected into each kernel's scope at kernel parse time.
         self._module_shared_decls: list = []
@@ -155,6 +162,16 @@ class Parser:
 
     def _emit(self, inst):
         self._cur_block.instructions.append(inst)
+        # Track identity copies (dest := src + 0) for parallel-copy sequencing.
+        # This allows _loop_writeback to trace through materialization intermediates
+        # emitted in earlier blocks when ordering writeback copies.
+        if (isinstance(inst, BinInst)
+                and inst.op == BinOp.ADD
+                and isinstance(inst.rhs, Const)
+                and inst.rhs.value == 0
+                and isinstance(inst.lhs, Value)
+                and isinstance(inst.dest, Value)):
+            self._copy_chain_global[inst.dest.id] = inst.lhs
 
     def _new_val(self, name: str, ty: Type) -> Value:
         return self._kernel.new_value(name, ty)
@@ -288,23 +305,18 @@ class Parser:
         # Root-tracing detects that root(mat_second) is s_best = entry_val(s_best),
         # so (d) must come before (c).
 
-        # Build identity-copy map for the current block: val_id → source_val
-        _copy_src: dict[int, "Value"] = {}
-        for _inst in self._cur_block.instructions:
-            if (isinstance(_inst, BinInst)
-                    and _inst.op == BinOp.ADD
-                    and isinstance(_inst.rhs, Const)
-                    and _inst.rhs.value == 0
-                    and isinstance(_inst.lhs, Value)
-                    and isinstance(_inst.dest, Value)):
-                _copy_src[_inst.dest.id] = _inst.lhs
+        # Use the kernel-scoped identity-copy chain (populated in _emit across all
+        # blocks) to trace through materialization intermediates.  This handles
+        # the case where the materialization copy (mat = entry_val + 0) was emitted
+        # in a prior block (e.g. for_body_6), not in the current writeback block.
+        _chain = self._copy_chain_global
 
         def _root(v: object) -> object:
             """Follow identity-copy chain to the ultimate source."""
             seen: set[int] = set()
             while isinstance(v, Value) and v.id not in seen:
                 seen.add(v.id)
-                src = _copy_src.get(v.id)
+                src = _chain.get(v.id)
                 if src is None:
                     break
                 v = src
@@ -2945,6 +2957,7 @@ class Parser:
         # each kernel resets its id counter to 0, so ids from a prior kernel would
         # alias a fresh param sentinel or return dest created in this kernel.
         self._inline_struct_return_fields = {}
+        self._copy_chain_global = {}
 
         # Load kernel parameters into variables
         entry = self._new_block("entry")
