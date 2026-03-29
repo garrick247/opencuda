@@ -2265,6 +2265,12 @@ class Parser:
                     self._typedefs[alias] = ty  # map alias → return type (approximate)
                 return
             alias = self._expect(TokKind.IDENT).value
+            # Array typedef: typedef float arr_t[N]; — consume and ignore dimension
+            if self._at(TokKind.LBRACKET):
+                self._advance()
+                if not self._at(TokKind.RBRACKET):
+                    self._parse_assign_expr()
+                self._expect(TokKind.RBRACKET)
             self._expect(TokKind.SEMI)
             self._typedefs[alias] = ty
 
