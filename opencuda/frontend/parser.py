@@ -653,15 +653,17 @@ class Parser:
             merge_bb = self._new_block("lor_merge")
             # LHS true → skip to lor_skip (result = 1), else → lor_rhs
             self._cur_block.terminator = CondBrTerm(lhs, skip_bb.label, rhs_bb.label)
-            # RHS block: evaluate RHS, store in dest
+            # RHS block: evaluate RHS, store in dest.
+            # IMPORTANT: parsing RHS may create new blocks and change _cur_block.
+            # Set the terminator on self._cur_block (final RHS block), not rhs_bb.
             self._cur_block = rhs_bb
             rhs = self._parse_and_expr()
             self._emit(BinInst(dest, BinOp.ADD, rhs, Const(INT32, 0)))
-            rhs_bb.terminator = BrTerm(merge_bb.label)
+            self._cur_block.terminator = BrTerm(merge_bb.label)
             # Skip block: LHS was true, result is 1
             self._cur_block = skip_bb
             self._emit(BinInst(dest, BinOp.ADD, Const(INT32, 1), Const(INT32, 0)))
-            skip_bb.terminator = BrTerm(merge_bb.label)
+            self._cur_block.terminator = BrTerm(merge_bb.label)
             self._cur_block = merge_bb
             lhs = dest
         return lhs
@@ -678,15 +680,18 @@ class Parser:
             merge_bb = self._new_block("land_merge")
             # LHS true → land_rhs (eval RHS), LHS false → land_skip (result = 0)
             self._cur_block.terminator = CondBrTerm(lhs, rhs_bb.label, skip_bb.label)
-            # RHS block: evaluate RHS, store in dest
+            # RHS block: evaluate RHS, store in dest.
+            # IMPORTANT: parsing RHS may create new blocks and change _cur_block
+            # (e.g. if RHS contains || or another &&).  Set the terminator on
+            # self._cur_block (the final block after RHS evaluation), not rhs_bb.
             self._cur_block = rhs_bb
             rhs = self._parse_bitor_expr()
             self._emit(BinInst(dest, BinOp.ADD, rhs, Const(INT32, 0)))
-            rhs_bb.terminator = BrTerm(merge_bb.label)
+            self._cur_block.terminator = BrTerm(merge_bb.label)
             # Skip block: LHS was false, result is 0
             self._cur_block = skip_bb
             self._emit(BinInst(dest, BinOp.ADD, Const(INT32, 0), Const(INT32, 0)))
-            skip_bb.terminator = BrTerm(merge_bb.label)
+            self._cur_block.terminator = BrTerm(merge_bb.label)
             self._cur_block = merge_bb
             lhs = dest
         return lhs
