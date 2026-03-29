@@ -1893,7 +1893,8 @@ class Parser:
                                      '__half2float', '__low2float', '__high2float')
                     _half_binary  = ('__hmul', '__hmul_rn', '__hmul_sat',
                                      '__hadd_rn', '__hsub', '__hsub_rn',
-                                     '__hdiv', '__hfmin', '__hfmax')
+                                     '__hdiv', '__hfmin', '__hfmax',
+                                     '__hmin', '__hmax')
                     _half_ternary = ('__hfma', '__hfma_sat', '__hfma_relu')
                     _half_cmp_int = ('__hgt', '__hlt', '__hge', '__hle',
                                      '__heq', '__hne', '__hisnan', '__hisinf')

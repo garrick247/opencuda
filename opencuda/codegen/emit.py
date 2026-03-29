@@ -1878,11 +1878,11 @@ class PTXEmitter:
                     self._lines.append(f'    rcp.approx.f32 {self._reg(f32_rcp)}, {self._reg(f32_b)};')
                     self._lines.append(f'    cvt.rn.f16.f32 {self._reg(h_rcp)}, {self._reg(f32_rcp)};')
                     self._lines.append(f'    mul.rn.f16 {dest}, {a}, {self._reg(h_rcp)};')
-                elif inst.func in ('__hfmin',):
+                elif inst.func in ('__hfmin', '__hmin'):
                     a = self._operand(inst.args[0]) if inst.args else '0h0000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
                     self._lines.append(f'    min.f16 {dest}, {a}, {b};')
-                elif inst.func in ('__hfmax',):
+                elif inst.func in ('__hfmax', '__hmax'):
                     a = self._operand(inst.args[0]) if inst.args else '0h0000'
                     b = self._operand(inst.args[1]) if len(inst.args) > 1 else '0h0000'
                     self._lines.append(f'    max.f16 {dest}, {a}, {b};')
