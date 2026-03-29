@@ -398,17 +398,24 @@ class PTXEmitter:
         # Run linear scan allocation
         self._alloc, self._val_type_map, self._pred_ids, self._alloc_max = _build_alloc_map(kernel)
 
-        # Pre-scan: find Values that are shared memory variables
+        # Pre-scan: find Values that are shared memory pointer registers.
+        # Only PtrTy Values should be collected; scalar dest Values with the same name
+        # (from auto-deref LoadInst on __shared__ scalars) must NOT be included,
+        # as emitting mov.u64 into a float register is illegal PTX.
         if hasattr(kernel, '_shared_decls'):
             smem_names = {s[0] for s in kernel._shared_decls}
             for bb in kernel.blocks:
                 for inst in bb.instructions:
                     if hasattr(inst, 'lhs') and isinstance(inst.lhs, Value):
-                        if inst.lhs.name in smem_names:
+                        if inst.lhs.name in smem_names and isinstance(inst.lhs.ty, PtrTy):
                             self._shared_val_ids.setdefault(inst.lhs.name, []).append(inst.lhs)
                     if hasattr(inst, 'dest') and isinstance(inst.dest, Value):
-                        if inst.dest.name in smem_names:
+                        if inst.dest.name in smem_names and isinstance(inst.dest.ty, PtrTy):
                             self._shared_val_ids.setdefault(inst.dest.name, []).append(inst.dest)
+                    # LoadInst/StoreInst carry the pointer in .addr — scan that too
+                    if hasattr(inst, 'addr') and isinstance(inst.addr, Value):
+                        if inst.addr.name in smem_names and isinstance(inst.addr.ty, PtrTy):
+                            self._shared_val_ids.setdefault(inst.addr.name, []).append(inst.addr)
 
         # Pre-scan for printf format strings
         kernel_printf_strings = []

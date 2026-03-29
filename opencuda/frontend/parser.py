@@ -56,6 +56,10 @@ class Parser:
         # Module-level extern __shared__ declarations: list of (name, scalar_ty).
         # Injected into each kernel's scope at kernel parse time.
         self._module_shared_decls: list = []
+        # Names declared as __shared__ scalar (no brackets): __shared__ float total;
+        # These are PtrTy(SHARED) variables that must be auto-dereferenced on rvalue use
+        # and must use StoreInst (not variable reassignment) on plain assignment.
+        self._shared_scalars: set = set()
         # Register C/CUDA scalar aliases not covered by keyword tokens
         self._typedefs['bool'] = INT32        # _Bool / bool → i32 (0 or 1)
         self._typedefs['size_t'] = UINT64     # pointer-sized unsigned
@@ -391,7 +395,11 @@ class Parser:
                 # field access (struct.field = val). In that case update the
                 # per-field variable binding — do NOT emit a StoreInst through
                 # the pointer value, which would be semantically wrong.
-                if _lhs_orig_name and _lhs_orig_name in self._variables:
+                # Exception: __shared__ scalar vars must always use StoreInst,
+                # not variable rebinding, because the memory persists across threads.
+                if (_lhs_orig_name
+                        and _lhs_orig_name in self._variables
+                        and _lhs_orig_name not in self._shared_scalars):
                     self._variables[_lhs_orig_name] = rhs
                     return rhs
                 # Coerce rhs to pointee type on scalar type mismatch (e.g. half → float*)
@@ -1235,7 +1243,17 @@ class Parser:
 
             # Variable reference
             if name in self._variables:
-                return self._variables[name]
+                var = self._variables[name]
+                # Auto-dereference __shared__ scalar vars used as rvalues.
+                # total declared as __shared__ float total; has PtrTy(FLOAT, SHARED).
+                # When accessed without '[', emit a load to return the scalar value.
+                if (name in self._shared_scalars
+                        and isinstance(var.ty, PtrTy)
+                        and not self._at(TokKind.LBRACKET)):
+                    loaded = self._new_val(name, var.ty.pointee)
+                    self._emit(LoadInst(loaded, var))
+                    return loaded
+                return var
 
             # Module-level compile-time constants (enum values, etc.)
             if name in self._global_consts:
@@ -1346,6 +1364,17 @@ class Parser:
             self._advance()
             ty = self._parse_type()
             name = self._expect(TokKind.IDENT).value
+            # __shared__ scalar: __shared__ float total; — treat as size-1 array
+            # (allocated in .shared, accessed as ptr[0])
+            if self._match(TokKind.SEMI):
+                smem_ty = PtrTy(ty, AddrSpace.SHARED)
+                val = self._new_val(name, smem_ty)
+                self._variables[name] = val
+                self._shared_scalars.add(name)
+                if not hasattr(self._kernel, '_shared_decls'):
+                    self._kernel._shared_decls = []
+                self._kernel._shared_decls.append((name, ty, 1))
+                return
             self._expect(TokKind.LBRACKET)
             # extern __shared__ float sdata[]; — empty brackets → dynamic
             if self._at(TokKind.RBRACKET):
@@ -1985,6 +2014,9 @@ class Parser:
                 # _stmt_lhs_name is set iff the statement started with IDENT = ...
                 # AND the IDENT is tracked in _variables.  In that case, treat as
                 # variable update; otherwise emit a memory store.
+                # Exception: __shared__ scalars always use StoreInst.
+                if _stmt_lhs_name and _stmt_lhs_name in self._shared_scalars:
+                    _stmt_lhs_name = None
                 update_name = _stmt_lhs_name or lhs.name
                 if _stmt_lhs_name and update_name in self._variables:
                     # Pointer variable reassignment: p = new_ptr_value
