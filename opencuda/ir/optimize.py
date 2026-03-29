@@ -167,6 +167,17 @@ def constant_fold(kernel: Kernel) -> int:
                     folded += 1
                     # Keep the instruction (it's now simpler but still writes dest)
 
+                # Identity: x * 1 → x.  Emit as add-zero so identity_fold eliminates it.
+                elif not is_float and inst.op == BinOp.MUL and rv == 1 and isinstance(inst.lhs, Value):
+                    inst.op = BinOp.ADD
+                    inst.rhs = Const(inst.dest.ty, 0)
+                    folded += 1
+                elif not is_float and inst.op == BinOp.MUL and lv == 1 and isinstance(inst.rhs, Value):
+                    inst.op = BinOp.ADD
+                    inst.lhs = inst.rhs
+                    inst.rhs = Const(inst.dest.ty, 0)
+                    folded += 1
+
                 # Strength reduction: mul by power of 2 → shift left (integers only)
                 elif not is_float and inst.op == BinOp.MUL and rv is not None and isinstance(rv, int) and rv > 0 and (rv & (rv-1)) == 0:
                     shift = rv.bit_length() - 1
@@ -515,16 +526,25 @@ def identity_fold(kernel: Kernel) -> int:
 
     # Collect single-def add-zero copy instructions.
     copies: dict[int, Operand] = {}   # dest_id → source operand (Value or Const)
+    # Ops where `D = X op Const(0)` is equivalent to `D = X`
+    _ZERO_RHS_IDENTITY = frozenset({
+        BinOp.ADD, BinOp.SUB, BinOp.SHL, BinOp.SHR,
+        BinOp.XOR, BinOp.OR,
+    })
+    # Ops where `D = Const(0) op X` is also equivalent to `D = X` (commutative zero)
+    _ZERO_LHS_IDENTITY = frozenset({BinOp.ADD, BinOp.XOR, BinOp.OR})
+
     for bb in kernel.blocks:
         for inst in bb.instructions:
             if (isinstance(inst, BinInst)
-                    and inst.op == BinOp.ADD
                     and def_count.get(inst.dest.id, 0) == 1):
-                # add D, X, Const(0)  — X may be Value or Const (e.g. result = -1)
-                if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
+                # D = X op Const(0) — X may be Value or Const (e.g. result = -1)
+                if (inst.op in _ZERO_RHS_IDENTITY
+                        and isinstance(inst.rhs, Const) and inst.rhs.value == 0):
                     copies[inst.dest.id] = inst.lhs
-                # add D, Const(0), X  — symmetric
-                elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
+                # D = Const(0) op X — symmetric for commutative ops
+                elif (inst.op in _ZERO_LHS_IDENTITY
+                        and isinstance(inst.lhs, Const) and inst.lhs.value == 0):
                     copies[inst.dest.id] = inst.rhs
 
     if not copies:
