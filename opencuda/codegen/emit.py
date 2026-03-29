@@ -464,8 +464,12 @@ class PTXEmitter:
             for lname, lty, lcount, _val in kernel._local_decls:
                 elem_bytes = lty.size if hasattr(lty, 'size') else 4
                 total_bytes = elem_bytes * lcount
-                # PTX .local uses .align and .b8 storage
-                ptx.append(f'    .local .align {elem_bytes} .b8 {lname}_local[{total_bytes}];')
+                # PTX .align must be a power of two: round elem_bytes up
+                align = 1
+                while align < elem_bytes:
+                    align <<= 1
+                align = min(align, 16)  # PTX max useful alignment
+                ptx.append(f'    .local .align {align} .b8 {lname}_local[{total_bytes}];')
 
         # Register declarations
         for prefix, count in sorted(self._reg_counts.items()):

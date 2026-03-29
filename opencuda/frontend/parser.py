@@ -1238,6 +1238,21 @@ class Parser:
                 # A sentinel Value with StructTy is kept for type resolution
                 # during member-access parsing (.x / .y / .z / .w).
                 if isinstance(decl_ty, StructTy):
+                    # Struct array: Foo arr[N] — allocate in .local, expose as PtrTy(Foo, LOCAL)
+                    if self._at(TokKind.LBRACKET):
+                        self._advance()
+                        sz_op = self._parse_assign_expr()
+                        count = int(sz_op.value) if isinstance(sz_op, Const) else 1
+                        self._expect(TokKind.RBRACKET)
+                        arr_ty = PtrTy(decl_ty, AddrSpace.LOCAL)
+                        arr_val = self._new_val(name, arr_ty)
+                        self._variables[name] = arr_val
+                        if not hasattr(self._kernel, '_local_decls'):
+                            self._kernel._local_decls = []
+                        self._kernel._local_decls.append((name, decl_ty, count, arr_val))
+                        if not self._match(TokKind.COMMA):
+                            break
+                        continue
                     sentinel = self._new_val(name, decl_ty)
                     self._variables[name] = sentinel
                     for fname, fty in decl_ty.fields:
