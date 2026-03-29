@@ -43,6 +43,10 @@ class Parser:
         self._break_snapshots: list[Optional[dict]] = []  # vars snapshot at break scope entry
         self._continue_targets: list[str] = []       # stack of continue target labels
         self._inline_return_target = None  # (return_dest_val, return_merge_label) or None
+        # Multi-dimensional array row strides: maps var_name → row_stride_bytes.
+        # For float tile[16][16], row_stride = 16*sizeof(float) = 64.
+        # Used to compute tile[i][j] as *(tile + i*64 + j*4) rather than *(tile + i*4 + j*4).
+        self._array_row_strides: dict[str, int] = {}
         # Module-level compile-time constants (enum values, etc.)
         # These are visible in all kernels as Const operands without IR instructions.
         self._global_consts: dict[str, Const] = {}
@@ -645,6 +649,17 @@ class Parser:
                 index = self._parse_expr()
                 self._expect(TokKind.RBRACKET)
                 if isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy):
+                    # Multi-dim array check: if this var has a row stride AND a second
+                    # '[' follows, use row stride (not elem_size) and keep as pointer.
+                    row_stride = self._array_row_strides.get(lhs.name)
+                    if row_stride is not None and self._at(TokKind.LBRACKET):
+                        idx_ty = index.ty if isinstance(index, Value) else INT32
+                        scaled = self._new_val("scale", idx_ty)
+                        self._emit(BinInst(scaled, BinOp.MUL, index, Const(idx_ty, row_stride)))
+                        addr = self._new_val("addr", lhs.ty)
+                        self._emit(BinInst(addr, BinOp.ADD, lhs, scaled))
+                        lhs = addr  # keep as pointer for chained [j] to follow
+                        continue
                     elem_size = lhs.ty.pointee.size
                     # addr = base + index * elem_size
                     if elem_size != 1:
@@ -975,16 +990,27 @@ class Parser:
             name = self._expect(TokKind.IDENT).value
             self._expect(TokKind.LBRACKET)
             size_op = self._parse_assign_expr()
-            size = int(size_op.value) if isinstance(size_op, Const) else 1
+            d0 = int(size_op.value) if isinstance(size_op, Const) else 1
+            size = d0
             self._expect(TokKind.RBRACKET)
             # Handle multi-dimensional arrays [d0][d1]... — collapse all dims
-            # into one flat array of total_elements elements.
+            # into one flat array of total_elements elements, tracking inner product
+            # for multi-dim index stride computation.
+            inner_dims = []
             while self._at(TokKind.LBRACKET):
                 self._advance()
                 dim_op = self._parse_assign_expr()
                 dim = int(dim_op.value) if isinstance(dim_op, Const) else 1
+                inner_dims.append(dim)
                 size *= dim
                 self._expect(TokKind.RBRACKET)
+            # If multi-dim: row stride = product(inner_dims) * elem_size
+            if inner_dims:
+                elem_size = ty.size if isinstance(ty, ScalarTy) else 8
+                inner_prod = 1
+                for d in inner_dims:
+                    inner_prod *= d
+                self._array_row_strides[name] = inner_prod * elem_size
             self._expect(TokKind.SEMI)
             # Create a shared-memory pointer variable
             smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED)
@@ -1512,14 +1538,38 @@ class Parser:
                     if self._match(TokKind.LBRACKET):
                         index = self._parse_expr()
                         self._expect(TokKind.RBRACKET)
-                        elem_size = var.ty.pointee.size
-                        if elem_size != 1:
+                        # Multi-dim array: if a second '[' follows and this var has
+                        # a recorded row stride, use row stride for first index.
+                        addr = None
+                        row_stride = self._array_row_strides.get(name)
+                        if row_stride is not None and self._at(TokKind.LBRACKET):
                             idx_ty = index.ty if isinstance(index, Value) else INT32
                             scaled = self._new_val("scale", idx_ty)
-                            self._emit(BinInst(scaled, BinOp.MUL, index, Const(idx_ty, elem_size)))
-                            index = scaled
-                        addr = self._new_val("addr", var.ty)
-                        self._emit(BinInst(addr, BinOp.ADD, var, index))
+                            self._emit(BinInst(scaled, BinOp.MUL, index, Const(idx_ty, row_stride)))
+                            addr = self._new_val("addr", var.ty)
+                            self._emit(BinInst(addr, BinOp.ADD, var, scaled))
+                            # Consume second [j] and compute final address
+                            self._advance()  # consume '['
+                            index2 = self._parse_expr()
+                            self._expect(TokKind.RBRACKET)
+                            elem_size = var.ty.pointee.size
+                            if elem_size != 1:
+                                idx2_ty = index2.ty if isinstance(index2, Value) else INT32
+                                scaled2 = self._new_val("scale", idx2_ty)
+                                self._emit(BinInst(scaled2, BinOp.MUL, index2, Const(idx2_ty, elem_size)))
+                                index2 = scaled2
+                            final_addr = self._new_val("addr", var.ty)
+                            self._emit(BinInst(final_addr, BinOp.ADD, addr, index2))
+                            addr = final_addr
+                        else:
+                            elem_size = var.ty.pointee.size
+                            if elem_size != 1:
+                                idx_ty = index.ty if isinstance(index, Value) else INT32
+                                scaled = self._new_val("scale", idx_ty)
+                                self._emit(BinInst(scaled, BinOp.MUL, index, Const(idx_ty, elem_size)))
+                                index = scaled
+                            addr = self._new_val("addr", var.ty)
+                            self._emit(BinInst(addr, BinOp.ADD, var, index))
                         # Follow chained .field access (e.g. p[tid].pos.x)
                         # keeping the result as a pointer (address) so that
                         # the caller can emit a StoreInst / compound read-modify-write.
