@@ -359,6 +359,9 @@ class Parser:
 
     def _parse_type(self) -> Type:
         """Parse a C type specifier."""
+        # Skip leading qualifiers that don't affect the IR type.
+        while self._peek().kind in (TokKind.KW_VOLATILE, TokKind.KW_CONST):
+            self._advance()
         tok = self._peek()
 
         if tok.kind == TokKind.KW_VOID:
