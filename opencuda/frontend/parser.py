@@ -178,6 +178,28 @@ class Parser:
             return None
         return Const(ty, result)
 
+    def _scale_ptr_arith_offset(self, ptr_ty: PtrTy, int_op: Operand) -> Operand:
+        """Scale an integer operand by the pointee size for C pointer arithmetic.
+
+        In C, ptr + n advances n * sizeof(*ptr) bytes.  The emitter emits
+        raw byte-offset additions (add.u64), so the parser must multiply the
+        integer operand by elem_size before building the BinInst.
+
+        Returns the original operand unchanged when elem_size == 1 (char*).
+        """
+        if isinstance(ptr_ty.pointee, StructTy):
+            elem_size = ptr_ty.pointee.total_size
+        else:
+            elem_size = getattr(ptr_ty.pointee, 'size', 4)
+        if elem_size == 1:
+            return int_op
+        int_ty = int_op.ty if isinstance(int_op, (Value, Const)) else INT32
+        if isinstance(int_op, Const):
+            return Const(int_ty, int_op.value * elem_size)
+        scaled = self._new_val("ptr_off", int_ty)
+        self._emit(BinInst(scaled, BinOp.MUL, int_op, Const(int_ty, elem_size)))
+        return scaled
+
     def _loop_writeback(self, entry_vars: dict) -> None:
         """Write modified loop variables back to their canonical entry Values.
 
@@ -572,6 +594,13 @@ class Parser:
         while True:
             if self._match(TokKind.PLUS):
                 rhs = self._parse_mul_expr()
+                # C pointer arithmetic: ptr + n means ptr + n*sizeof(*ptr) bytes.
+                lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else None
+                rhs_ty = rhs.ty if isinstance(rhs, (Value, Const)) else None
+                if isinstance(lhs_ty, PtrTy) and not isinstance(rhs_ty, PtrTy):
+                    rhs = self._scale_ptr_arith_offset(lhs_ty, rhs)
+                elif isinstance(rhs_ty, PtrTy) and not isinstance(lhs_ty, PtrTy):
+                    lhs = self._scale_ptr_arith_offset(rhs_ty, lhs)
                 folded = self._const_fold(BinOp.ADD, lhs, rhs)
                 if folded is not None:
                     lhs = folded
@@ -581,6 +610,11 @@ class Parser:
                     lhs = dest
             elif self._match(TokKind.MINUS):
                 rhs = self._parse_mul_expr()
+                # C pointer arithmetic: ptr - n means ptr - n*sizeof(*ptr) bytes.
+                lhs_ty = lhs.ty if isinstance(lhs, (Value, Const)) else None
+                rhs_ty = rhs.ty if isinstance(rhs, (Value, Const)) else None
+                if isinstance(lhs_ty, PtrTy) and not isinstance(rhs_ty, PtrTy):
+                    rhs = self._scale_ptr_arith_offset(lhs_ty, rhs)
                 folded = self._const_fold(BinOp.SUB, lhs, rhs)
                 if folded is not None:
                     lhs = folded
@@ -751,8 +785,10 @@ class Parser:
             _pre_var = self._peek().value if self._at(TokKind.IDENT) else None
             operand = self._parse_unary_expr()
             if isinstance(operand, Value):
+                step = (self._scale_ptr_arith_offset(operand.ty, Const(INT32, 1))
+                        if isinstance(operand.ty, PtrTy) else Const(operand.ty, 1))
                 new_val = self._new_val(f"{operand.name}_preinc", operand.ty)
-                self._emit(BinInst(new_val, BinOp.ADD, operand, Const(operand.ty, 1)))
+                self._emit(BinInst(new_val, BinOp.ADD, operand, step))
                 update_name = (_pre_var if _pre_var and _pre_var in self._variables
                                else operand.name)
                 self._variables[update_name] = new_val
@@ -762,8 +798,10 @@ class Parser:
             _pre_var = self._peek().value if self._at(TokKind.IDENT) else None
             operand = self._parse_unary_expr()
             if isinstance(operand, Value):
+                step = (self._scale_ptr_arith_offset(operand.ty, Const(INT32, 1))
+                        if isinstance(operand.ty, PtrTy) else Const(operand.ty, 1))
                 new_val = self._new_val(f"{operand.name}_predec", operand.ty)
-                self._emit(BinInst(new_val, BinOp.SUB, operand, Const(operand.ty, 1)))
+                self._emit(BinInst(new_val, BinOp.SUB, operand, step))
                 update_name = (_pre_var if _pre_var and _pre_var in self._variables
                                else operand.name)
                 self._variables[update_name] = new_val
@@ -811,8 +849,10 @@ class Parser:
             if self._match(TokKind.PLUSPLUS):
                 if isinstance(lhs, Value):
                     old = lhs
+                    step = (self._scale_ptr_arith_offset(old.ty, Const(INT32, 1))
+                            if isinstance(old.ty, PtrTy) else Const(old.ty, 1))
                     new_val = self._new_val(f"{old.name}_inc", old.ty)
-                    self._emit(BinInst(new_val, BinOp.ADD, old, Const(old.ty, 1)))
+                    self._emit(BinInst(new_val, BinOp.ADD, old, step))
                     update_name = _src_var_name if _src_var_name else old.name
                     self._variables[update_name] = new_val
                     lhs = old  # post-increment returns old value
@@ -821,8 +861,10 @@ class Parser:
             if self._match(TokKind.MINUSMINUS):
                 if isinstance(lhs, Value):
                     old = lhs
+                    step = (self._scale_ptr_arith_offset(old.ty, Const(INT32, 1))
+                            if isinstance(old.ty, PtrTy) else Const(old.ty, 1))
                     new_val = self._new_val(f"{old.name}_dec", old.ty)
-                    self._emit(BinInst(new_val, BinOp.SUB, old, Const(old.ty, 1)))
+                    self._emit(BinInst(new_val, BinOp.SUB, old, step))
                     update_name = _src_var_name if _src_var_name else old.name
                     self._variables[update_name] = new_val
                     lhs = old
