@@ -80,7 +80,22 @@ def preprocess(source: str) -> str:
     def _is_defined(name: str) -> bool:
         return name in obj_defines or name in func_defines
 
-    for line in source.split('\n'):
+    # Join backslash-continued lines (line-splicing) before tokenizing.
+    # A line ending with \ (after stripping trailing whitespace) is joined
+    # to the next line, with the \ and newline removed.
+    raw_lines = source.split('\n')
+    joined: list[str] = []
+    pending = ''
+    for raw in raw_lines:
+        if raw.rstrip().endswith('\\'):
+            pending += raw.rstrip()[:-1]  # strip trailing backslash
+        else:
+            joined.append(pending + raw)
+            pending = ''
+    if pending:
+        joined.append(pending)
+
+    for line in joined:
         stripped = line.strip()
 
         # Conditional directives are processed regardless of current active state
