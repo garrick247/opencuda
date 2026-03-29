@@ -1054,6 +1054,7 @@ class Parser:
                                 fval = self._new_val(key, elem_ty)
                                 self._variables[key] = fval
                             lhs = self._variables[key]
+                            _src_var_name = key
                         else:
                             # Dynamic index into struct array member: return field_0 as fallback
                             key0 = f"{var_name}_{member}_0"
@@ -1061,6 +1062,7 @@ class Parser:
                                 fval = self._new_val(key0, elem_ty)
                                 self._variables[key0] = fval
                             lhs = self._variables[key0]
+                            _src_var_name = key0
                     else:
                         field_ty = sty.field_type(member)
                         field_key = f"{lhs.name}_{member}"
@@ -1071,6 +1073,11 @@ class Parser:
                             dest = self._new_val(field_key, field_ty)
                             self._variables[field_key] = dest
                             lhs = dest
+                        # Update _src_var_name so that postfix ++/-- on a struct
+                        # field (s.frame++) writes back to the field key ("s_frame")
+                        # rather than the struct variable name ("s"), which would
+                        # overwrite the struct sentinel with a scalar Value.
+                        _src_var_name = field_key
                 elif isinstance(lhs, Value) and isinstance(lhs.ty, PtrTy) and isinstance(lhs.ty.pointee, StructTy):
                     sty = lhs.ty.pointee
                     arr_info = self._struct_field_arrays.get(sty.name, {})
