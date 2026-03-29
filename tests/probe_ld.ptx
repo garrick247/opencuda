@@ -1,0 +1,206 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry sum_squares_5(
+    .param .u64 out)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    add.s32 %r1, %r0, 1;
+    add.s32 %r2, %r1, 4;
+    add.s32 %r1, %r2, 9;
+    add.s32 %r2, %r1, 16;
+    mov.s32 %r0, %r2;
+    bra for_exit_8;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry two_loops(
+    .param .u64 out)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    add.s32 %r1, %r0, 1;
+    add.s32 %r2, %r1, 2;
+    add.s32 %r1, %r2, 3;
+    mov.s32 %r0, %r1;
+    bra for_cond_9;
+for_cond_9:
+    add.s32 %r2, %r0, 1;
+    add.s32 %r1, %r2, 2;
+    add.s32 %r2, %r1, 3;
+    mov.s32 %r0, %r2;
+    bra for_exit_12;
+for_exit_12:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry stride_loop(
+    .param .u64 out, .param .u64 in)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    ld.global.s32 %r1, [%rd1];
+    add.s32 %r2, %r0, %r1;
+    add.u64 %rd2, %rd1, 4;
+    ld.global.s32 %r1, [%rd2];
+    add.s32 %r3, %r2, %r1;
+    add.u64 %rd2, %rd1, 8;
+    ld.global.s32 %r2, [%rd2];
+    add.s32 %r1, %r3, %r2;
+    add.u64 %rd2, %rd1, 12;
+    ld.global.s32 %r3, [%rd2];
+    add.s32 %r2, %r1, %r3;
+    add.u64 %rd2, %rd1, 16;
+    ld.global.s32 %r1, [%rd2];
+    add.s32 %r3, %r2, %r1;
+    add.u64 %rd2, %rd1, 20;
+    ld.global.s32 %r2, [%rd2];
+    add.s32 %r1, %r3, %r2;
+    add.u64 %rd2, %rd1, 24;
+    ld.global.s32 %r3, [%rd2];
+    add.s32 %r2, %r1, %r3;
+    add.u64 %rd2, %rd1, 28;
+    ld.global.s32 %r1, [%rd2];
+    add.s32 %r3, %r2, %r1;
+    add.u64 %rd2, %rd1, 32;
+    ld.global.s32 %r2, [%rd2];
+    add.s32 %r1, %r3, %r2;
+    add.u64 %rd2, %rd1, 36;
+    ld.global.s32 %r3, [%rd2];
+    add.s32 %r2, %r1, %r3;
+    mov.s32 %r0, %r2;
+    bra for_exit_8;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry count_down(
+    .param .u64 out)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    mov.u32 %r0, %tid.x;
+    cvt.s32.u32 %r1, %r0;
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r0, 1;
+    mov.s32 %r1, 7;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.ge.s32 %p0, %r1, 1;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    mul.lo.s32 %r2, %r0, %r1;
+    mov.s32 %r0, %r2;
+    bra for_inc_7;
+for_inc_7:
+    sub.s32 %r2, %r1, 1;
+    mov.s32 %r1, %r2;
+    bra for_cond_5;
+for_exit_8:
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
+}
+
+.visible .entry loop_with_cond(
+    .param .u64 out, .param .s32 threshold)
+{
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<1>;
+    .reg .pred %p<2>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [threshold];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.s32 %r1, 0;
+    mov.s32 %r2, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r2, 4;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    setp.gt.s32 %p1, %r2, %r0;
+    @%p1 bra if_true_9;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r3, %r2, 1;
+    mov.s32 %r2, %r3;
+    bra for_cond_5;
+for_exit_8:
+    st.global.s32 [%rd0], %r1;
+    bra if_merge_4;
+if_true_9:
+    add.s32 %r4, %r1, 1;
+    mov.s32 %r1, %r4;
+    bra for_inc_7;
+}

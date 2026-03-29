@@ -36,12 +36,21 @@ def _find_unrollable_loops(kernel: Kernel) -> list[dict]:
         if cmp_inst is None:
             continue
 
+        # Only unroll forward loops: `i < N` (induction on left, bound on right).
+        # Backward loops (i >= N, i > N) have different trip-count semantics
+        # and would require the pre-header initial value to unroll correctly.
+        # Flipped `N < i` form (lhs=Const) is also supported as `i > N` reversed.
         bound = None
         induction_var = None
-        if isinstance(cmp_inst.rhs, Const):
+        if (cmp_inst.op == CmpOp.LT
+                and isinstance(cmp_inst.rhs, Const)
+                and isinstance(cmp_inst.lhs, Value)):
             bound = int(cmp_inst.rhs.value)
             induction_var = cmp_inst.lhs
-        elif isinstance(cmp_inst.lhs, Const):
+        elif (cmp_inst.op == CmpOp.GT
+                and isinstance(cmp_inst.lhs, Const)
+                and isinstance(cmp_inst.rhs, Value)):
+            # `N > i` is equivalent to `i < N`
             bound = int(cmp_inst.lhs.value)
             induction_var = cmp_inst.rhs
 
