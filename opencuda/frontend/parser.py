@@ -2106,23 +2106,43 @@ class Parser:
                 inner_dims.append(dim)
                 size *= dim
                 self._expect(TokKind.RBRACKET)
-            # If multi-dim: row stride = product(inner_dims) * elem_size
-            if inner_dims:
-                elem_size = ty.size if isinstance(ty, ScalarTy) else 8
-                inner_prod = 1
-                for d in inner_dims:
-                    inner_prod *= d
-                self._array_row_strides[name] = inner_prod * elem_size
+            # Create a shared-memory pointer variable (inner helper for reuse below)
+            def _register_shared_array(arr_name, arr_ty, arr_size, arr_inner_dims):
+                if arr_inner_dims:
+                    elem_size = arr_ty.size if isinstance(arr_ty, ScalarTy) else 8
+                    inner_prod = 1
+                    for d in arr_inner_dims:
+                        inner_prod *= d
+                    self._array_row_strides[arr_name] = inner_prod * elem_size
+                smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if arr_ty == FLOAT else arr_ty, AddrSpace.SHARED)
+                v2 = self._new_val(arr_name, smem_ty)
+                self._variables[arr_name] = v2
+                self._declare_local(arr_name)
+                if not hasattr(self._kernel, '_shared_decls'):
+                    self._kernel._shared_decls = []
+                self._kernel._shared_decls.append((arr_name, arr_ty, arr_size))
+
+            _register_shared_array(name, ty, size, inner_dims)
+
+            # Handle comma-separated shared array declarations:
+            # __shared__ float a[256], b[256];
+            while self._match(TokKind.COMMA):
+                extra_name = self._expect(TokKind.IDENT).value
+                self._expect(TokKind.LBRACKET)
+                extra_size_op = self._parse_assign_expr()
+                extra_size = int(extra_size_op.value) if isinstance(extra_size_op, Const) else 1
+                self._expect(TokKind.RBRACKET)
+                extra_inner = []
+                while self._at(TokKind.LBRACKET):
+                    self._advance()
+                    dim_op = self._parse_assign_expr()
+                    dim = int(dim_op.value) if isinstance(dim_op, Const) else 1
+                    extra_inner.append(dim)
+                    extra_size *= dim
+                    self._expect(TokKind.RBRACKET)
+                _register_shared_array(extra_name, ty, extra_size, extra_inner)
+
             self._expect(TokKind.SEMI)
-            # Create a shared-memory pointer variable
-            smem_ty = PtrTy(ScalarTy(ScalarType.FLOAT) if ty == FLOAT else ty, AddrSpace.SHARED)
-            val = self._new_val(name, smem_ty)
-            self._variables[name] = val
-            self._declare_local(name)
-            # Store smem info for codegen (size in bytes)
-            if not hasattr(self._kernel, '_shared_decls'):
-                self._kernel._shared_decls = []
-            self._kernel._shared_decls.append((name, ty, size))
             return
 
         # Variable declaration: type name [= expr] [, name2 [= expr2]] ...;
