@@ -1900,8 +1900,21 @@ class Parser:
                     _half_cvt     = ('__float2half', '__float2half_rn',
                                      '__float2half_rd', '__float2half_ru',
                                      '__float2half_rz',
+                                     '__int2half_rn', '__int2half_rd',
+                                     '__int2half_ru', '__int2half_rz',
+                                     '__uint2half_rn', '__uint2half_rd',
+                                     '__uint2half_ru', '__uint2half_rz',
+                                     '__short2half_rn', '__ushort2half_rn',
+                                     '__ll2half_rn', '__ll2half_rz',
+                                     '__ull2half_rn', '__ull2half_rz',
                                      '__ushort_as_half', '__short_as_half')
                     _half_to_bits = ('__half_as_ushort', '__half_as_short')
+                    _half2int_cvt = ('__half2int_rn', '__half2int_rz',
+                                     '__half2uint_rn', '__half2uint_rz',
+                                     '__half2short_rn', '__half2short_rz',
+                                     '__half2ushort_rn', '__half2ushort_rz',
+                                     '__half2ll_rn', '__half2ll_rz',
+                                     '__half2ull_rn', '__half2ull_rz')
                     _hadd_fp16    = ('__hadd', '__hadd_sat')  # overloaded: half add when HALF, else int halving
                     if name in _void_stmts:
                         self._emit(CallInst(None, name, args))
@@ -1971,6 +1984,14 @@ class Parser:
                         ret_ty = HALF
                     elif name in _half_to_bits:
                         ret_ty = UINT16
+                    elif name in _half2int_cvt:
+                        # half → integer: width/sign determined by function name
+                        if 'll' in name or 'ull' in name:
+                            ret_ty = UINT64 if 'ull' in name else INT64
+                        elif 'uint' in name or 'ushort' in name:
+                            ret_ty = UINT32
+                        else:
+                            ret_ty = INT32
                     elif name in _hadd_fp16:
                         # __hadd: half add when arg is HALF, else integer halving add
                         a_ty = args[0].ty if args and isinstance(args[0], Value) else INT32

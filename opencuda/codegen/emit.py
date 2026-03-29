@@ -1792,6 +1792,34 @@ class PTXEmitter:
                             self._lines.append(f'    mov.b16 {dest}, {src};')
                     else:
                         self._lines.append(f'    mov.b32 {dest}, 0;')
+                elif inst.func in ('__int2half_rn', '__uint2half_rn',
+                                    '__short2half_rn', '__ushort2half_rn',
+                                    '__ll2half_rn', '__ull2half_rn'):
+                    # Convert integer → f16
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    if isinstance(inst.args[0] if inst.args else None, Value):
+                        src_ptx = _ptx_type(inst.args[0].ty)
+                    else:
+                        src_ptx = 's32'
+                    self._lines.append(f'    cvt.rn.f16.{src_ptx} {dest}, {src};')
+                elif inst.func in ('__int2half_rz', '__uint2half_rz',
+                                    '__ll2half_rz', '__ull2half_rz'):
+                    src = self._operand(inst.args[0]) if inst.args else '0'
+                    src_ptx = _ptx_type(inst.args[0].ty) if inst.args and isinstance(inst.args[0], Value) else 's32'
+                    self._lines.append(f'    cvt.rz.f16.{src_ptx} {dest}, {src};')
+                elif inst.func in ('__half2int_rn', '__half2uint_rn',
+                                    '__half2short_rn', '__half2ushort_rn',
+                                    '__half2ll_rn', '__half2ull_rn'):
+                    # Convert f16 → integer (round nearest integer)
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    dst_ptx = _ptx_type(inst.dest.ty) if inst.dest else 's32'
+                    self._lines.append(f'    cvt.rni.{dst_ptx}.f16 {dest}, {src};')
+                elif inst.func in ('__half2int_rz', '__half2uint_rz',
+                                    '__half2short_rz', '__half2ushort_rz',
+                                    '__half2ll_rz', '__half2ull_rz'):
+                    src = self._operand(inst.args[0]) if inst.args else '0h0000'
+                    dst_ptx = _ptx_type(inst.dest.ty) if inst.dest else 's32'
+                    self._lines.append(f'    cvt.rzi.{dst_ptx}.f16 {dest}, {src};')
                 elif inst.func in ('__float2half', '__float2half_rn'):
                     src = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     self._lines.append(f'    cvt.rn.f16.f32 {dest}, {src};')
