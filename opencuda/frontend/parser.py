@@ -238,32 +238,106 @@ class Parser:
         cond_bb without running through the end of body. That is a known
         limitation: mutating the loop-condition variable and using continue in
         the same while loop may produce incorrect loop termination.
+
+        Copy sequencing: when multiple variables are written back, a copy
+        (entry_val_A := cur_val_A) must not be emitted before any other pending
+        copy whose cur_val is entry_val_A — otherwise the first copy overwrites
+        a source register that a later copy still needs to read.  Copies are
+        reordered here to avoid that clobber (parallel-copy sequencing).
         """
+        # --- Pass 1: struct sentinels — restore binding, no emit needed ---
         for var_name, entry_val in entry_vars.items():
             if not isinstance(entry_val, Value):
                 continue
             if isinstance(entry_val.ty, StructTy):
-                # Struct sentinels carry no data value — no BinInst needed.
-                # But we must restore _variables[var_name] to the canonical
-                # entry sentinel so that post-loop field lookups like acc.tx
-                # resolve via "acc_tx" (canonical) rather than "combine_ret_tx"
-                # (inline return field defined inside the loop body).
                 if self._variables.get(var_name) is not entry_val:
                     self._variables[var_name] = entry_val
+
+        # --- Pass 2: collect pending scalar copies ---
+        pending: list[tuple[str, "Value", object]] = []
+        for var_name, entry_val in entry_vars.items():
+            if not isinstance(entry_val, Value):
+                continue
+            if isinstance(entry_val.ty, StructTy):
                 continue
             cur_val = self._variables.get(var_name)
             if cur_val is None or cur_val is entry_val:
                 continue
             if isinstance(cur_val, Value):
                 if isinstance(cur_val.ty, StructTy):
-                    continue  # rhs is also a struct sentinel — skip
-                self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
-                self._variables[var_name] = entry_val
+                    continue
+                pending.append((var_name, entry_val, cur_val))
             elif isinstance(cur_val, Const):
-                # Constant assigned to a canonical register: emit copy so that
-                # constant_fold can materialise the value into entry_val.
-                self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
-                self._variables[var_name] = entry_val
+                pending.append((var_name, entry_val, cur_val))
+
+        # --- Pass 3: sequence copies to avoid clobbering ---
+        # After optimization, identity copies (mat = V + 0) are folded so that
+        # cur_val in the writeback refers to a materialized intermediate, not
+        # directly to entry_val of another copy.  Trace through identity-copy
+        # chains in the current block to find the true source of each cur_val;
+        # use those root sources for conflict detection.
+        #
+        # Example: s.second = s.best; s.best = v; generates:
+        #   (a) mat_second = s_best + 0   [materialization in if-body]
+        #   (b) mat_best   = v + 0         [materialization in if-body]
+        #   (c) writeback: s_best   := mat_best   [pending copy for s_best]
+        #   (d) writeback: s_second := mat_second [pending copy for s_second]
+        # After fold: mat_second → s_best, mat_best → v, leaving:
+        #   (c') s_best   := v
+        #   (d') s_second := s_best   ← reads s_best AFTER (c') clobbers it
+        # Root-tracing detects that root(mat_second) is s_best = entry_val(s_best),
+        # so (d) must come before (c).
+
+        # Build identity-copy map for the current block: val_id → source_val
+        _copy_src: dict[int, "Value"] = {}
+        for _inst in self._cur_block.instructions:
+            if (isinstance(_inst, BinInst)
+                    and _inst.op == BinOp.ADD
+                    and isinstance(_inst.rhs, Const)
+                    and _inst.rhs.value == 0
+                    and isinstance(_inst.lhs, Value)
+                    and isinstance(_inst.dest, Value)):
+                _copy_src[_inst.dest.id] = _inst.lhs
+
+        def _root(v: object) -> object:
+            """Follow identity-copy chain to the ultimate source."""
+            seen: set[int] = set()
+            while isinstance(v, Value) and v.id not in seen:
+                seen.add(v.id)
+                src = _copy_src.get(v.id)
+                if src is None:
+                    break
+                v = src
+            return v
+
+        ordered: list[tuple[str, "Value", object]] = []
+        remaining = list(pending)
+        guard = len(remaining) * len(remaining) + len(remaining) + 1
+        iters = 0
+        while remaining:
+            iters += 1
+            if iters > guard:
+                break
+            safe_idx = None
+            for i, (_, ev_i, _) in enumerate(remaining):
+                # Safe to emit if no other remaining copy's rooted cur_val traces
+                # to ev_i (which would be clobbered by emitting this copy first)
+                if not any(
+                    _root(cv_j) is ev_i
+                    for j, (_, _, cv_j) in enumerate(remaining) if j != i
+                ):
+                    safe_idx = i
+                    break
+            if safe_idx is None:
+                # Cycle: emit first (cycles in struct-field writebacks are
+                # vanishingly rare and would require a temp to fix properly)
+                safe_idx = 0
+            ordered.append(remaining.pop(safe_idx))
+
+        # --- Pass 4: emit in safe order ---
+        for var_name, entry_val, cur_val in ordered:
+            self._emit(BinInst(entry_val, BinOp.ADD, cur_val, Const(entry_val.ty, 0)))
+            self._variables[var_name] = entry_val
 
     # -- Type parsing --------------------------------------------------------
 
