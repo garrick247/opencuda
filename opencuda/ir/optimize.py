@@ -34,7 +34,7 @@ even if technically invariant, since they guard the loop exit.
 """
 
 from __future__ import annotations
-from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
+from ..ir.nodes import (Module, Kernel, DeviceFunction, BasicBlock, Value, Const, Operand,
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst, BinOp, CmpOp,
                          BrTerm, CondBrTerm, RetTerm)
@@ -196,6 +196,25 @@ def constant_fold(kernel: Kernel) -> int:
                     inst.op = BinOp.SHL
                     inst.lhs = inst.rhs
                     inst.rhs = Const(inst.dest.ty, shift)
+                    folded += 1
+
+                # Strength reduction: unsigned div by power of 2 → shift right
+                elif (not is_float and inst.op == BinOp.DIV
+                      and rv is not None and isinstance(rv, int) and rv > 1
+                      and (rv & (rv-1)) == 0
+                      and isinstance(inst.dest.ty, ScalarTy) and not inst.dest.ty.is_signed):
+                    shift = rv.bit_length() - 1
+                    inst.op = BinOp.SHR
+                    inst.rhs = Const(inst.dest.ty, shift)
+                    folded += 1
+
+                # Strength reduction: unsigned mod by power of 2 → bitwise AND mask
+                elif (not is_float and inst.op == BinOp.MOD
+                      and rv is not None and isinstance(rv, int) and rv > 0
+                      and (rv & (rv-1)) == 0
+                      and isinstance(inst.dest.ty, ScalarTy) and not inst.dest.ty.is_signed):
+                    inst.op = BinOp.AND
+                    inst.rhs = Const(inst.dest.ty, rv - 1)
                     folded += 1
 
                 # Safe identity fold: x * 0 → replace instruction with "add dest, 0, 0"
@@ -1109,4 +1128,21 @@ def optimize(module: Module, verbose: bool = False,
                 if n_die2:                   parts.append(f"{n_die2} dead-2 insts removed")
                 if n_teb:                    parts.append(f"{n_teb} empty blocks threaded")
                 print(f"[opt] {kernel.name}: {', '.join(parts)}")
+
+    # Also optimize DeviceFunction bodies (same passes, same safety rules)
+    for func in module.device_functions:
+        unroll_loops(func, max_unroll=16)
+        constant_fold(func)
+        cse(func)
+        dead_block_elim(func)
+        identity_fold(func)
+        constant_fold(func)
+        dead_inst_elim(func)
+        licm(func)
+        cse(func)
+        identity_fold(func)
+        constant_fold(func)
+        dead_inst_elim(func)
+        thread_empty_blocks(func)
+
     return module
