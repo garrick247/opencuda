@@ -191,8 +191,12 @@ Instruction = Union[BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
 
 @dataclass
 class RetTerm:
-    """Return from kernel."""
-    pass
+    """Return from kernel or device function.
+
+    For device functions, ret_val holds the return value operand.
+    The emitter stores it to [retval0] before emitting 'ret;'.
+    """
+    ret_val: Optional[Operand] = None
 
 
 @dataclass
@@ -248,9 +252,29 @@ class Kernel:
 
 
 @dataclass
+class DeviceFunction:
+    """A __device__ function compiled as a PTX .func (for recursive functions)."""
+    name: str
+    ret_ty: Type
+    params: list[KernelParam]
+    blocks: list[BasicBlock] = field(default_factory=list)
+    _next_id: int = 0
+
+    def new_value(self, name: str, ty: Type) -> Value:
+        v = Value(name, ty, self._next_id)
+        self._next_id += 1
+        return v
+
+    @property
+    def entry_block(self) -> BasicBlock:
+        return self.blocks[0] if self.blocks else None
+
+
+@dataclass
 class Module:
     """A compilation unit (one .cu file)."""
     kernels: list[Kernel] = field(default_factory=list)
+    device_functions: list[DeviceFunction] = field(default_factory=list)
     # Module-level global/constant variable declarations:
     # each entry is (name: str, elem_ty: Type, count: int, addr_space: AddrSpace)
     global_vars: list = field(default_factory=list)

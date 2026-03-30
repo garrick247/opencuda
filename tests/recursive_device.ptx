@@ -1,0 +1,194 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.func (.param .s32 retval0) __devfn_fibonacci(
+    .param .s32 n)
+{
+    .reg .pred %p<1>;
+    .reg .b32 %r<3>;
+
+entry_1:
+    ld.param.s32 %r0, [n];
+    setp.le.s32 %p0, %r0, 1;
+    @%p0 bra if_true_2;
+    bra if_false_3;
+if_true_2:
+    st.param.s32 [retval0], %r0;
+    ret;
+if_false_3:
+    bra if_merge_4;
+if_merge_4:
+    sub.s32 %r1, %r0, 1;
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        call.uni (_cr_0), __devfn_fibonacci, (_ca0_0);
+        ld.param.s32 %r2, [_cr_0];
+    }
+    sub.s32 %r1, %r0, 2;
+    {
+        .param .s32 _ca0_1;
+        .param .s32 _cr_1;
+        st.param.s32 [_ca0_1], %r1;
+        call.uni (_cr_1), __devfn_fibonacci, (_ca0_1);
+        ld.param.s32 %r0, [_cr_1];
+    }
+    add.s32 %r1, %r2, %r0;
+    st.param.s32 [retval0], %r1;
+    ret;
+}
+
+.func (.param .s32 retval0) __devfn_factorial(
+    .param .s32 n)
+{
+    .reg .pred %p<1>;
+    .reg .b32 %r<3>;
+
+entry_1:
+    ld.param.s32 %r0, [n];
+    setp.le.s32 %p0, %r0, 1;
+    @%p0 bra if_true_2;
+    bra if_false_3;
+if_true_2:
+    st.param.s32 [retval0], 1;
+    ret;
+if_false_3:
+    bra if_merge_4;
+if_merge_4:
+    sub.s32 %r1, %r0, 1;
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        call.uni (_cr_0), __devfn_factorial, (_ca0_0);
+        ld.param.s32 %r2, [_cr_0];
+    }
+    mul.lo.s32 %r1, %r0, %r2;
+    st.param.s32 [retval0], %r1;
+    ret;
+}
+
+
+.visible .entry fact_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd0];
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        call.uni (_cr_0), __devfn_factorial, (_ca0_0);
+        ld.param.s32 %r2, [_cr_0];
+    }
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry fib_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd0];
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        call.uni (_cr_0), __devfn_fibonacci, (_ca0_0);
+        ld.param.s32 %r2, [_cr_0];
+    }
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry safe_fact_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<4>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd0];
+    setp.lt.s32 %p0, %r1, 0;
+    @%p0 bra if_true_6;
+    bra if_merge_8;
+if_merge_4:
+    ret;
+inline_safe_factorial_merge_5:
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
+if_true_6:
+    mov.s32 %r2, -1;
+    bra inline_safe_factorial_merge_5;
+if_merge_8:
+    setp.gt.s32 %p0, %r1, 12;
+    @%p0 bra if_true_10;
+    bra if_merge_12;
+if_true_10:
+    mov.s32 %r2, -1;
+    bra inline_safe_factorial_merge_5;
+if_merge_12:
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        call.uni (_cr_0), __devfn_factorial, (_ca0_0);
+        ld.param.s32 %r0, [_cr_0];
+    }
+    mov.s32 %r2, %r0;
+    bra inline_safe_factorial_merge_5;
+}

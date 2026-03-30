@@ -7,7 +7,7 @@ This reuses OpenPTXas's full backend (parser, regalloc, isel, scoreboard, emitte
 
 from __future__ import annotations
 import struct
-from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
+from ..ir.nodes import (Module, Kernel, DeviceFunction, BasicBlock, Value, Const, Operand,
                          SymbolRef, GlobalAddrInst, AsmInst,
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst,
@@ -209,6 +209,9 @@ def _build_alloc_map(kernel: Kernel):
                     _note_def(val, i)
         elif isinstance(inst, CondBrTerm):
             _note_use(inst.cond, i)
+        elif isinstance(inst, RetTerm):
+            if inst.ret_val is not None:
+                _note_use(inst.ret_val, i)
 
     # Back-edge liveness extension: values defined before a loop header and used
     # within the loop body must remain live until the loop's back edge, otherwise
@@ -431,6 +434,78 @@ class PTXEmitter:
         self._lines.append(
             f'    selp.{dest_ty} {self._reg(tmp)}, 1, 0, {self._reg(op)};')
         return self._reg(tmp)
+
+    def emit_device_function(self, func: DeviceFunction) -> str:
+        """Emit a __device__ function as a PTX .func definition."""
+        self._lines = []
+        self._reg_counts = {}
+        self._shared_val_ids = {}
+        self._widen_cache = {}
+        self._printf_call_count = 0
+        self._fallback_alloc = {}
+        self._fallback_count = {}
+        self._pred_ids = set()
+
+        # Build register allocation map
+        self._alloc, self._val_type_map, self._pred_ids, alloc_max = _build_alloc_map(func)
+
+        # Emit body
+        body_lines = []
+        self._lines = body_lines
+        for bb in func.blocks:
+            self._emit_block(bb, func)
+
+        # Build PTX .func definition
+        ptx = []
+
+        # Parameter declarations
+        def _param_ptx(ty):
+            t = _ptx_type(ty)
+            return 'b16' if t == 'f16' else t
+
+        params = ', '.join(
+            f'.param .{_param_ptx(p.ty)} {p.name}' for p in func.params)
+
+        # Return type
+        ret_ty_str = _ptx_type(func.ret_ty) if not (isinstance(func.ret_ty, ScalarTy)
+            and func.ret_ty.scalar == ScalarType.VOID) else None
+        if ret_ty_str:
+            ret_ty_str = 'b16' if ret_ty_str == 'f16' else ret_ty_str
+            ptx.append(f'.func (.param .{ret_ty_str} retval0) __devfn_{func.name}(')
+        else:
+            ptx.append(f'.func __devfn_{func.name}(')
+        ptx.append(f'    {params})')
+        ptx.append('{')
+
+        # Register declarations
+        for prefix in sorted(self._reg_counts):
+            count = self._reg_counts[prefix]
+            if prefix == 'p':
+                ptx.append(f'    .reg .pred %p<{count}>;')
+            elif prefix == 'h':
+                ptx.append(f'    .reg .f16 %h<{count}>;')
+            elif prefix == 'f':
+                ptx.append(f'    .reg .f32 %f<{count}>;')
+            elif prefix == 'fd':
+                ptx.append(f'    .reg .f64 %fd<{count}>;')
+            elif prefix == 'rd':
+                ptx.append(f'    .reg .b64 %rd<{count}>;')
+            else:
+                ptx.append(f'    .reg .b32 %r<{count}>;')
+
+        # Local memory declarations
+        if hasattr(func, '_local_decls'):
+            for lname, lty, lcount, lval in func._local_decls:
+                elem_sz = lty.size if isinstance(lty, ScalarTy) else 8
+                total = elem_sz * lcount
+                align = min(elem_sz, 16)
+                ptx.append(f'    .local .align {align} .b8 {lname}[{total}];')
+
+        ptx.append('')
+        ptx.extend(body_lines)
+        ptx.append('}')
+        ptx.append('')
+        return '\n'.join(ptx)
 
     def emit_kernel(self, kernel: Kernel) -> str:
         self._lines = []
@@ -1133,6 +1208,40 @@ class PTXEmitter:
             self._lines.append(f'    }}')
 
         elif isinstance(inst, CallInst):
+            # Device function call via call.uni
+            if inst.func.startswith('__devfn_'):
+                n = self._printf_call_count  # reuse counter for unique naming
+                self._printf_call_count += 1
+                self._lines.append('    {')
+                # Declare param space for each argument
+                for i, arg in enumerate(inst.args):
+                    arg_ty = arg.ty if isinstance(arg, (Value, Const)) else INT32
+                    ptx_ty = _ptx_type(arg_ty)
+                    ptx_ty = 'b16' if ptx_ty == 'f16' else ptx_ty
+                    self._lines.append(f'        .param .{ptx_ty} _ca{i}_{n};')
+                # Declare return param if non-void
+                has_ret = inst.dest is not None
+                if has_ret:
+                    ret_ptx_ty = _ptx_type(inst.dest.ty)
+                    ret_ptx_ty = 'b16' if ret_ptx_ty == 'f16' else ret_ptx_ty
+                    self._lines.append(f'        .param .{ret_ptx_ty} _cr_{n};')
+                # Store arguments
+                for i, arg in enumerate(inst.args):
+                    arg_ty = arg.ty if isinstance(arg, (Value, Const)) else INT32
+                    ptx_ty = _ptx_type(arg_ty)
+                    ptx_ty = 'b16' if ptx_ty == 'f16' else ptx_ty
+                    src = self._operand(arg)
+                    self._lines.append(f'        st.param.{ptx_ty} [_ca{i}_{n}], {src};')
+                # Call
+                arg_list = ', '.join(f'_ca{i}_{n}' for i in range(len(inst.args)))
+                if has_ret:
+                    self._lines.append(f'        call.uni (_cr_{n}), {inst.func}, ({arg_list});')
+                    dest = self._reg(inst.dest)
+                    self._lines.append(f'        ld.param.{ret_ptx_ty} {dest}, [_cr_{n}];')
+                else:
+                    self._lines.append(f'        call.uni {inst.func}, ({arg_list});')
+                self._lines.append('    }')
+                return
             if inst.func.startswith('atomic'):
                 atomic_ops = {
                     'atomicAdd': 'add',
@@ -2143,6 +2252,13 @@ class PTXEmitter:
 
     def _emit_term(self, term):
         if isinstance(term, RetTerm):
+            if term.ret_val is not None:
+                # Device function return — store value to [retval0]
+                val = self._operand(term.ret_val)
+                ty = term.ret_val.ty if isinstance(term.ret_val, (Value, Const)) else INT32
+                ptx_ty = _ptx_type(ty)
+                ptx_ty = 'b16' if ptx_ty == 'f16' else ptx_ty
+                self._lines.append(f'    st.param.{ptx_ty} [retval0], {val};')
             self._lines.append('    ret;')
         elif isinstance(term, BrTerm):
             self._lines.append(f'    bra {term.target};')
@@ -2172,7 +2288,17 @@ class PTXEmitter:
 def ir_to_ptx(module: Module) -> dict[str, str]:
     """Convert IR module to PTX text for each kernel."""
     emitter = PTXEmitter()
+
+    # Track device function names for call-site detection
+    emitter._device_func_names = {f.name for f in module.device_functions}
+
     result = {}
+
+    # Emit device functions as .func definitions
+    for func in module.device_functions:
+        ptx_text = emitter.emit_device_function(func)
+        emitter._module_preamble.append(ptx_text)
+
     for kernel in module.kernels:
         result[kernel.name] = emitter.emit_kernel(kernel)
 

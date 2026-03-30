@@ -1636,6 +1636,16 @@ class Parser:
                     printf_args = args[1:] if len(args) > 1 else []
                     self._emit(PrintfInst(fmt_str, printf_args))
                     return Const(VOID, 0)
+                elif hasattr(self, '_recursive_device_funcs') and name in self._recursive_device_funcs:
+                    # Recursive device function — emit a real call (not inlined)
+                    dfunc = self._device_funcs[name]
+                    ret_ty = dfunc['ret_ty']
+                    if isinstance(ret_ty, ScalarTy) and ret_ty.scalar == ScalarType.VOID:
+                        dest = None
+                    else:
+                        dest = self._new_val(f"{name}_ret", ret_ty)
+                    self._emit(CallInst(dest, f"__devfn_{name}", args))
+                    return dest if dest is not None else Const(VOID, 0)
                 elif hasattr(self, '_device_funcs') and name in self._device_funcs:
                     # Inline __device__ function with multi-return support
                     dfunc = self._device_funcs[name]
@@ -2995,7 +3005,7 @@ class Parser:
                 # Create dead block for any code after this return
                 self._cur_block = self._new_block("after_inline_return")
             else:
-                self._cur_block.terminator = RetTerm()
+                self._cur_block.terminator = RetTerm(ret_val=ret_val)
             return
 
         # Expression statement — check for array assignment: ptr[idx] = expr;
@@ -3858,6 +3868,72 @@ class Parser:
             'body_end': body_end,
         }
 
+    def _compile_device_func(self, dfunc_info, mod):
+        """Compile a recursive __device__ function into IR (DeviceFunction).
+
+        Instead of inlining, this builds a real function with BasicBlocks,
+        emitting PTX .func that can be called via call.uni.
+        """
+        from .parser import ParseError  # noqa: avoid circular at module level
+        from ..ir.nodes import DeviceFunction, KernelParam, BasicBlock, ParamInst, RetTerm
+
+        name = dfunc_info['name']
+        ret_ty = dfunc_info['ret_ty']
+        params_info = dfunc_info['params']  # list of (pname, pty) tuples
+
+        # Save ALL parser state
+        saved_pos = self._pos
+        saved_vars = dict(self._variables)
+        saved_kernel = self._kernel
+        saved_block_count = self._block_count
+        saved_cur_block = self._cur_block
+        saved_inline_target = self._inline_return_target
+        saved_scope_stack = self._scope_locals_stack
+
+        # Create the DeviceFunction IR node
+        func_params = [KernelParam(pname, pty) for pname, pty in params_info]
+        func = DeviceFunction(name=name, ret_ty=ret_ty, params=func_params)
+
+        # Set up parser state for this function (duck-typed as Kernel)
+        self._kernel = func
+        self._variables = {}
+        self._block_count = 0
+        self._inline_return_target = None
+        self._scope_locals_stack = []
+
+        # Create entry block
+        entry = self._new_block("entry")
+        self._cur_block = entry
+
+        # Emit ParamInst for each parameter
+        for i, (pname, pty) in enumerate(params_info):
+            val = self._new_val(pname, pty)
+            self._emit(ParamInst(val, i, pname))
+            self._variables[pname] = val
+
+        # Parse the function body
+        self._pos = dfunc_info['body_start']
+        self._expect(TokKind.LBRACE)
+        while not self._at(TokKind.RBRACE) and not self._at(TokKind.EOF):
+            self._parse_stmt()
+        if self._at(TokKind.RBRACE):
+            self._advance()
+
+        # Ensure the last block has a terminator
+        if self._cur_block.terminator is None:
+            self._cur_block.terminator = RetTerm()
+
+        # Restore parser state
+        self._pos = saved_pos
+        self._variables = saved_vars
+        self._kernel = saved_kernel
+        self._block_count = saved_block_count
+        self._cur_block = saved_cur_block
+        self._inline_return_target = saved_inline_target
+        self._scope_locals_stack = saved_scope_stack
+
+        return func
+
     def _parse_constant_decl(self, mod):
         """Parse: __constant__ type name[N]; or __constant__ type name;
         Registers the name as a module-level global constant pointer visible
@@ -3900,6 +3976,11 @@ class Parser:
     def parse_module(self) -> Module:
         mod = Module()
         self._device_funcs = {}
+        self._recursive_device_funcs = set()
+
+        # --- Pass 1: register device functions, structs, typedefs, enums, constants ---
+        # Defer kernel parsing to Pass 2 so recursion detection can run first.
+        _deferred_kernel_positions = []
 
         while not self._at(TokKind.EOF):
             # Skip leading storage class qualifiers (static, inline) before __global__/__device__
@@ -3927,7 +4008,18 @@ class Parser:
                     # (already consumed; just continue to parse the following function)
                 continue
             if self._at(TokKind.KW_GLOBAL):
-                mod.kernels.append(self._parse_kernel())
+                # Defer kernel parsing — record position, skip body
+                _deferred_kernel_positions.append(self._pos)
+                # Skip past kernel: consume qualifiers, name, params, body
+                while not self._at(TokKind.LBRACE) and not self._at(TokKind.EOF):
+                    self._advance()
+                if self._at(TokKind.LBRACE):
+                    depth = 1
+                    self._advance()
+                    while depth > 0 and not self._at(TokKind.EOF):
+                        if self._peek().kind == TokKind.LBRACE: depth += 1
+                        elif self._peek().kind == TokKind.RBRACE: depth -= 1
+                        self._advance()
             elif self._at(TokKind.KW_DEVICE):
                 # Peek ahead: if '(' appears before ';' it's a function; otherwise
                 # it's a global device variable (__device__ int counter;).
@@ -4032,6 +4124,54 @@ class Parser:
                 self._parse_constant_decl(mod)
             else:
                 self._advance()
+
+        # --- Recursion detection ---
+        if self._device_funcs:
+            all_dfunc_names = set(self._device_funcs.keys())
+            call_graph = {}
+            for fname, finfo in self._device_funcs.items():
+                callees = set()
+                for i in range(finfo['body_start'], finfo['body_end']):
+                    if i < len(self._toks):
+                        t = self._toks[i]
+                        if t.kind == TokKind.IDENT and t.value in all_dfunc_names:
+                            callees.add(t.value)
+                call_graph[fname] = callees
+
+            WHITE, GRAY, BLACK = 0, 1, 2
+            color = {n: WHITE for n in call_graph}
+            on_cycle = set()
+
+            def _dfs_cycle(node, path):
+                color[node] = GRAY
+                path.append(node)
+                for nxt in call_graph.get(node, ()):
+                    if nxt not in color:
+                        continue
+                    if color[nxt] == GRAY:
+                        idx = path.index(nxt)
+                        on_cycle.update(path[idx:])
+                    elif color[nxt] == WHITE:
+                        _dfs_cycle(nxt, path)
+                path.pop()
+                color[node] = BLACK
+
+            for node in call_graph:
+                if color[node] == WHITE:
+                    _dfs_cycle(node, [])
+            self._recursive_device_funcs = on_cycle
+
+            # Compile recursive device functions into IR
+            for fname in self._recursive_device_funcs:
+                dfunc = self._device_funcs[fname]
+                compiled = self._compile_device_func(dfunc, mod)
+                mod.device_functions.append(compiled)
+
+        # --- Pass 2: parse deferred kernels ---
+        for kpos in _deferred_kernel_positions:
+            self._pos = kpos
+            mod.kernels.append(self._parse_kernel())
+
         return mod
 
 
