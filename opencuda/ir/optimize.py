@@ -658,10 +658,12 @@ def dead_inst_elim(kernel: Kernel) -> int:
                     for a in inst.args:
                         if isinstance(a, Value):
                             used.add(a.id)
-            # Terminator condition
+            # Terminator operands
             t = bb.terminator
             if isinstance(t, CondBrTerm) and isinstance(t.cond, Value):
                 used.add(t.cond.id)
+            if isinstance(t, RetTerm) and t.ret_val is not None and isinstance(t.ret_val, Value):
+                used.add(t.ret_val.id)
 
         # Remove unreferenced non-side-effecting instructions.
         for bb in kernel.blocks:

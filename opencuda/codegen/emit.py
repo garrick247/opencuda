@@ -198,6 +198,8 @@ def _build_alloc_map(kernel: Kernel):
         elif isinstance(inst, CallInst):
             for a in inst.args:
                 _note_use(a, i)
+            if inst.dest is not None:
+                _note_def(inst.dest, i)
         elif isinstance(inst, PrintfInst):
             for a in inst.args:
                 _note_use(a, i)

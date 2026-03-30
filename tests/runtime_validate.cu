@@ -489,6 +489,30 @@ void sd_iref(int* o, int* a, int* b, int n) {
 }
 int test_sum_and_diff(CUfunction f, int N, TestResult* r) { r->name = "sum_and_diff"; return generic_int3_test(f, N, r, iinit, sd_iref); }
 
+// ======================== RECURSIVE TESTS ========================
+
+int cpu_factorial(int n) { return (n <= 1) ? 1 : n * cpu_factorial(n-1); }
+void factorial_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) { int v = a[i] % 13; if (v < 0) v = -v; o[i] = cpu_factorial(v); }
+}
+int test_factorial(CUfunction f, int N, TestResult* r) { r->name = "factorial"; return generic_int3_test(f, N, r, iinit, factorial_iref); }
+
+int cpu_fib(int n) { if (n <= 0) return 0; if (n == 1) return 1; return cpu_fib(n-1) + cpu_fib(n-2); }
+void fibonacci_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) { int v = a[i] % 15; if (v < 0) v = -v; o[i] = cpu_fib(v); }
+}
+int test_fibonacci(CUfunction f, int N, TestResult* r) { r->name = "fibonacci"; return generic_int3_test(f, N, r, iinit, fibonacci_iref); }
+
+int cpu_gcd(int a, int b) { if (b == 0) return a; return cpu_gcd(b, a % b); }
+void gcd_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) {
+        int va = a[i]; if (va < 0) va = -va; if (va == 0) va = 1;
+        int vb = b[i]; if (vb < 0) vb = -vb; if (vb == 0) vb = 1;
+        o[i] = cpu_gcd(va, vb);
+    }
+}
+int test_gcd(CUfunction f, int N, TestResult* r) { r->name = "gcd"; return generic_int3_test(f, N, r, iinit, gcd_iref); }
+
 // ======================== ATOMIC TESTS ========================
 
 // Generic atomic test: runs kernel with (out, a, b, n), out is a single int.
@@ -622,6 +646,9 @@ TestEntry g_tests[] = {
     { "divmod",         test_divmod },
     { "warp_scan",      test_warp_scan },
     { "sum_and_diff",   test_sum_and_diff },
+    { "factorial_k",    test_factorial },
+    { "fibonacci_k",    test_fibonacci },
+    { "gcd_k",          test_gcd },
     { NULL, NULL }
 };
 
