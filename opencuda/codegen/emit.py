@@ -1434,12 +1434,13 @@ class PTXEmitter:
                     neg_ty = 's64' if is64 else 's32'
                     src = self._operand(src_arg) if src_arg is not None else '0'
                     n = inst.dest.id if inst.dest else 0
-                    tmp_neg = kernel.new_value(f'_ffs_neg_{n}', INT32)
-                    tmp_lsb = kernel.new_value(f'_ffs_lsb_{n}', INT32)
+                    tmp_neg = kernel.new_value(f'_ffs_neg_{n}', INT64 if is64 else INT32)
+                    tmp_lsb = kernel.new_value(f'_ffs_lsb_{n}', INT64 if is64 else INT32)
                     tmp_pos = kernel.new_value(f'_ffs_pos_{n}', UINT32)
                     self._lines.append(f'    neg.{neg_ty} {self._reg(tmp_neg)}, {src};')
                     self._lines.append(f'    and.{ptx_ty} {self._reg(tmp_lsb)}, {src}, {self._reg(tmp_neg)};')
-                    self._lines.append(f'    bfind.u32 {self._reg(tmp_pos)}, {self._reg(tmp_lsb)};')
+                    bfind_ty = 'u64' if is64 else 'u32'
+                    self._lines.append(f'    bfind.{bfind_ty} {self._reg(tmp_pos)}, {self._reg(tmp_lsb)};')
                     self._lines.append(f'    add.s32 {dest}, {self._reg(tmp_pos)}, 1;')
                 elif _first_arg_is_f64 and inst.func in _f64_direct_unary:
                     # Direct f64 PTX instruction (sqrt.rn, rsqrt.approx, abs, cvt rounding).
