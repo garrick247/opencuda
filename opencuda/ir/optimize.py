@@ -168,19 +168,20 @@ def constant_fold(kernel: Kernel) -> int:
                     folded += 1
                     # Keep the instruction (it's now simpler but still writes dest)
 
-                # Identity: x * 1 → x.  Emit as add-zero so identity_fold eliminates it.
-                elif not is_float and inst.op == BinOp.MUL and rv == 1 and isinstance(inst.lhs, Value):
+                # Identity: x * 1 → x (both int and float).
+                # IEEE 754: x * 1.0 = x for all finite x and NaN (NaN * 1.0 = NaN).
+                elif inst.op == BinOp.MUL and rv == 1 and isinstance(inst.lhs, Value):
                     inst.op = BinOp.ADD
-                    inst.rhs = Const(inst.dest.ty, 0)
+                    inst.rhs = Const(inst.dest.ty, 0.0 if is_float else 0)
                     folded += 1
-                elif not is_float and inst.op == BinOp.MUL and lv == 1 and isinstance(inst.rhs, Value):
+                elif inst.op == BinOp.MUL and lv == 1 and isinstance(inst.rhs, Value):
                     inst.op = BinOp.ADD
                     inst.lhs = inst.rhs
-                    inst.rhs = Const(inst.dest.ty, 0)
+                    inst.rhs = Const(inst.dest.ty, 0.0 if is_float else 0)
                     folded += 1
 
-                # Identity: x / 1 → x (integer only — float 1.0 division is not guaranteed exact)
-                elif not is_float and inst.op == BinOp.DIV and rv == 1 and isinstance(inst.lhs, Value):
+                # Identity: x / 1 → x (integer and float).
+                elif inst.op == BinOp.DIV and rv == 1 and isinstance(inst.lhs, Value):
                     inst.op = BinOp.ADD
                     inst.rhs = Const(inst.dest.ty, 0)
                     folded += 1
