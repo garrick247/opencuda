@@ -966,6 +966,28 @@ class PTXEmitter:
                 src = self._reg(inst.rhs)
                 self._lines.append(f'    not.pred {pred}, {src};')
                 return
+            # Predicate-vs-predicate comparison: (a>b) != (c>d) → xor.pred
+            lhs_is_pred = isinstance(inst.lhs, Value) and inst.lhs.id in self._pred_ids
+            rhs_is_pred = isinstance(inst.rhs, Value) and inst.rhs.id in self._pred_ids
+            if lhs_is_pred and rhs_is_pred:
+                pred = self._reg(inst.dest)
+                lhs_p = self._reg(inst.lhs)
+                rhs_p = self._reg(inst.rhs)
+                if inst.op == CmpOp.NE:
+                    self._lines.append(f'    xor.pred {pred}, {lhs_p}, {rhs_p};')
+                elif inst.op == CmpOp.EQ:
+                    # EQ = NOT XOR
+                    tmp_p_idx = self._reg_counts.get('p', 0)
+                    self._reg_counts['p'] = tmp_p_idx + 1
+                    tmp_pred = f'%p{tmp_p_idx}'
+                    self._lines.append(f'    xor.pred {tmp_pred}, {lhs_p}, {rhs_p};')
+                    self._lines.append(f'    not.pred {pred}, {tmp_pred};')
+                else:
+                    # For <, >, <=, >= on predicates: convert to int first
+                    lhs_int = self._pred_to_int(inst.lhs, 's32', kernel)
+                    rhs_int = self._pred_to_int(inst.rhs, 's32', kernel)
+                    self._lines.append(f'    setp.{op_map.get(inst.op, "ne")}.s32 {pred}, {lhs_int}, {rhs_int};')
+                return
             # Determine comparison type from BOTH operands (C integer promotion).
             # Bug: using only lhs.ty means:
             #   - Const lhs defaults to INT32 even when rhs is UINT32
