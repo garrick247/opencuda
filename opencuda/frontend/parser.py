@@ -2140,24 +2140,56 @@ class Parser:
             self._parse_stmt_or_block()
             return
 
-        # Inline assembly: asm(...); or __asm__(...); — skip entirely
+        # Inline assembly: asm [volatile] ("template" : "=r"(out) : "r"(in))
         if tok.kind == TokKind.IDENT and tok.value in ('asm', '__asm__', '__asm'):
-            # Consume tokens until the matching ';', balancing parentheses
+            from ..ir.nodes import AsmInst
             self._advance()  # consume 'asm'
-            depth = 0
-            while not self._at(TokKind.EOF):
-                k = self._peek().kind
-                if k == TokKind.LPAREN:
-                    depth += 1; self._advance()
-                elif k == TokKind.RPAREN:
-                    depth -= 1; self._advance()
-                    if depth == 0:
-                        break
-                elif k == TokKind.SEMI and depth == 0:
-                    break
-                else:
+            if self._at(TokKind.KW_VOLATILE) or (self._at(TokKind.IDENT) and self._peek().value == 'volatile'):
+                self._advance()
+            self._expect(TokKind.LPAREN)
+            tmpl = ''
+            if self._at(TokKind.STRING_LIT):
+                tmpl = self._peek().value[1:-1]  # strip quotes
+                self._advance()
+            outputs = []
+            inputs = []
+            if self._match(TokKind.COLON):
+                # Output operands: "=r"(var), ...
+                while self._at(TokKind.STRING_LIT):
+                    constraint = self._peek().value[1:-1]
                     self._advance()
-            self._match(TokKind.SEMI)
+                    self._expect(TokKind.LPAREN)
+                    var_name = self._expect(TokKind.IDENT).value
+                    self._expect(TokKind.RPAREN)
+                    old_val = self._variables.get(var_name)
+                    ty = old_val.ty if old_val else INT32
+                    # Create fresh Value — the asm instruction defines this
+                    new_val = self._new_val(var_name, ty)
+                    outputs.append((constraint, new_val))
+                    self._variables[var_name] = new_val
+                    if not self._match(TokKind.COMMA):
+                        break
+                if self._match(TokKind.COLON):
+                    # Input operands: "r"(expr), ...
+                    while self._at(TokKind.STRING_LIT):
+                        constraint = self._peek().value[1:-1]
+                        self._advance()
+                        self._expect(TokKind.LPAREN)
+                        var_expr = self._parse_assign_expr()
+                        self._expect(TokKind.RPAREN)
+                        inputs.append((constraint, var_expr))
+                        if not self._match(TokKind.COMMA):
+                            break
+                    # Optional clobber list
+                    if self._match(TokKind.COLON):
+                        while self._at(TokKind.STRING_LIT):
+                            self._advance()
+                            if not self._match(TokKind.COMMA):
+                                break
+            self._expect(TokKind.RPAREN)
+            self._expect(TokKind.SEMI)
+            if tmpl:
+                self._emit(AsmInst(tmpl, outputs, inputs))
             return
 
         # __shared__ declaration: __shared__ type name[size], name[d0][d1]...,

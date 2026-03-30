@@ -8,7 +8,7 @@ This reuses OpenPTXas's full backend (parser, regalloc, isel, scoreboard, emitte
 from __future__ import annotations
 import struct
 from ..ir.nodes import (Module, Kernel, BasicBlock, Value, Const, Operand,
-                         SymbolRef, GlobalAddrInst,
+                         SymbolRef, GlobalAddrInst, AsmInst,
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst,
                          BinOp, CmpOp,
@@ -201,6 +201,12 @@ def _build_alloc_map(kernel: Kernel):
         elif isinstance(inst, PrintfInst):
             for a in inst.args:
                 _note_use(a, i)
+        elif isinstance(inst, AsmInst):
+            for _c, op in inst.inputs:
+                _note_use(op, i)
+            for _c, val in inst.outputs:
+                if isinstance(val, Value):
+                    _note_def(val, i)
         elif isinstance(inst, CondBrTerm):
             _note_use(inst.cond, i)
 
@@ -623,6 +629,24 @@ class PTXEmitter:
 
     def _emit_inst(self, inst, kernel: Kernel,
                    printf_strings=None, printf_idx=None):
+        if isinstance(inst, AsmInst):
+            # Inline PTX asm: substitute %0, %1, ... with register names
+            # Operand numbering: outputs first, then inputs
+            operand_regs = []
+            for _constraint, val in inst.outputs:
+                operand_regs.append(self._reg(val))
+            for _constraint, op in inst.inputs:
+                operand_regs.append(self._operand(op))
+            # Substitute %N placeholders in the template
+            result = inst.template
+            for i in range(len(operand_regs) - 1, -1, -1):
+                result = result.replace(f'%{i}', operand_regs[i])
+            # Emit each semicolon-separated instruction
+            for stmt in result.split(';'):
+                stmt = stmt.strip()
+                if stmt:
+                    self._lines.append(f'    {stmt};')
+            return
         if isinstance(inst, GlobalAddrInst):
             dest = self._reg(inst.dest)
             # cvta.to.{space} requires a register source, not a symbol name.

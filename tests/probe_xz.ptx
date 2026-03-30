@@ -23,8 +23,9 @@ if_true_2:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r1, [%rd2];
+    mov.s32 %r1, %r2;
     add.u64 %rd1, %rd0, %rd3;
-    st.global.s32 [%rd1], 0;
+    st.global.s32 [%rd1], %r1;
     bra if_merge_4;
 if_merge_4:
     ret;

@@ -167,8 +167,22 @@ class GlobalAddrInst:
     addr_space: object  # AddrSpace
 
 
+@dataclass
+class AsmInst:
+    """Inline PTX assembly: asm volatile("template" : outputs : inputs).
+
+    template: PTX instruction string with %0, %1 placeholders.
+    outputs: list of (constraint, Value) — e.g., ("=r", dest_val).
+    inputs: list of (constraint, Operand) — e.g., ("r", src_val).
+    """
+    template: str
+    outputs: list  # [(constraint_str, Value), ...]
+    inputs: list   # [(constraint_str, Operand), ...]
+
+
 Instruction = Union[BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
-                    CallInst, PhiInst, ParamInst, PrintfInst, GlobalAddrInst]
+                    CallInst, PhiInst, ParamInst, PrintfInst, GlobalAddrInst,
+                    AsmInst]
 
 
 # ---------------------------------------------------------------------------
