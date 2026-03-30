@@ -424,6 +424,51 @@ unsigned cpu_brev(unsigned v) { unsigned r = 0; for (int i = 0; i < 32; i++) { r
 void ibrev_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = (int)cpu_brev((unsigned)a[i]); }
 int test_int_brev(CUfunction f, int N, TestResult* r) { r->name = "int_brev"; return generic_int3_test(f, N, r, iinit, ibrev_ref); }
 
+// ======================== ATOMIC TESTS ========================
+
+// Generic atomic test: runs kernel with (out, a, b, n), out is a single int.
+int generic_atomic_int(CUfunction func, int N, TestResult* result,
+                       int init_val, int (*cpu_ref)(int* a, int n)) {
+    int *h_a = (int*)malloc(N * sizeof(int));
+    for (int i = 0; i < N; i++) h_a[i] = (i * 73 + 17) % 1000 - 500;
+    int expected = cpu_ref(h_a, N);
+
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(int));
+    cuMemAlloc(&d_b, N * sizeof(int));
+    cuMemAlloc(&d_out, sizeof(int));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(int));
+    cuMemcpyHtoD(d_out, &init_val, sizeof(int));
+
+    int threads = 256, blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    int h_out;
+    cuMemcpyDtoH(&h_out, d_out, sizeof(int));
+
+    int err = (h_out != expected) ? 1 : 0;
+    if (err) printf("    MISMATCH: gpu=%d cpu=%d\n", h_out, expected);
+    else printf("    gpu=%d cpu=%d\n", h_out, expected);
+
+    result->total = 1; result->passed = 1 - err; result->max_diff = (float)abs(h_out - expected);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a);
+    return err;
+}
+
+int cpu_sum(int* a, int n) { int s = 0; for (int i = 0; i < n; i++) s += a[i]; return s; }
+int test_atomic_sum(CUfunction f, int N, TestResult* r) { r->name = "atomic_sum"; return generic_atomic_int(f, N, r, 0, cpu_sum); }
+
+int cpu_max(int* a, int n) { int m = a[0]; for (int i = 1; i < n; i++) if (a[i] > m) m = a[i]; return m; }
+int test_atomic_max(CUfunction f, int N, TestResult* r) { r->name = "atomic_max"; return generic_atomic_int(f, N, r, -2147483647, cpu_max); }
+
+int cpu_min(int* a, int n) { int m = a[0]; for (int i = 1; i < n; i++) if (a[i] < m) m = a[i]; return m; }
+int test_atomic_min(CUfunction f, int N, TestResult* r) { r->name = "atomic_min"; return generic_atomic_int(f, N, r, 2147483647, cpu_min); }
+
+int cpu_pos_count(int* a, int n) { int c = 0; for (int i = 0; i < n; i++) if (a[i] > 0) c++; return c; }
+int test_ballot_count(CUfunction f, int N, TestResult* r) { r->name = "ballot_count"; return generic_atomic_int(f, N, r, 0, cpu_pos_count); }
+
 // --- matmul: C = A * B (square NxN) ---
 int test_matmul(CUfunction func, int N, TestResult* r) {
     r->name = "matmul_simple";
@@ -501,6 +546,10 @@ TestEntry g_tests[] = {
     { "int_clz",        test_int_clz },
     { "int_brev",       test_int_brev },
     { "matmul_simple",  test_matmul },
+    { "atomic_sum",     test_atomic_sum },
+    { "atomic_max_k",   test_atomic_max },
+    { "atomic_min_k",   test_atomic_min },
+    { "ballot_count",   test_ballot_count },
     { NULL, NULL }
 };
 
