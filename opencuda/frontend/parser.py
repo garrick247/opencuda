@@ -3477,19 +3477,45 @@ class Parser:
         self._expect(TokKind.KW_GLOBAL)
         # Skip optional __launch_bounds__(maxThreads, minBlocks) and
         # __attribute__((key(val,...))) — may appear before or after return type.
+        # Capture __launch_bounds__ args for PTX .maxntid / .minnctapersm.
+        _launch_bounds = [None, None]  # [maxThreadsPerBlock, minBlocksPerMP]
         def _skip_paren_qualifier(self):
             if self._at(TokKind.IDENT) and self._peek().value in (
                     '__launch_bounds__', '__attribute__', '__noinline__',
                     '__forceinline__', '__inline__'):
+                qual_name = self._peek().value
                 self._advance()
                 # Consume any trailing ((...)) argument list
                 if self._at(TokKind.LPAREN):
                     depth = 1
                     self._advance()
-                    while depth > 0:
-                        if self._peek().kind == TokKind.LPAREN: depth += 1
-                        if self._peek().kind == TokKind.RPAREN: depth -= 1
-                        self._advance()
+                    if qual_name == '__launch_bounds__':
+                        # Parse first arg: maxThreadsPerBlock
+                        if self._peek().kind in (TokKind.INT_LIT, TokKind.IDENT):
+                            try:
+                                _launch_bounds[0] = int(self._peek().value)
+                            except (ValueError, TypeError):
+                                pass
+                            self._advance()
+                            # Optional second arg: minBlocksPerMP
+                            if self._match(TokKind.COMMA):
+                                if self._peek().kind in (TokKind.INT_LIT, TokKind.IDENT):
+                                    try:
+                                        _launch_bounds[1] = int(self._peek().value)
+                                    except (ValueError, TypeError):
+                                        pass
+                                    self._advance()
+                        # Consume remaining tokens until matching ')'
+                        depth = 1
+                        while depth > 0:
+                            if self._peek().kind == TokKind.LPAREN: depth += 1
+                            if self._peek().kind == TokKind.RPAREN: depth -= 1
+                            self._advance()
+                    else:
+                        while depth > 0:
+                            if self._peek().kind == TokKind.LPAREN: depth += 1
+                            if self._peek().kind == TokKind.RPAREN: depth -= 1
+                            self._advance()
         # Allow a sequence of qualifiers (e.g. __attribute__ __launch_bounds__)
         while (self._at(TokKind.IDENT) and self._peek().value in (
                 '__launch_bounds__', '__attribute__', '__noinline__',
@@ -3527,6 +3553,10 @@ class Parser:
         self._expect(TokKind.RPAREN)
 
         self._kernel = Kernel(name=name, params=params)
+        # Attach __launch_bounds__ info if present
+        if _launch_bounds[0] is not None:
+            self._kernel._launch_bounds = tuple(
+                x for x in _launch_bounds if x is not None)
         self._variables = {}
         self._block_count = 0
         # Clear inline struct return fields — this dict is keyed by Value id, and

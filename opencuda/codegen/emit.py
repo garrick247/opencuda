@@ -489,6 +489,12 @@ class PTXEmitter:
         )
         ptx.append(f'.visible .entry {kernel.name}(')
         ptx.append(f'    {params})')
+        # __launch_bounds__ → .maxntid and .minnctapersm directives (before '{')
+        if hasattr(kernel, '_launch_bounds'):
+            lb = kernel._launch_bounds
+            ptx.append(f'.maxntid {lb[0]}, 1, 1')
+            if len(lb) > 1:
+                ptx.append(f'.minnctapersm {lb[1]}')
         ptx.append('{')
 
         # Shared memory declarations

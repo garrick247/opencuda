@@ -53,14 +53,16 @@ CUDA C (.cu)
 ### Codegen (`opencuda/codegen/emit.py`)
 
 - `PTXEmitter` walks basic blocks and emits PTX instructions.
-- Register naming by value ID: integer (`r`), float (`f`), double (`fd`/`rd`), predicates (`p0–p127`).
+- Register naming by type prefix: integer (`r`), float (`f`), double (`fd`/`rd`), half (`h`), predicates (`p`).
+- Linear scan register allocator with live-interval reuse (~2x reduction from naive).
 - Widen cache tracks `cvt.u64.u32` to avoid re-widening the same register twice (CVT CSE).
-- Naive register allocation: no coloring or spilling — each `Value` gets its own PTX register.
+- Native half-precision (`.f16`) register allocation and arithmetic; 50+ half intrinsics.
+- `__launch_bounds__` emitted as `.maxntid` / `.minnctapersm` PTX directives.
 
 ### Frontend (`opencuda/frontend/`)
 
 - **lexer.py** — Regex-based tokenizer for CUDA-subset C.
-- **preprocess.py** — `#define NAME VALUE` text substitution; all other directives are ignored.
+- **preprocess.py** — `#define NAME VALUE` and `#define NAME(params) body` macro expansion, `#ifdef`/`#ifndef`/`#if`/`#elif`/`#else`/`#endif` conditional compilation, `#undef`, line splicing (`\`).
 - **parser.py** — Recursive descent with operator precedence climbing. Emits SSA IR directly (no AST stage). Handles CUDA intrinsics (`threadIdx`, `blockIdx`, `blockDim`, `__syncthreads`, atomics, warp shuffles, `__shared__`, `__device__`).
 
 ## Key Design Constraints
@@ -72,7 +74,10 @@ CUDA C (.cu)
 
 ## Known Limitations
 
-- `float16` is parsed but emitted as `f32`
 - Integer division/remainder emits PTX `div`/`rem` and relies on OpenPTXas for SASS expansion
-- Register allocation is naive (by value ID); no coloring, no spilling
+- Register allocation uses linear scan with live-interval reuse; no graph coloring or spilling
 - No texture/surface memory, cooperative groups, or tensor operations
+- Hex float literals (`0x1.0p+2f`) not supported by lexer
+- Inline PTX `asm volatile(...)` parses but output bindings are not connected (silently zeroed)
+- No recursive `__device__` functions (causes compile-time RecursionError)
+- No separate compilation / linking — single translation unit only
