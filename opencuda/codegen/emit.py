@@ -2294,7 +2294,23 @@ def ir_to_ptx(module: Module) -> dict[str, str]:
 
     result = {}
 
-    # Emit device functions as .func definitions
+    # Emit forward declarations for all device functions (needed for mutual recursion)
+    for func in module.device_functions:
+        def _fwd_param_ty(ty):
+            t = _ptx_type(ty)
+            return 'b16' if t == 'f16' else t
+        params = ', '.join(f'.param .{_fwd_param_ty(p.ty)} {p.name}' for p in func.params)
+        ret_ty_str = _ptx_type(func.ret_ty) if not (isinstance(func.ret_ty, ScalarTy)
+            and func.ret_ty.scalar == ScalarType.VOID) else None
+        if ret_ty_str:
+            ret_ty_str = 'b16' if ret_ty_str == 'f16' else ret_ty_str
+            emitter._module_preamble.append(
+                f'.func (.param .{ret_ty_str} retval0) __devfn_{func.name}({params});')
+        else:
+            emitter._module_preamble.append(
+                f'.func __devfn_{func.name}({params});')
+
+    # Emit device function definitions
     for func in module.device_functions:
         ptx_text = emitter.emit_device_function(func)
         emitter._module_preamble.append(ptx_text)
