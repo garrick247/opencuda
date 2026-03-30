@@ -19,7 +19,8 @@ TESTS_DIR = Path(__file__).parent.parent.parent / 'tests'
 CU_FILES = sorted(TESTS_DIR.glob('*.cu'))
 
 # Filter out test harness files (they're C++ with #include, not kernels)
-KERNEL_FILES = [f for f in CU_FILES if not f.name.startswith('gpu_')]
+_EXCLUDE_PREFIXES = ('gpu_', 'runtime_validate')
+KERNEL_FILES = [f for f in CU_FILES if not any(f.name.startswith(p) for p in _EXCLUDE_PREFIXES)]
 
 
 @pytest.fixture(params=KERNEL_FILES, ids=[f.stem for f in KERNEL_FILES])

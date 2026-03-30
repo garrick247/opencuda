@@ -424,6 +424,54 @@ unsigned cpu_brev(unsigned v) { unsigned r = 0; for (int i = 0; i < 32; i++) { r
 void ibrev_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = (int)cpu_brev((unsigned)a[i]); }
 int test_int_brev(CUfunction f, int N, TestResult* r) { r->name = "int_brev"; return generic_int3_test(f, N, r, iinit, ibrev_ref); }
 
+// --- matmul: C = A * B (square NxN) ---
+int test_matmul(CUfunction func, int N, TestResult* r) {
+    r->name = "matmul_simple";
+    // Use smaller N for matmul (N^2 elements, N^3 ops)
+    int dim = (N > 64) ? 64 : N;
+    int sz = dim * dim;
+    float *h_a = (float*)malloc(sz * sizeof(float));
+    float *h_b = (float*)malloc(sz * sizeof(float));
+    float *h_ref = (float*)malloc(sz * sizeof(float));
+    float *h_oc = (float*)malloc(sz * sizeof(float));
+
+    for (int i = 0; i < sz; i++) { h_a[i] = (float)(i % 7) * 0.1f - 0.3f; h_b[i] = (float)(i % 11) * 0.1f - 0.5f; }
+    // CPU matmul
+    for (int i = 0; i < dim; i++)
+        for (int j = 0; j < dim; j++) {
+            float s = 0.0f;
+            for (int k = 0; k < dim; k++) s += h_a[i*dim+k] * h_b[k*dim+j];
+            h_ref[i*dim+j] = s;
+        }
+
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, sz * sizeof(float));
+    cuMemAlloc(&d_b, sz * sizeof(float));
+    cuMemAlloc(&d_out, sz * sizeof(float));
+    cuMemcpyHtoD(d_a, h_a, sz * sizeof(float));
+    cuMemcpyHtoD(d_b, h_b, sz * sizeof(float));
+
+    // 2D launch
+    dim3 threads(16, 16);
+    dim3 blocks((dim+15)/16, (dim+15)/16);
+    void* args[] = { &d_out, &d_a, &d_b, &dim };
+    CHECK_CU(cuLaunchKernel(func, blocks.x, blocks.y, 1, threads.x, threads.y, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    cuMemcpyDtoH(h_oc, d_out, sz * sizeof(float));
+
+    int errors = 0; float max_diff = 0.0f;
+    for (int i = 0; i < sz; i++) {
+        float diff = fabsf(h_ref[i] - h_oc[i]);
+        if (diff > max_diff) max_diff = diff;
+        float tol = fabsf(h_ref[i]) * 1e-4f + 1e-4f;
+        if (diff > tol) { errors++; if (errors <= 3) printf("    MISMATCH [%d]: ref=%.6f oc=%.6f diff=%.6f\n", i, h_ref[i], h_oc[i], diff); }
+    }
+    r->total = sz; r->passed = sz - errors; r->max_diff = max_diff;
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a); free(h_b); free(h_ref); free(h_oc);
+    return errors;
+}
+
 // ======================== REGISTRY ========================
 
 TestEntry g_tests[] = {
@@ -452,6 +500,7 @@ TestEntry g_tests[] = {
     { "int_popc",       test_int_popc },
     { "int_clz",        test_int_clz },
     { "int_brev",       test_int_brev },
+    { "matmul_simple",  test_matmul },
     { NULL, NULL }
 };
 
