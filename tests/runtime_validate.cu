@@ -424,6 +424,71 @@ unsigned cpu_brev(unsigned v) { unsigned r = 0; for (int i = 0; i < 32; i++) { r
 void ibrev_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = (int)cpu_brev((unsigned)a[i]); }
 int test_int_brev(CUfunction f, int N, TestResult* r) { r->name = "int_brev"; return generic_int3_test(f, N, r, iinit, ibrev_ref); }
 
+// ======================== ADVANCED TESTS ========================
+
+// lerp: out = a + (b - a) * 0.3
+void lerp_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] + (b[i] - a[i]) * 0.3f; }
+int test_lerp(CUfunction f, int N, TestResult* r) { r->name = "lerp_kernel"; return generic_float3_test(f, N, r, vadd_init, lerp_ref, 0.001f); }
+
+// classify: ternary chain
+void classify_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) { int v = a[i]; o[i] = v < -10 ? -2 : v < 0 ? -1 : v == 0 ? 0 : v < 10 ? 1 : 2; }
+}
+int test_classify(CUfunction f, int N, TestResult* r) { r->name = "classify"; return generic_int3_test(f, N, r, iinit, classify_iref); }
+
+// cond_accum: sum positive values in sliding window of 16
+void cond_accum_iref(int* o, int* a, int* b, int n) {
+    for (int g = 0; g < n; g++) { int s = 0; for (int i = 0; i < 16; i++) { int v = a[(g+i) % n]; if (v > 0) s += v; } o[g] = s; }
+}
+int test_cond_accum(CUfunction f, int N, TestResult* r) { r->name = "cond_accum"; return generic_int3_test(f, N, r, iinit, cond_accum_iref); }
+
+// float_to_int: (int)(a * 0.1 + 0.5)
+void f2i_iref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = (int)((float)a[i] * 0.1f + 0.5f); }
+int test_float_to_int(CUfunction f, int N, TestResult* r) { r->name = "float_to_int"; return generic_int3_test(f, N, r, iinit, f2i_iref); }
+
+// divmod: (a/b)*1000 + (a%b)
+void divmod_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) { int d = b[i] != 0 ? b[i] : 1; o[i] = (a[i] / d) * 1000 + (a[i] % d); }
+}
+int test_divmod(CUfunction f, int N, TestResult* r) { r->name = "divmod"; return generic_int3_test(f, N, r, iinit, divmod_iref); }
+
+// warp_scan: inclusive prefix sum per warp
+int test_warp_scan(CUfunction func, int N, TestResult* r) {
+    r->name = "warp_scan";
+    int *h_a = (int*)malloc(N * sizeof(int));
+    int *h_ref = (int*)malloc(N * sizeof(int));
+    int *h_oc = (int*)malloc(N * sizeof(int));
+    for (int i = 0; i < N; i++) h_a[i] = (i % 5) - 2;
+    // CPU: inclusive prefix sum within warps of 32
+    for (int w = 0; w < N; w += 32) {
+        int s = 0;
+        int end = (w + 32 < N) ? w + 32 : N;
+        for (int i = w; i < end; i++) { s += h_a[i]; h_ref[i] = s; }
+    }
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(int));
+    cuMemAlloc(&d_b, N * sizeof(int));
+    cuMemAlloc(&d_out, N * sizeof(int));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(int));
+    int threads = 256, blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    cuMemcpyDtoH(h_oc, d_out, N * sizeof(int));
+    int errors = 0;
+    for (int i = 0; i < N; i++) if (h_ref[i] != h_oc[i]) { errors++; if (errors <= 3) printf("    MISMATCH [%d]: ref=%d oc=%d\n", i, h_ref[i], h_oc[i]); }
+    r->total = N; r->passed = N - errors; r->max_diff = (float)errors;
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a); free(h_ref); free(h_oc);
+    return errors;
+}
+
+// sum_and_diff: s*1000 + abs(d)
+void sd_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) { int s = a[i]+b[i]; int d = a[i]-b[i]; if (d<0) d=-d; o[i] = s*1000+d; }
+}
+int test_sum_and_diff(CUfunction f, int N, TestResult* r) { r->name = "sum_and_diff"; return generic_int3_test(f, N, r, iinit, sd_iref); }
+
 // ======================== ATOMIC TESTS ========================
 
 // Generic atomic test: runs kernel with (out, a, b, n), out is a single int.
@@ -550,6 +615,13 @@ TestEntry g_tests[] = {
     { "atomic_max_k",   test_atomic_max },
     { "atomic_min_k",   test_atomic_min },
     { "ballot_count",   test_ballot_count },
+    { "lerp_kernel",    test_lerp },
+    { "classify",       test_classify },
+    { "cond_accum",     test_cond_accum },
+    { "float_to_int",   test_float_to_int },
+    { "divmod",         test_divmod },
+    { "warp_scan",      test_warp_scan },
+    { "sum_and_diff",   test_sum_and_diff },
     { NULL, NULL }
 };
 

@@ -1352,6 +1352,12 @@ class PTXEmitter:
                 val = self._operand(inst.args[1]) if len(inst.args) > 1 else '%r0'
                 delta = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
                 dest = self._reg(inst.dest) if inst.dest else '%r0'
+                # PTX shfl clamp parameter differs by mode:
+                #   up:   clamp = 0 (minimum source lane for full warp)
+                #   down: clamp = 31 (maximum source lane)
+                #   bfly: clamp = 31 (width - 1)
+                #   idx:  clamp = 31 (width - 1)
+                clamp = '0' if mode == 'up' else '31'
                 # PTX shfl only supports b32; for 64-bit operands split lo/hi.
                 val_ty = inst.args[1].ty if len(inst.args) > 1 and isinstance(inst.args[1], Value) else None
                 is64 = val_ty is not None and isinstance(val_ty, ScalarTy) and val_ty.size == 8
@@ -1364,14 +1370,14 @@ class PTXEmitter:
                     # Unpack 64-bit val into hi/lo 32-bit registers
                     self._lines.append(f'    mov.b64 {{{self._reg(lo_in)}, {self._reg(hi_in)}}}, {val};')
                     self._lines.append(
-                        f'    shfl.sync.{mode}.b32 {self._reg(lo_out)}, {self._reg(lo_in)}, {delta}, 31, {mask};')
+                        f'    shfl.sync.{mode}.b32 {self._reg(lo_out)}, {self._reg(lo_in)}, {delta}, {clamp}, {mask};')
                     self._lines.append(
-                        f'    shfl.sync.{mode}.b32 {self._reg(hi_out)}, {self._reg(hi_in)}, {delta}, 31, {mask};')
+                        f'    shfl.sync.{mode}.b32 {self._reg(hi_out)}, {self._reg(hi_in)}, {delta}, {clamp}, {mask};')
                     # Repack into 64-bit dest
                     self._lines.append(f'    mov.b64 {dest}, {{{self._reg(lo_out)}, {self._reg(hi_out)}}};')
                 else:
                     self._lines.append(
-                        f'    shfl.sync.{mode}.b32 {dest}, {val}, {delta}, 31, {mask};')
+                        f'    shfl.sync.{mode}.b32 {dest}, {val}, {delta}, {clamp}, {mask};')
             elif inst.func in ('__ballot_sync', '__all_sync', '__any_sync'):
                 # PTX vote.sync.* requires a predicate register for the condition arg.
                 # If the condition is already a predicate (from CmpInst), use it directly;
