@@ -224,6 +224,126 @@ int test_vector_clamp01(CUfunction f, int N, TestResult* r) {
     return generic_float3_test(f, N, r, vadd_init, vclamp_ref, 0.001f);
 }
 
+// --- block_reverse: reverse within each 256-element block ---
+void brev_ref(float* out, float* a, float* b, int n) {
+    // Reverse within blocks of 256
+    for (int blk = 0; blk < n; blk += 256) {
+        int end = (blk + 256 < n) ? blk + 256 : n;
+        int sz = end - blk;
+        for (int i = 0; i < sz; i++) out[blk + sz - 1 - i] = a[blk + i];
+    }
+}
+int test_block_reverse(CUfunction f, int N, TestResult* r) {
+    r->name = "block_reverse";
+    return generic_float3_test(f, N, r, vadd_init, brev_ref, 0.001f);
+}
+
+// --- warp_reduce: sum of each 32-element warp → out[warp_id] ---
+int test_warp_reduce(CUfunction func, int N, TestResult* r) {
+    r->name = "warp_reduce";
+    float *h_a = (float*)malloc(N * sizeof(float));
+    for (int i = 0; i < N; i++) h_a[i] = (float)(i % 100) * 0.1f;
+
+    int n_warps = (N + 31) / 32;
+    float *h_ref = (float*)calloc(n_warps, sizeof(float));
+    for (int i = 0; i < N; i++) h_ref[i / 32] += h_a[i];
+
+    float *h_oc = (float*)calloc(n_warps, sizeof(float));
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(float));
+    cuMemAlloc(&d_b, N * sizeof(float));  // unused but needed for signature
+    cuMemAlloc(&d_out, n_warps * sizeof(float));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(float));
+    cuMemsetD8(d_out, 0, n_warps * sizeof(float));
+
+    int threads = 256;
+    int blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    cuMemcpyDtoH(h_oc, d_out, n_warps * sizeof(float));
+
+    int errors = 0;
+    float max_diff = 0.0f;
+    for (int w = 0; w < n_warps; w++) {
+        float diff = fabsf(h_ref[w] - h_oc[w]);
+        if (diff > max_diff) max_diff = diff;
+        if (diff > 0.01f) { errors++; if (errors <= 3) printf("    MISMATCH warp %d: ref=%.3f oc=%.3f\n", w, h_ref[w], h_oc[w]); }
+    }
+    r->total = n_warps; r->passed = n_warps - errors; r->max_diff = max_diff;
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a); free(h_ref); free(h_oc);
+    return errors;
+}
+
+// --- prefix_sum: inclusive scan within each block ---
+int test_prefix_sum(CUfunction func, int N, TestResult* r) {
+    r->name = "prefix_sum";
+    float *h_a = (float*)malloc(N * sizeof(float));
+    float *h_ref = (float*)malloc(N * sizeof(float));
+    float *h_oc = (float*)malloc(N * sizeof(float));
+    for (int i = 0; i < N; i++) h_a[i] = (float)((i % 10) - 5) * 0.1f;
+    // CPU: prefix sum within blocks of 256
+    for (int blk = 0; blk < N; blk += 256) {
+        float s = 0.0f;
+        int end = (blk + 256 < N) ? blk + 256 : N;
+        for (int i = blk; i < end; i++) { s += h_a[i]; h_ref[i] = s; }
+    }
+
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(float));
+    cuMemAlloc(&d_b, N * sizeof(float));
+    cuMemAlloc(&d_out, N * sizeof(float));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(float));
+
+    int threads = 256, blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    cuMemcpyDtoH(h_oc, d_out, N * sizeof(float));
+
+    int errors = 0; float max_diff = 0.0f;
+    for (int i = 0; i < N; i++) {
+        float diff = fabsf(h_ref[i] - h_oc[i]);
+        if (diff > max_diff) max_diff = diff;
+        if (diff > 0.01f) { errors++; if (errors <= 3) printf("    MISMATCH [%d]: ref=%.4f oc=%.4f\n", i, h_ref[i], h_oc[i]); }
+    }
+    r->total = N; r->passed = N - errors; r->max_diff = max_diff;
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a); free(h_ref); free(h_oc);
+    return errors;
+}
+
+// --- relu: max(0, x) ---
+void relu_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] > 0 ? a[i] : 0.0f; }
+int test_relu(CUfunction f, int N, TestResult* r) {
+    r->name = "relu";
+    return generic_float3_test(f, N, r, vadd_init, relu_ref, 0.001f);
+}
+
+// --- sigmoid: 1/(1+exp(-x)) ---
+void sigmoid_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = 1.0f / (1.0f + expf(-a[i])); }
+int test_sigmoid(CUfunction f, int N, TestResult* r) {
+    r->name = "sigmoid";
+    return generic_float3_test(f, N, r, vadd_init, sigmoid_ref, 0.001f);
+}
+
+// --- stencil_1d: 0.25*a[i-1] + 0.5*a[i] + 0.25*a[i+1] ---
+void stencil_ref(float* out, float* a, float* b, int n) {
+    for (int blk = 0; blk < n; blk += 256) {
+        int end = (blk + 256 < n) ? blk + 256 : n;
+        for (int i = blk; i < end; i++) {
+            float left  = (i > 0) ? a[i-1] : 0.0f;
+            float right = (i < n-1) ? a[i+1] : 0.0f;
+            out[i] = 0.25f * left + 0.5f * a[i] + 0.25f * right;
+        }
+    }
+}
+int test_stencil(CUfunction f, int N, TestResult* r) {
+    r->name = "stencil_1d";
+    return generic_float3_test(f, N, r, vadd_init, stencil_ref, 0.01f);
+}
+
 // ======================== REGISTRY ========================
 
 TestEntry g_tests[] = {
@@ -236,6 +356,12 @@ TestEntry g_tests[] = {
     { "vector_abs",     test_vector_abs },
     { "vector_clamp01", test_vector_clamp01 },
     { "reduce_sum",     test_reduce },
+    { "block_reverse",  test_block_reverse },
+    { "warp_reduce",    test_warp_reduce },
+    { "prefix_sum",     test_prefix_sum },
+    { "relu",           test_relu },
+    { "sigmoid",        test_sigmoid },
+    { "stencil_1d",     test_stencil },
     { NULL, NULL }
 };
 
