@@ -344,6 +344,86 @@ int test_stencil(CUfunction f, int N, TestResult* r) {
     return generic_float3_test(f, N, r, vadd_init, stencil_ref, 0.01f);
 }
 
+// ======================== INTEGER TESTS ========================
+
+// Generic int test: (int *out, int *a, int *b, int n)
+int generic_int3_test(CUfunction func, int N, TestResult* result,
+                      void (*init)(int* a, int* b, int n),
+                      void (*cpu_ref)(int* out, int* a, int* b, int n)) {
+    int *h_a = (int*)malloc(N * sizeof(int));
+    int *h_b = (int*)malloc(N * sizeof(int));
+    int *h_ref = (int*)malloc(N * sizeof(int));
+    int *h_oc = (int*)malloc(N * sizeof(int));
+
+    init(h_a, h_b, N);
+    cpu_ref(h_ref, h_a, h_b, N);
+
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(int));
+    cuMemAlloc(&d_b, N * sizeof(int));
+    cuMemAlloc(&d_out, N * sizeof(int));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(int));
+    cuMemcpyHtoD(d_b, h_b, N * sizeof(int));
+
+    int threads = 256, blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    cuMemcpyDtoH(h_oc, d_out, N * sizeof(int));
+
+    int errors = 0;
+    for (int i = 0; i < N; i++) {
+        if (h_ref[i] != h_oc[i]) {
+            if (errors < 3) printf("    MISMATCH [%d]: ref=%d oc=%d\n", i, h_ref[i], h_oc[i]);
+            errors++;
+        }
+    }
+    result->total = N; result->passed = N - errors; result->max_diff = (float)errors;
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a); free(h_b); free(h_ref); free(h_oc);
+    return errors;
+}
+
+void iinit(int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) { a[i] = (i * 73 + 17) % 1000 - 500; b[i] = (i * 37 + 7) % 100; }
+}
+
+void iadd_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] + b[i]; }
+int test_int_add(CUfunction f, int N, TestResult* r) { r->name = "int_add"; return generic_int3_test(f, N, r, iinit, iadd_ref); }
+
+void imul_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] * b[i]; }
+int test_int_mul(CUfunction f, int N, TestResult* r) { r->name = "int_mul"; return generic_int3_test(f, N, r, iinit, imul_ref); }
+
+void ixor_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] ^ b[i]; }
+int test_int_xor(CUfunction f, int N, TestResult* r) { r->name = "int_xor"; return generic_int3_test(f, N, r, iinit, ixor_ref); }
+
+void iand_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] & b[i]; }
+int test_int_and(CUfunction f, int N, TestResult* r) { r->name = "int_and"; return generic_int3_test(f, N, r, iinit, iand_ref); }
+
+void ishl_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] << (b[i] & 31); }
+int test_int_shl(CUfunction f, int N, TestResult* r) { r->name = "int_shl"; return generic_int3_test(f, N, r, iinit, ishl_ref); }
+
+void imax_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] > b[i] ? a[i] : b[i]; }
+int test_int_max(CUfunction f, int N, TestResult* r) { r->name = "int_max"; return generic_int3_test(f, N, r, iinit, imax_ref); }
+
+void iabsdiff_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) { int d = a[i]-b[i]; o[i] = d < 0 ? -d : d; } }
+int test_int_absdiff(CUfunction f, int N, TestResult* r) { r->name = "int_absdiff"; return generic_int3_test(f, N, r, iinit, iabsdiff_ref); }
+
+// popcount CPU reference
+int cpu_popc(int v) { unsigned u = (unsigned)v; int c = 0; while (u) { c += u & 1; u >>= 1; } return c; }
+void ipopc_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = cpu_popc(a[i]); }
+int test_int_popc(CUfunction f, int N, TestResult* r) { r->name = "int_popc"; return generic_int3_test(f, N, r, iinit, ipopc_ref); }
+
+// clz CPU reference
+int cpu_clz(int v) { unsigned u = (unsigned)v; if (u == 0) return 32; int c = 0; while (!(u & 0x80000000u)) { c++; u <<= 1; } return c; }
+void iclz_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = cpu_clz(a[i]); }
+int test_int_clz(CUfunction f, int N, TestResult* r) { r->name = "int_clz"; return generic_int3_test(f, N, r, iinit, iclz_ref); }
+
+// brev CPU reference
+unsigned cpu_brev(unsigned v) { unsigned r = 0; for (int i = 0; i < 32; i++) { r <<= 1; r |= v & 1; v >>= 1; } return r; }
+void ibrev_ref(int* o, int* a, int* b, int n) { for (int i = 0; i < n; i++) o[i] = (int)cpu_brev((unsigned)a[i]); }
+int test_int_brev(CUfunction f, int N, TestResult* r) { r->name = "int_brev"; return generic_int3_test(f, N, r, iinit, ibrev_ref); }
+
 // ======================== REGISTRY ========================
 
 TestEntry g_tests[] = {
@@ -362,6 +442,16 @@ TestEntry g_tests[] = {
     { "relu",           test_relu },
     { "sigmoid",        test_sigmoid },
     { "stencil_1d",     test_stencil },
+    { "int_add",        test_int_add },
+    { "int_mul",        test_int_mul },
+    { "int_xor",        test_int_xor },
+    { "int_and",        test_int_and },
+    { "int_shl",        test_int_shl },
+    { "int_max",        test_int_max },
+    { "int_absdiff",    test_int_absdiff },
+    { "int_popc",       test_int_popc },
+    { "int_clz",        test_int_clz },
+    { "int_brev",       test_int_brev },
     { NULL, NULL }
 };
 
