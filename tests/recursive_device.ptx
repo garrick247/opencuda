@@ -2,6 +2,8 @@
 .target sm_120
 .address_size 64
 
+.func (.param .s32 retval0) __devfn_fibonacci(.param .s32 n);
+.func (.param .s32 retval0) __devfn_factorial(.param .s32 n);
 .func (.param .s32 retval0) __devfn_fibonacci(
     .param .s32 n)
 {
@@ -12,12 +14,10 @@ entry_1:
     ld.param.s32 %r0, [n];
     setp.le.s32 %p0, %r0, 1;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
     st.param.s32 [retval0], %r0;
     ret;
-if_false_3:
-    bra if_merge_4;
 if_merge_4:
     sub.s32 %r1, %r0, 1;
     {
@@ -33,10 +33,9 @@ if_merge_4:
         .param .s32 _cr_1;
         st.param.s32 [_ca0_1], %r1;
         call.uni (_cr_1), __devfn_fibonacci, (_ca0_1);
-        ld.param.s32 %r0, [_cr_1];
+        ld.param.s32 %r2, [_cr_1];
     }
-    add.s32 %r1, %r2, %r0;
-    st.param.s32 [retval0], %r1;
+    st.param.s32 [retval0], %r0;
     ret;
 }
 
@@ -44,18 +43,16 @@ if_merge_4:
     .param .s32 n)
 {
     .reg .pred %p<1>;
-    .reg .b32 %r<3>;
+    .reg .b32 %r<2>;
 
 entry_1:
     ld.param.s32 %r0, [n];
     setp.le.s32 %p0, %r0, 1;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
     st.param.s32 [retval0], 1;
     ret;
-if_false_3:
-    bra if_merge_4;
 if_merge_4:
     sub.s32 %r1, %r0, 1;
     {
@@ -63,9 +60,8 @@ if_merge_4:
         .param .s32 _cr_0;
         st.param.s32 [_ca0_0], %r1;
         call.uni (_cr_0), __devfn_factorial, (_ca0_0);
-        ld.param.s32 %r2, [_cr_0];
+        ld.param.s32 %r0, [_cr_0];
     }
-    mul.lo.s32 %r1, %r0, %r2;
     st.param.s32 [retval0], %r1;
     ret;
 }

@@ -17,22 +17,16 @@ entry_1:
     ld.param.s32 %r0, [depth];
     setp.le.s32 %p0, %r0, 0;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
-    sub.f32 %f3, %f1, %f0;
-    mul.f32 %f4, %f3, %f2;
-    add.f32 %f3, %f0, %f4;
     st.param.f32 [retval0], %f3;
     ret;
-if_false_3:
-    bra if_merge_4;
 if_merge_4:
-    add.f32 %f4, %f0, %f1;
-    mul.f32 %f3, %f4, 0f3F000000;
-    mov.f32 %f4, %f3;
+    add.f32 %f3, %f0, %f1;
+    mul.f32 %f4, %f3, 0f3F000000;
     setp.lt.f32 %p0, %f2, 0f3F000000;
     @%p0 bra if_true_5;
-    bra if_false_6;
+    bra if_merge_7;
 if_true_5:
     mul.f32 %f3, %f2, 0f40000000;
     sub.s32 %r1, %r0, 1;
@@ -51,8 +45,6 @@ if_true_5:
     }
     st.param.f32 [retval0], %f5;
     ret;
-if_false_6:
-    bra if_merge_7;
 if_merge_7:
     sub.f32 %f0, %f2, 0f3F000000;
     mul.f32 %f3, %f0, 0f40000000;
@@ -165,7 +157,7 @@ for_cond_5:
     @%p0 bra for_body_6;
     bra for_exit_8;
 for_body_6:
-    shfl.sync.up.b32 %r5, %r2, %r4, 31, 4294967295;
+    shfl.sync.up.b32 %r5, %r2, %r4, 0, 4294967295;
     setp.ge.s32 %p1, %r1, %r4;
     @%p1 bra if_true_9;
     bra for_inc_7;

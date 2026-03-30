@@ -15,12 +15,13 @@ entry_1:
     ld.param.u64 %rd0, [out];
     ld.param.u64 %rd1, [a];
     mov.u32 %r0, %tid.x;
-    shl.b32 %r1, %r0, 1;
-    cvt.u64.u32 %rd3, %r1;
+    cvt.s32.u32 %r1, %r0;
+    shl.b32 %r0, %r1, 1;
+    cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.b16 %h0, [%rd2];
-    shl.b32 %r1, %r0, 2;
-    cvt.u64.u32 %rd4, %r1;
+    shl.b32 %r0, %r1, 2;
+    cvt.s64.s32 %rd4, %r0;
     add.u64 %rd1, %rd0, %rd4;
     cvt.f32.f16 %f0, %h0;
     st.global.f32 [%rd1], %f0;

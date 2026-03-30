@@ -262,7 +262,7 @@ for_cond_5:
     @%p0 bra for_body_6;
     bra for_exit_8;
 for_body_6:
-    shfl.sync.up.b32 %r6, %r2, %r5, 31, 4294967295;
+    shfl.sync.up.b32 %r6, %r2, %r5, 0, 4294967295;
     setp.ge.s32 %p1, %r4, %r5;
     @%p1 bra if_true_9;
     bra for_inc_7;
@@ -317,7 +317,7 @@ for_cond_21:
     @%p1 bra for_body_22;
     bra for_exit_24;
 for_body_22:
-    shfl.sync.up.b32 %r8, %r5, %r6, 31, 4294967295;
+    shfl.sync.up.b32 %r8, %r5, %r6, 0, 4294967295;
     setp.ge.s32 %p0, %r4, %r6;
     @%p0 bra if_true_25;
     bra for_inc_23;
@@ -380,18 +380,17 @@ if_true_2:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
-    mul.f32 %f1, 0f3F800000, %f0;
-    mul.f32 %f2, %f1, %f0;
-    mul.f32 %f1, 0fC0000000, %f0;
-    add.f32 %f3, %f2, %f1;
-    add.f32 %f2, %f3, 0f3F800000;
+    mul.f32 %f1, %f0, %f0;
+    mul.f32 %f2, 0fC0000000, %f0;
+    add.f32 %f3, %f1, %f2;
+    add.f32 %f1, %f3, 0f3F800000;
     bra inline_poly2_merge_5;
 if_merge_4:
     ret;
 inline_poly2_merge_5:
-    mul.f32 %f1, 0f40000000, %f0;
-    mul.f32 %f3, %f1, %f0;
-    add.f32 %f1, %f3, 0fBF800000;
+    mul.f32 %f2, 0f40000000, %f0;
+    mul.f32 %f3, %f2, %f0;
+    add.f32 %f2, %f3, 0fBF800000;
     bra inline_poly2_merge_7;
 inline_poly2_merge_7:
     mul.f32 %f3, 0fBF800000, %f0;
@@ -403,7 +402,7 @@ inline_poly2_merge_9:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
-    add.f32 %f4, %f2, %f1;
+    add.f32 %f4, %f1, %f2;
     add.f32 %f3, %f4, %f5;
     st.global.f32 [%rd1], %f3;
     bra if_merge_4;

@@ -81,6 +81,8 @@ if_merge_10:
 
 .visible .entry launch_bounds_2(
     .param .u64 out, .param .u64 in, .param .s32 n)
+.maxntid 256, 1, 1
+.minnctapersm 4
 {
     .reg .f32 %f<2>;
     .reg .b32 %r<3>;
