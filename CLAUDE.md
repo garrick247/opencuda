@@ -77,7 +77,6 @@ CUDA C (.cu)
 - Integer division/remainder emits PTX `div`/`rem` and relies on OpenPTXas for SASS expansion
 - Register allocation uses linear scan with live-interval reuse; no graph coloring or spilling
 - No texture/surface memory, cooperative groups, or tensor operations
-- Hex float literals (`0x1.0p+2f`) not supported by lexer
 - Inline PTX `asm volatile(...)` parses but output bindings are not connected (silently zeroed)
 - No recursive `__device__` functions (causes compile-time RecursionError)
 - No separate compilation / linking — single translation unit only

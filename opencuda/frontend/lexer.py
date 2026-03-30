@@ -170,6 +170,8 @@ _TOKEN_RE = re.compile(r"""
     (?P<COMMENT_BLOCK>  /\*.*?\*/           ) |
     (?P<STRING_LIT>     "(?:[^"\\]|\\.)*"   ) |
     (?P<CHAR_LIT>       '(?:[^'\\]|\\.)'    ) |
+    (?P<HEX_FLOAT_LIT>  0[xX][0-9a-fA-F]*\.[0-9a-fA-F]*[pP][+-]?[0-9]+[fFlL]?
+                      | 0[xX][0-9a-fA-F]+[pP][+-]?[0-9]+[fFlL]? ) |
     (?P<FLOAT_LIT>      [0-9]+\.[0-9]*(?:[eE][+-]?[0-9]+)?[fF]?
                       | [0-9]*\.[0-9]+(?:[eE][+-]?[0-9]+)?[fF]?
                       | [0-9]+[eE][+-]?[0-9]+[fF]?
@@ -275,8 +277,11 @@ def lex(source: str) -> list[Token]:
             tok_kind = _KEYWORDS.get(val, TokKind.IDENT)
         elif kind_name == 'INT_LIT' or kind_name == 'HEX_LIT':
             tok_kind = TokKind.INT_LIT
-        elif kind_name == 'FLOAT_LIT':
+        elif kind_name == 'FLOAT_LIT' or kind_name == 'HEX_FLOAT_LIT':
             tok_kind = TokKind.FLOAT_LIT
+            if kind_name == 'HEX_FLOAT_LIT':
+                # Convert hex float to decimal for parser: 0x1.0p+2f → 4.0
+                val = str(float.fromhex(val.rstrip('fFlL')))
         elif kind_name == 'STRING_LIT':
             tok_kind = TokKind.STRING_LIT
         else:

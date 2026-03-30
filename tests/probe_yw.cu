@@ -45,9 +45,9 @@ __global__ void lerp_kernel(float *out, float *a, float *b, float *t, int n) {
 __global__ void hex_float(float *out, float *in, int n) {
     int tid = threadIdx.x;
     if (tid < n) {
-        // Hex float constants not supported by lexer — use decimal equivalents
-        float scale = 4.0f;     // = 0x1.0p+2f
-        float bias  = 0.75f;    // = 0x1.8p-1f
+        // Hex float constants (C99 syntax)
+        float scale = 0x1.0p+2f;    // = 4.0
+        float bias  = 0x1.8p-1f;    // = 0.75
         out[tid] = in[tid] * scale + bias;
     }
 }
