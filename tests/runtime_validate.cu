@@ -173,11 +173,69 @@ int test_reduce(CUfunction func, int N, TestResult* r) {
     return r->passed ? 0 : 1;
 }
 
+// --- generic: out = a * b ---
+void vmul_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] * b[i]; }
+int test_vector_mul(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_mul";
+    return generic_float3_test(f, N, r, vadd_init, vmul_ref, 0.001f);
+}
+
+// --- generic: out = -a ---
+void vneg_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = -a[i]; }
+int test_vector_neg(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_neg";
+    return generic_float3_test(f, N, r, vadd_init, vneg_ref, 0.001f);
+}
+
+// --- generic: out = a * a ---
+void vsq_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] * a[i]; }
+int test_vector_sq(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_sq";
+    return generic_float3_test(f, N, r, vadd_init, vsq_ref, 0.001f);
+}
+
+// --- generic: out = a * b + a ---
+void vfma_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] * b[i] + a[i]; }
+int test_vector_fma(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_fma";
+    return generic_float3_test(f, N, r, vadd_init, vfma_ref, 0.001f);
+}
+
+// --- generic: out = max(a, b) ---
+void vmax_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] > b[i] ? a[i] : b[i]; }
+int test_vector_max(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_max";
+    return generic_float3_test(f, N, r, vadd_init, vmax_ref, 0.001f);
+}
+
+// --- generic: out = abs(a) ---
+void vabs_ref(float* out, float* a, float* b, int n) { for (int i = 0; i < n; i++) out[i] = a[i] < 0 ? -a[i] : a[i]; }
+int test_vector_abs(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_abs";
+    return generic_float3_test(f, N, r, vadd_init, vabs_ref, 0.001f);
+}
+
+// --- generic: out = clamp(a, 0, 1) ---
+void vclamp_ref(float* out, float* a, float* b, int n) {
+    for (int i = 0; i < n; i++) { float v = a[i]; out[i] = v < 0 ? 0 : v > 1 ? 1 : v; }
+}
+int test_vector_clamp01(CUfunction f, int N, TestResult* r) {
+    r->name = "vector_clamp01";
+    return generic_float3_test(f, N, r, vadd_init, vclamp_ref, 0.001f);
+}
+
 // ======================== REGISTRY ========================
 
 TestEntry g_tests[] = {
-    { "vector_add",   test_vector_add },
-    { "reduce_sum",   test_reduce },
+    { "vector_add",     test_vector_add },
+    { "vector_mul",     test_vector_mul },
+    { "vector_neg",     test_vector_neg },
+    { "vector_sq",      test_vector_sq },
+    { "vector_fma",     test_vector_fma },
+    { "vector_max",     test_vector_max },
+    { "vector_abs",     test_vector_abs },
+    { "vector_clamp01", test_vector_clamp01 },
+    { "reduce_sum",     test_reduce },
     { NULL, NULL }
 };
 
