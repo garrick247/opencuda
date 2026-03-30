@@ -513,6 +513,32 @@ void gcd_iref(int* o, int* a, int* b, int n) {
 }
 int test_gcd(CUfunction f, int N, TestResult* r) { r->name = "gcd"; return generic_int3_test(f, N, r, iinit, gcd_iref); }
 
+// ======================== NEURAL NETWORK TESTS ========================
+
+void relu_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] > 0 ? a[i] : 0.0f; }
+int test_nn_relu(CUfunction f, int N, TestResult* r) { r->name = "nn_relu"; return generic_float3_test(f, N, r, vadd_init, relu_fref, 0.001f); }
+
+void leaky_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] > 0 ? a[i] : 0.01f * a[i]; }
+int test_nn_leaky(CUfunction f, int N, TestResult* r) { r->name = "nn_leaky_relu"; return generic_float3_test(f, N, r, vadd_init, leaky_fref, 0.001f); }
+
+void silu_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] / (1.0f + expf(-a[i])); }
+int test_nn_silu(CUfunction f, int N, TestResult* r) { r->name = "nn_silu"; return generic_float3_test(f, N, r, vadd_init, silu_fref, 0.001f); }
+
+void saxpy_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) o[i] = 0.5f * a[i] + b[i]; }
+int test_nn_saxpy(CUfunction f, int N, TestResult* r) { r->name = "nn_saxpy"; return generic_float3_test(f, N, r, vadd_init, saxpy_fref, 0.001f); }
+
+void residual_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] + b[i]; }
+int test_nn_residual(CUfunction f, int N, TestResult* r) { r->name = "nn_residual"; return generic_float3_test(f, N, r, vadd_init, residual_fref, 0.001f); }
+
+void gate_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) o[i] = a[i] * b[i]; }
+int test_nn_gate(CUfunction f, int N, TestResult* r) { r->name = "nn_gate"; return generic_float3_test(f, N, r, vadd_init, gate_fref, 0.001f); }
+
+void sqdiff_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) { float d = a[i]-b[i]; o[i] = d*d; } }
+int test_nn_sq_diff(CUfunction f, int N, TestResult* r) { r->name = "nn_sq_diff"; return generic_float3_test(f, N, r, vadd_init, sqdiff_fref, 0.001f); }
+
+void clamp_fref(float* o, float* a, float* b, int n) { for (int i = 0; i < n; i++) { float v = a[i]; o[i] = v < -1 ? -1 : v > 1 ? 1 : v; } }
+int test_nn_clamp(CUfunction f, int N, TestResult* r) { r->name = "nn_clamp_sym"; return generic_float3_test(f, N, r, vadd_init, clamp_fref, 0.001f); }
+
 // ======================== STRESS TESTS ========================
 
 void nested_loop_iref(int* o, int* a, int* b, int n) {
@@ -735,6 +761,14 @@ TestEntry g_tests[] = {
     { "ternary_loop",   test_ternary_loop },
     { "warp_prefix",    test_warp_prefix },
     { "full_reduce",    test_full_reduce },
+    { "nn_relu",        test_nn_relu },
+    { "nn_leaky_relu",  test_nn_leaky },
+    { "nn_silu",        test_nn_silu },
+    { "nn_saxpy",       test_nn_saxpy },
+    { "nn_residual",    test_nn_residual },
+    { "nn_gate",        test_nn_gate },
+    { "nn_sq_diff",     test_nn_sq_diff },
+    { "nn_clamp_sym",   test_nn_clamp },
     { NULL, NULL }
 };
 
