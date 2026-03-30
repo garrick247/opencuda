@@ -78,5 +78,4 @@ CUDA C (.cu)
 - Register allocation uses linear scan with live-interval reuse; no graph coloring or spilling
 - No texture/surface memory, cooperative groups, or tensor operations
 - Inline PTX `asm volatile("template" : "=r"(out) : "r"(in))` supported with `%N` operand substitution (simple constraints only)
-- No recursive `__device__` functions (causes compile-time RecursionError)
 - No separate compilation / linking — single translation unit only
