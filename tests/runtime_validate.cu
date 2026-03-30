@@ -513,6 +513,84 @@ void gcd_iref(int* o, int* a, int* b, int n) {
 }
 int test_gcd(CUfunction f, int N, TestResult* r) { r->name = "gcd"; return generic_int3_test(f, N, r, iinit, gcd_iref); }
 
+// ======================== STRESS TESTS ========================
+
+void nested_loop_iref(int* o, int* a, int* b, int n) {
+    for (int g = 0; g < n; g++) { int s = 0; for (int i = 0; i < 8; i++) for (int j = 0; j < 8; j++) s += a[(g+i*8+j)%n]; o[g] = s; }
+}
+int test_nested_loop(CUfunction f, int N, TestResult* r) { r->name = "nested_loop_sum"; return generic_int3_test(f, N, r, iinit, nested_loop_iref); }
+
+void cond_loop_iref(int* o, int* a, int* b, int n) {
+    for (int g = 0; g < n; g++) { int ps = 0, ns = 0; for (int i = 0; i < 16; i++) { int v = a[(g+i)%n]; if (v > 0) ps += v; else ns += v; } o[g] = ps + ns; }
+}
+int test_cond_loop(CUfunction f, int N, TestResult* r) { r->name = "cond_in_loop"; return generic_int3_test(f, N, r, iinit, cond_loop_iref); }
+
+void multi_devfn_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) o[i] = a[i] * 3 + b[i] * 7;
+}
+int test_multi_devfn(CUfunction f, int N, TestResult* r) { r->name = "multi_devfn"; return generic_int3_test(f, N, r, iinit, multi_devfn_iref); }
+
+void cvt_chain_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) o[i] = (int)((float)a[i] * 0.7f + 0.5f);
+}
+int test_cvt_chain(CUfunction f, int N, TestResult* r) { r->name = "cvt_chain"; return generic_int3_test(f, N, r, iinit, cvt_chain_iref); }
+
+void pack_iref(int* o, int* a, int* b, int n) {
+    for (int i = 0; i < n; i++) o[i] = (a[i] & 0xFFFF) + (b[i] & 0xFFFF);
+}
+int test_pack_unpack(CUfunction f, int N, TestResult* r) { r->name = "pack_unpack"; return generic_int3_test(f, N, r, iinit, pack_iref); }
+
+void ternary_loop_iref(int* o, int* a, int* b, int n) {
+    for (int g = 0; g < n; g++) { int s = 0; for (int i = 0; i < 8; i++) { int v = a[(g+i)%n]; s += v>50?3:v>0?1:v>-50?-1:-3; } o[g] = s; }
+}
+int test_ternary_loop(CUfunction f, int N, TestResult* r) { r->name = "ternary_loop"; return generic_int3_test(f, N, r, iinit, ternary_loop_iref); }
+
+int test_warp_prefix(CUfunction func, int N, TestResult* r) {
+    r->name = "warp_prefix";
+    int *h_a = (int*)malloc(N * sizeof(int));
+    int *h_ref = (int*)malloc(N * sizeof(int));
+    int *h_oc = (int*)malloc(N * sizeof(int));
+    for (int i = 0; i < N; i++) h_a[i] = (i * 73 + 17) % 1000 - 500;
+    for (int w = 0; w < N; w += 32) { int s = 0; int end = (w+32 < N) ? w+32 : N; for (int i = w; i < end; i++) { s += h_a[i]; h_ref[i] = s; } }
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(int)); cuMemAlloc(&d_b, N * sizeof(int)); cuMemAlloc(&d_out, N * sizeof(int));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(int));
+    int threads = 256, blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    cuMemcpyDtoH(h_oc, d_out, N * sizeof(int));
+    int errors = 0;
+    for (int i = 0; i < N; i++) if (h_ref[i] != h_oc[i]) { errors++; if (errors <= 3) printf("    MISMATCH [%d]: ref=%d oc=%d\n", i, h_ref[i], h_oc[i]); }
+    r->total = N; r->passed = N - errors; r->max_diff = (float)errors;
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out);
+    free(h_a); free(h_ref); free(h_oc);
+    return errors;
+}
+
+int test_full_reduce(CUfunction func, int N, TestResult* r) {
+    r->name = "full_reduce";
+    float *h_a = (float*)malloc(N * sizeof(float));
+    for (int i = 0; i < N; i++) h_a[i] = (float)(i % 100) * 0.1f;
+    double cpu_sum = 0.0; for (int i = 0; i < N; i++) cpu_sum += (double)(h_a[i] * h_a[i]);
+    CUdeviceptr d_a, d_b, d_out;
+    cuMemAlloc(&d_a, N * sizeof(float)); cuMemAlloc(&d_b, N * sizeof(float)); cuMemAlloc(&d_out, sizeof(float));
+    cuMemcpyHtoD(d_a, h_a, N * sizeof(float));
+    float zero = 0.0f; cuMemcpyHtoD(d_out, &zero, sizeof(float));
+    int threads = 256, blocks = (N + threads - 1) / threads;
+    void* args[] = { &d_out, &d_a, &d_b, &N };
+    CHECK_CU(cuLaunchKernel(func, blocks, 1, 1, threads, 1, 1, 0, 0, args, NULL));
+    CHECK_CU(cuCtxSynchronize());
+    float h_out; cuMemcpyDtoH(&h_out, d_out, sizeof(float));
+    float diff = (float)fabs(cpu_sum - (double)h_out);
+    float tol = (float)fabs(cpu_sum) * 1e-3f + 0.1f;
+    r->total = 1; r->passed = (diff <= tol) ? 1 : 0; r->max_diff = diff;
+    if (r->passed) printf("    cpu=%.3f gpu=%.3f diff=%.6f\n", (float)cpu_sum, h_out, diff);
+    else printf("    FAIL: cpu=%.3f gpu=%.3f diff=%.3f tol=%.3f\n", (float)cpu_sum, h_out, diff, tol);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_out); free(h_a);
+    return r->passed ? 0 : 1;
+}
+
 // ======================== ATOMIC TESTS ========================
 
 // Generic atomic test: runs kernel with (out, a, b, n), out is a single int.
@@ -649,6 +727,14 @@ TestEntry g_tests[] = {
     { "factorial_k",    test_factorial },
     { "fibonacci_k",    test_fibonacci },
     { "gcd_k",          test_gcd },
+    { "nested_loop_sum", test_nested_loop },
+    { "cond_in_loop",   test_cond_loop },
+    { "multi_devfn",    test_multi_devfn },
+    { "cvt_chain",      test_cvt_chain },
+    { "pack_unpack",    test_pack_unpack },
+    { "ternary_loop",   test_ternary_loop },
+    { "warp_prefix",    test_warp_prefix },
+    { "full_reduce",    test_full_reduce },
     { NULL, NULL }
 };
 
