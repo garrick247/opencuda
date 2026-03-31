@@ -494,37 +494,50 @@ class PTXEmitter:
                 pfx, idx = m.group(1), int(m.group(2))
                 actual_counts[pfx] = max(actual_counts.get(pfx, 0), idx + 1)
 
-        # Peephole: reduce rd register count by rewriting address computation.
-        # When cvt.s64 creates a 4th rd (byte offset), rewrite to in-place:
-        #   Before: cvt %rd3, %rK; add %rd2, %rd1, %rd3; add %rd1, %rd0, %rd3
-        #   After:  add %rd0, %rd0, %rd2_offset; add %rd1, %rd1, %rd2_offset; ...
-        # Simplest: swap output add before input add, then rename rd3→rd0
+        # Peephole: reduce rd register count by rewriting address computation
+        # to use in-place adds (same logic as the kernel entry peephole).
         rd_max = actual_counts.get('rd', 0)
         if rd_max > 3:
+            import re as _re
             highest = f'%rd{rd_max - 1}'
-            cvt_idx = next((i for i, l in enumerate(body_lines) if 'cvt' in l and highest in l), -1)
-            adds = [(i, l) for i, l in enumerate(body_lines) if 'add.u64' in l and highest in l]
+            cvt_idx = next((i for i, l in enumerate(body_lines)
+                            if 'cvt' in l and highest in l
+                            and l.strip().split()[1].rstrip(',') == highest), -1)
+            add_pattern = _re.compile(
+                r'add\.u64\s+(%rd\d+),\s*(%rd\d+),\s*' + _re.escape(highest))
+            adds = [(i, add_pattern.search(l))
+                    for i, l in enumerate(body_lines) if 'add.u64' in l and highest in l]
+            adds = [(i, m) for i, m in adds if m is not None]
             if cvt_idx >= 0 and len(adds) >= 2:
-                add1_i, add1_l = adds[0]  # input address: add %rd2, %rd1, %rdN
-                add2_i, add2_l = adds[1]  # output address: add %rd1, %rd0, %rdN
-                # Strategy: move the out-pointer add to just after cvt (consuming rd0)
-                # Then rename %rdN → %rd0 (since rd0 is now dead)
-                # Step 1: remove add2 from its position
-                body_lines.pop(add2_i)
-                # Step 2: insert it right after cvt
-                body_lines.insert(cvt_idx + 1, add2_l)
-                # Step 3: rename %rdN → %rd0 (rd0 is dead after the moved add)
-                # But we need to be careful: rd0 appears in the moved add.
-                # After the move, the sequence is:
-                #   cvt %rdN, %rK       ← rdN = offset
-                #   add %rd1, %rd0, %rdN ← rd1 = out+offset (rd0 consumed)
-                #   add %rd2, %rd1_old, %rdN ← wait, rd1 was overwritten!
-                # This doesn't work! rd1 is overwritten by the moved add.
-                # Instead, move to after add1 (input add):
-                body_lines.pop(cvt_idx + 1)  # undo
-                body_lines.insert(add2_i, add2_l)  # restore
-                # Can't easily reorder. Just accept 4 rd for now.
-                pass
+                for k in range(len(adds) - 1, -1, -1):
+                    add_i, m = adds[k]
+                    dest_reg = m.group(1)
+                    ptr_reg = m.group(2)
+                    if dest_reg == ptr_reg:
+                        continue
+                    scope_end = adds[k + 1][0] if k + 1 < len(adds) else len(body_lines)
+                    body_lines[add_i] = body_lines[add_i].replace(
+                        f'add.u64 {dest_reg}, {ptr_reg}',
+                        f'add.u64 {ptr_reg}, {ptr_reg}', 1)
+                    for i in range(add_i + 1, scope_end):
+                        if dest_reg in body_lines[i]:
+                            body_lines[i] = body_lines[i].replace(dest_reg, ptr_reg)
+                # Compact rd indices to fill gaps
+                used_rds = set()
+                for line in body_lines:
+                    for m2 in _re.finditer(r'%rd(\d+)', line):
+                        used_rds.add(int(m2.group(1)))
+                if used_rds:
+                    for gap in range(max(used_rds) + 1):
+                        if gap not in used_rds:
+                            top = max(used_rds)
+                            if top > gap:
+                                for i in range(len(body_lines)):
+                                    body_lines[i] = body_lines[i].replace(
+                                        f'%rd{top}', f'%rd{gap}')
+                                used_rds.discard(top)
+                                used_rds.add(gap)
+                    actual_counts['rd'] = max(used_rds) + 1 if used_rds else 0
 
         reg_counts = actual_counts if actual_counts else self._reg_counts
         for prefix in sorted(reg_counts):
@@ -602,6 +615,73 @@ class PTXEmitter:
         _printf_idx = [0]
         for bb in kernel.blocks:
             self._emit_block(bb, kernel, kernel_printf_strings, _printf_idx)
+
+        # Peephole: reduce rd register count by rewriting address computation
+        # to use in-place adds.  For ptr[i] patterns the codegen emits:
+        #   cvt %rdN, %rK          ← byte offset (highest rd)
+        #   add %rdA, %rdPTR1, %rdN ← computed address (new rd)
+        #   ld  [%rdA]
+        #   add %rdB, %rdPTR2, %rdN ← second computed address
+        #   st  [%rdB]
+        # Rewrite each add to be in-place (dest == pointer operand) and
+        # replace later uses of the old dest with the pointer register,
+        # then rename the offset register to fill the gap so rd count drops.
+        import re as _re
+        actual_rd = set()
+        for line in body_lines:
+            for m in _re.finditer(r'%rd(\d+)', line):
+                actual_rd.add(int(m.group(1)))
+        rd_max = (max(actual_rd) + 1) if actual_rd else 0
+        if rd_max > 3:
+            highest = f'%rd{rd_max - 1}'
+            # Find the cvt that produces the highest rd (the offset temporary)
+            cvt_idx = next((i for i, l in enumerate(body_lines)
+                            if 'cvt' in l and highest in l
+                            and l.strip().split()[1].rstrip(',') == highest), -1)
+            # Find all add.u64 that use the offset as the second source operand
+            add_pattern = _re.compile(
+                r'add\.u64\s+(%rd\d+),\s*(%rd\d+),\s*' + _re.escape(highest))
+            adds = [(i, add_pattern.search(l))
+                    for i, l in enumerate(body_lines) if 'add.u64' in l and highest in l]
+            adds = [(i, m) for i, m in adds if m is not None]
+            if cvt_idx >= 0 and len(adds) >= 2:
+                # Process each add: make it in-place and rename the old dest
+                # in all lines between this add and the next add (or end).
+                # Process in reverse so index shifts don't affect earlier adds.
+                for k in range(len(adds) - 1, -1, -1):
+                    add_i, m = adds[k]
+                    dest_reg = m.group(1)   # e.g. %rd2
+                    ptr_reg = m.group(2)    # e.g. %rd1
+                    if dest_reg == ptr_reg:
+                        continue
+                    # Determine the scope: from this add to the next add (exclusive),
+                    # or to end of body_lines if this is the last add.
+                    scope_end = adds[k + 1][0] if k + 1 < len(adds) else len(body_lines)
+                    # Rewrite the add itself to be in-place
+                    body_lines[add_i] = body_lines[add_i].replace(
+                        f'add.u64 {dest_reg}, {ptr_reg}',
+                        f'add.u64 {ptr_reg}, {ptr_reg}', 1)
+                    # Rename old dest → ptr in lines after this add up to scope_end
+                    for i in range(add_i + 1, scope_end):
+                        if dest_reg in body_lines[i]:
+                            body_lines[i] = body_lines[i].replace(dest_reg, ptr_reg)
+                # Compact: rename the offset register down to fill any freed slot
+                used_rds = set()
+                for line in body_lines:
+                    for m2 in _re.finditer(r'%rd(\d+)', line):
+                        used_rds.add(int(m2.group(1)))
+                if used_rds:
+                    for gap in range(max(used_rds) + 1):
+                        if gap not in used_rds:
+                            top = max(used_rds)
+                            if top > gap:
+                                for i in range(len(body_lines)):
+                                    body_lines[i] = body_lines[i].replace(
+                                        f'%rd{top}', f'%rd{gap}')
+                                used_rds.discard(top)
+                                used_rds.add(gap)
+                    new_rd_count = max(used_rds) + 1 if used_rds else 0
+                    self._reg_counts['rd'] = new_rd_count
 
         # Build the full PTX
         ptx = []
