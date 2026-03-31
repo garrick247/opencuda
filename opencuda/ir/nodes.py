@@ -104,6 +104,15 @@ class CmpInst:
 
 
 @dataclass
+class SelectInst:
+    """Select: dest = cond ? true_val : false_val (predicated select)."""
+    dest: Value
+    cond: Operand  # predicate/bool
+    true_val: Operand
+    false_val: Operand
+
+
+@dataclass
 class LoadInst:
     """Load from memory: dest = *addr."""
     dest: Value

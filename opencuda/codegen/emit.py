@@ -9,7 +9,7 @@ from __future__ import annotations
 import struct
 from ..ir.nodes import (Module, Kernel, DeviceFunction, BasicBlock, Value, Const, Operand,
                          SymbolRef, GlobalAddrInst, AsmInst,
-                         BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
+                         BinInst, CmpInst, SelectInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst,
                          BinOp, CmpOp,
                          RetTerm, BrTerm, CondBrTerm)
@@ -159,7 +159,7 @@ def _build_alloc_map(kernel: Kernel):
                         _note_def(_v, 0)
 
     for i, inst in enumerate(flat):
-        if isinstance(inst, (BinInst, CmpInst, CvtInst)):
+        if isinstance(inst, (BinInst, CmpInst, CvtInst, SelectInst)):
             _note_def(inst.dest, i)
             if isinstance(inst, CmpInst):
                 pred_ids.add(inst.dest.id)
@@ -188,6 +188,10 @@ def _build_alloc_map(kernel: Kernel):
         elif isinstance(inst, CmpInst):
             _note_use(inst.lhs, i)
             _note_use(inst.rhs, i)
+        elif isinstance(inst, SelectInst):
+            _note_use(inst.cond, i)
+            _note_use(inst.true_val, i)
+            _note_use(inst.false_val, i)
         elif isinstance(inst, LoadInst):
             _note_use(inst.addr, i)
         elif isinstance(inst, StoreInst):
@@ -447,6 +451,7 @@ class PTXEmitter:
         self._fallback_alloc = {}
         self._fallback_count = {}
         self._pred_ids = set()
+        self._kernel = func  # reference for SelectInst CmpInst lookup
 
         # Build register allocation map
         self._alloc, self._val_type_map, self._pred_ids, alloc_max = _build_alloc_map(func)
@@ -514,6 +519,7 @@ class PTXEmitter:
         self._reg_counts = {}
         self._shared_val_ids: dict[str, list] = {}
         self._widen_cache = {}
+        self._kernel = kernel  # for ternary diamond detection
         self._printf_call_count = 0
         self._fallback_alloc = {}
         self._fallback_count = {}
@@ -695,6 +701,9 @@ class PTXEmitter:
 
     def _emit_block(self, bb: BasicBlock, kernel: Kernel,
                     printf_strings=None, printf_idx=None):
+        # Skip blocks that were inlined by ternary diamond detection
+        if hasattr(self, '_skip_blocks') and bb.label in self._skip_blocks:
+            return
         if bb.label != 'entry':
             self._lines.append(f'{bb.label}:')
 
@@ -1083,6 +1092,43 @@ class PTXEmitter:
             src_op = self._operand(inst.src, src_ptx, kernel)
             self._lines.append(
                 f'    cvt{rnd}.{dst_ptx}.{src_ptx} {self._reg(inst.dest)}, {src_op};')
+
+        elif isinstance(inst, SelectInst):
+            # selp.type dest, true_val, false_val, pred
+            ptx_ty = _ptx_type(inst.dest.ty)
+            dest = self._reg(inst.dest)
+            true_op = self._operand(inst.true_val)
+            false_op = self._operand(inst.false_val)
+            if isinstance(inst.cond, Value) and inst.cond.id in self._pred_ids:
+                pred = self._reg(inst.cond)
+            else:
+                # The condition might reference a CmpInst that was eliminated by
+                # the optimizer. Find the original CmpInst and emit its setp.
+                p_idx = self._reg_counts.get('p', 0)
+                self._reg_counts['p'] = p_idx + 1
+                pred = f'%p{p_idx}'
+                # Search for the CmpInst that defines inst.cond
+                cmp_found = False
+                if isinstance(inst.cond, Value):
+                    for bb in self._kernel.blocks:
+                        for ci in bb.instructions:
+                            if isinstance(ci, CmpInst) and ci.dest.id == inst.cond.id:
+                                cmp_map = {CmpOp.LT:'lt', CmpOp.LE:'le', CmpOp.GT:'gt',
+                                           CmpOp.GE:'ge', CmpOp.EQ:'eq', CmpOp.NE:'ne'}
+                                cmp_name = cmp_map.get(ci.op, 'ne')
+                                cmp_ty = _ptx_type(ci.lhs.ty) if isinstance(ci.lhs, Value) else 'f32'
+                                lhs_op = self._operand(ci.lhs)
+                                rhs_op = self._operand(ci.rhs)
+                                self._lines.append(f'    setp.{cmp_name}.{cmp_ty} {pred}, {lhs_op}, {rhs_op};')
+                                cmp_found = True
+                                break
+                        if cmp_found:
+                            break
+                if not cmp_found:
+                    cond_ty = _ptx_type(inst.cond.ty) if isinstance(inst.cond, Value) else 's32'
+                    cond_src = self._operand(inst.cond)
+                    self._lines.append(f'    setp.ne.{cond_ty} {pred}, {cond_src}, 0;')
+            self._lines.append(f'    selp.{ptx_ty} {dest}, {true_op}, {false_op}, {pred};')
 
         elif isinstance(inst, LoadInst):
             ty = inst.dest.ty
@@ -2293,11 +2339,62 @@ class PTXEmitter:
         elif isinstance(term, BrTerm):
             self._lines.append(f'    bra {term.target};')
         elif isinstance(term, CondBrTerm):
+            # Ternary diamond detection: @p bra true; bra false where both
+            # targets assign a constant and jump to the same merge block.
+            # Emit predicated mov instead of branches for SM_120 compatibility.
+            _tern_emitted = False
             if isinstance(term.cond, Value):
+                bb_map = {b.label: b for b in self._kernel.blocks}
+                t_bb = bb_map.get(term.true_bb)
+                f_bb = bb_map.get(term.false_bb)
+                if (t_bb and f_bb
+                        and len(t_bb.instructions) == 1 and len(f_bb.instructions) == 1
+                        and isinstance(t_bb.terminator, BrTerm)
+                        and isinstance(f_bb.terminator, BrTerm)
+                        and t_bb.terminator.target == f_bb.terminator.target
+                        and isinstance(t_bb.instructions[0], BinInst)
+                        and isinstance(f_bb.instructions[0], BinInst)
+                        and t_bb.instructions[0].dest.id == f_bb.instructions[0].dest.id):
+                    # This is a ternary diamond! Emit predicated mov inline.
+                    t_inst = t_bb.instructions[0]
+                    f_inst = f_bb.instructions[0]
+                    merge_label = t_bb.terminator.target
+                    dest = self._reg(t_inst.dest)
+                    ptx_ty = _ptx_type(t_inst.dest.ty)
+
+                    # Get predicate
+                    if term.cond.id in self._pred_ids:
+                        pred = self._reg(term.cond)
+                    else:
+                        p_idx = self._reg_counts.get('p', 0)
+                        self._reg_counts['p'] = p_idx + 1
+                        pred = f'%p{p_idx}'
+                        cond_ty = _ptx_type(term.cond.ty)
+                        src = self._reg(term.cond)
+                        self._lines.append(f'    setp.ne.{cond_ty} {pred}, {src}, 0;')
+
+                    # Emit predicated moves
+                    true_op = self._operand(t_inst.lhs)
+                    false_op = self._operand(f_inst.lhs)
+                    self._lines.append(f'    @{pred} mov.{ptx_ty} {dest}, {true_op};')
+                    self._lines.append(f'    @!{pred} mov.{ptx_ty} {dest}, {false_op};')
+
+                    # Mark the true/false/merge blocks as handled (skip them)
+                    if not hasattr(self, '_skip_blocks'):
+                        self._skip_blocks = set()
+                    self._skip_blocks.add(term.true_bb)
+                    self._skip_blocks.add(term.false_bb)
+
+                    # Jump to merge
+                    self._lines.append(f'    bra {merge_label};')
+                    _tern_emitted = True
+
+            if _tern_emitted:
+                pass  # Already emitted predicated moves + bra merge
+            elif isinstance(term.cond, Value):
                 if term.cond.id in self._pred_ids:
                     pred = self._reg(term.cond)
                 else:
-                    # Integer condition — synthesize a predicate register
                     p_idx = self._reg_counts.get('p', 0)
                     self._reg_counts['p'] = p_idx + 1
                     pred = f'%p{p_idx}'

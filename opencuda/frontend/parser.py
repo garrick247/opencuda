@@ -558,17 +558,14 @@ class Parser:
             true_val = self._parse_expr()
             self._expect(TokKind.COLON)
             false_val = self._parse_assign_expr()
-            # Lower to: if (cond) { dest = true } else { dest = false }
-            # Use _result_type so that float constants (Const(FLOAT, 1.0)) are
-            # considered — not just Value instances.
             result_ty = self._result_type(true_val, false_val)
             dest = self._new_val("ternary", result_ty)
+            # General case: lower to branches
             true_bb = self._new_block("tern_true")
             false_bb = self._new_block("tern_false")
             merge_bb = self._new_block("tern_merge")
             self._cur_block.terminator = CondBrTerm(lhs, true_bb.label, false_bb.label)
             self._cur_block = true_bb
-            # Emit: dest = true_val
             self._emit(BinInst(dest, BinOp.ADD, true_val,
                                Const(result_ty, 0.0 if (isinstance(result_ty, ScalarTy) and result_ty.is_float) else 0)))
             true_bb.terminator = BrTerm(merge_bb.label)
