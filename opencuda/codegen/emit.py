@@ -616,6 +616,20 @@ class PTXEmitter:
         for bb in kernel.blocks:
             self._emit_block(bb, kernel, kernel_printf_strings, _printf_idx)
 
+        # Peephole: eliminate mov.bNN %rX, %rY by replacing all uses of %rX with %rY
+        import re as _mov_re
+        i = 0
+        while i < len(body_lines):
+            m = _mov_re.match(r'\s+mov\.b\d+\s+(%\w+),\s*(%\w+);', body_lines[i])
+            if m:
+                dest, src = m.group(1), m.group(2)
+                # Replace all subsequent uses of dest with src
+                body_lines.pop(i)
+                for j in range(i, len(body_lines)):
+                    body_lines[j] = body_lines[j].replace(dest, src)
+            else:
+                i += 1
+
         # Peephole: reduce rd register count by rewriting address computation
         # to use in-place adds.  For ptr[i] patterns the codegen emits:
         #   cvt %rdN, %rK          ← byte offset (highest rd)
@@ -751,6 +765,17 @@ class PTXEmitter:
                 align = min(align, 16)  # PTX max useful alignment
                 sym = f'_local_{lval.id}'
                 ptx.append(f'    .local .align {align} .b8 {sym}[{total_bytes}];')
+
+        # Re-scan body_lines for actual register usage after peepholes
+        import re as _reg_re
+        actual_reg_counts = {}
+        for line in body_lines:
+            for m in _reg_re.finditer(r'%(\w+?)(\d+)', line):
+                pfx, idx = m.group(1), int(m.group(2))
+                actual_reg_counts[pfx] = max(actual_reg_counts.get(pfx, 0), idx + 1)
+        # Use actual counts (post-peephole) for declarations
+        if actual_reg_counts:
+            self._reg_counts = actual_reg_counts
 
         # Register declarations
         for prefix, count in sorted(self._reg_counts.items()):
@@ -1210,10 +1235,22 @@ class PTXEmitter:
                     f'    selp.{dst_ptx} {self._reg(inst.dest)}, {true_lit}, {false_lit}, {pred_src};')
                 return
             src_ptx = _ptx_type(src_ty)
-            rnd = _cvt_modifier(dst_ty, src_ty)
-            src_op = self._operand(inst.src, src_ptx, kernel)
-            self._lines.append(
-                f'    cvt{rnd}.{dst_ptx}.{src_ptx} {self._reg(inst.dest)}, {src_op};')
+            # Eliminate no-op same-width signed↔unsigned conversions (e.g., cvt.s32.u32).
+            # These waste a register slot in PTX. Emit mov instead.
+            src_width = src_ty.size if isinstance(src_ty, ScalarTy) else 4
+            dst_width = dst_ty.size if isinstance(dst_ty, ScalarTy) else 4
+            if (src_width == dst_width and src_width <= 4
+                    and not (isinstance(src_ty, ScalarTy) and src_ty.is_float)
+                    and not (isinstance(dst_ty, ScalarTy) and dst_ty.is_float)):
+                # Same-width integer conversion — just copy
+                src_op = self._operand(inst.src, src_ptx, kernel)
+                self._lines.append(
+                    f'    mov.b32 {self._reg(inst.dest)}, {src_op};')
+            else:
+                rnd = _cvt_modifier(dst_ty, src_ty)
+                src_op = self._operand(inst.src, src_ptx, kernel)
+                self._lines.append(
+                    f'    cvt{rnd}.{dst_ptx}.{src_ptx} {self._reg(inst.dest)}, {src_op};')
 
         elif isinstance(inst, SelectInst):
             # selp.type dest, true_val, false_val, pred
