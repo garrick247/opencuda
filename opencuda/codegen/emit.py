@@ -616,6 +616,22 @@ class PTXEmitter:
         for bb in kernel.blocks:
             self._emit_block(bb, kernel, kernel_printf_strings, _printf_idx)
 
+        # Peephole: rewrite shl.b32 + cvt.s64.s32 → cvt.u64.u32 + shl.b64
+        # The 32-bit shift before widen produces different SASS than widen-then-shift,
+        # and the latter is required for correct execution on SM_120 Blackwell.
+        import re as _shl_re
+        for i in range(len(body_lines) - 1):
+            shl_m = _shl_re.match(r'\s+shl\.b32\s+(%\w+),\s*(%\w+),\s*(\d+);', body_lines[i])
+            cvt_m = _shl_re.match(r'\s+cvt\.s64\.s32\s+(%\w+),\s*(%\w+);', body_lines[i+1]) if shl_m else None
+            if shl_m and cvt_m and shl_m.group(1) == cvt_m.group(2):
+                # shl.b32 %rA, %rB, N; cvt.s64.s32 %rdC, %rA → cvt.u64.u32 %rdC, %rB; shl.b64 %rdC, %rdC, N
+                r_dest = shl_m.group(1)
+                r_src = shl_m.group(2)
+                shift = shl_m.group(3)
+                rd_dest = cvt_m.group(1)
+                body_lines[i] = f'    cvt.u64.u32 {rd_dest}, {r_src};'
+                body_lines[i+1] = f'    shl.b64 {rd_dest}, {rd_dest}, {shift};'
+
         # Peephole: eliminate mov.bNN %rX, %rY by replacing all uses of %rX with %rY
         import re as _mov_re
         i = 0
@@ -2571,8 +2587,21 @@ class PTXEmitter:
                     src = self._reg(term.cond)
                     self._lines.append(
                         f'    setp.ne.{ptx_ty} {pred}, {src}, 0;')
-                self._lines.append(f'    @{pred} bra {term.true_bb};')
-                self._lines.append(f'    bra {term.false_bb};')
+                # Peephole: if false_bb is a ret-only block, emit inverted
+                # single branch @!pred bra false_bb (avoids extra block + NOPs
+                # that change text size and capmerc on SM_120).
+                false_is_ret = False
+                bb_map = {b.label: b for b in self._kernel.blocks}
+                f_bb = bb_map.get(term.false_bb)
+                if (f_bb and len(f_bb.instructions) == 0
+                        and isinstance(f_bb.terminator, RetTerm)):
+                    false_is_ret = True
+                if false_is_ret:
+                    # Invert: @!pred bra false_bb (exit), fall through to true_bb
+                    self._lines.append(f'    @!{pred} bra {term.false_bb};')
+                else:
+                    self._lines.append(f'    @{pred} bra {term.true_bb};')
+                    self._lines.append(f'    bra {term.false_bb};')
             elif isinstance(term.cond, Const) and term.cond.value != 0:
                 # Constant-true condition (e.g. for(;;)): unconditional branch
                 self._lines.append(f'    bra {term.true_bb};')
