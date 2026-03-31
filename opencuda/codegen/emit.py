@@ -484,9 +484,51 @@ class PTXEmitter:
         ptx.append(f'    {params})')
         ptx.append('{')
 
-        # Register declarations
-        for prefix in sorted(self._reg_counts):
-            count = self._reg_counts[prefix]
+        # Register declarations: scan body for actual usage, then try to
+        # reduce 64-bit register count by renaming short-lived temps.
+        # SM_120 capmerc limits effective GPR count; fewer regs = more reliable.
+        import re
+        actual_counts = {}
+        for line in body_lines:
+            for m in re.finditer(r'%(\w+?)(\d+)', line):
+                pfx, idx = m.group(1), int(m.group(2))
+                actual_counts[pfx] = max(actual_counts.get(pfx, 0), idx + 1)
+
+        # Peephole: reduce rd register count by rewriting address computation.
+        # When cvt.s64 creates a 4th rd (byte offset), rewrite to in-place:
+        #   Before: cvt %rd3, %rK; add %rd2, %rd1, %rd3; add %rd1, %rd0, %rd3
+        #   After:  add %rd0, %rd0, %rd2_offset; add %rd1, %rd1, %rd2_offset; ...
+        # Simplest: swap output add before input add, then rename rd3→rd0
+        rd_max = actual_counts.get('rd', 0)
+        if rd_max > 3:
+            highest = f'%rd{rd_max - 1}'
+            cvt_idx = next((i for i, l in enumerate(body_lines) if 'cvt' in l and highest in l), -1)
+            adds = [(i, l) for i, l in enumerate(body_lines) if 'add.u64' in l and highest in l]
+            if cvt_idx >= 0 and len(adds) >= 2:
+                add1_i, add1_l = adds[0]  # input address: add %rd2, %rd1, %rdN
+                add2_i, add2_l = adds[1]  # output address: add %rd1, %rd0, %rdN
+                # Strategy: move the out-pointer add to just after cvt (consuming rd0)
+                # Then rename %rdN → %rd0 (since rd0 is now dead)
+                # Step 1: remove add2 from its position
+                body_lines.pop(add2_i)
+                # Step 2: insert it right after cvt
+                body_lines.insert(cvt_idx + 1, add2_l)
+                # Step 3: rename %rdN → %rd0 (rd0 is dead after the moved add)
+                # But we need to be careful: rd0 appears in the moved add.
+                # After the move, the sequence is:
+                #   cvt %rdN, %rK       ← rdN = offset
+                #   add %rd1, %rd0, %rdN ← rd1 = out+offset (rd0 consumed)
+                #   add %rd2, %rd1_old, %rdN ← wait, rd1 was overwritten!
+                # This doesn't work! rd1 is overwritten by the moved add.
+                # Instead, move to after add1 (input add):
+                body_lines.pop(cvt_idx + 1)  # undo
+                body_lines.insert(add2_i, add2_l)  # restore
+                # Can't easily reorder. Just accept 4 rd for now.
+                pass
+
+        reg_counts = actual_counts if actual_counts else self._reg_counts
+        for prefix in sorted(reg_counts):
+            count = reg_counts[prefix]
             if prefix == 'p':
                 ptx.append(f'    .reg .pred %p<{count}>;')
             elif prefix == 'h':
@@ -497,7 +539,7 @@ class PTXEmitter:
                 ptx.append(f'    .reg .f64 %fd<{count}>;')
             elif prefix == 'rd':
                 ptx.append(f'    .reg .b64 %rd<{count}>;')
-            else:
+            elif prefix == 'r':
                 ptx.append(f'    .reg .b32 %r<{count}>;')
 
         # Local memory declarations
@@ -2379,14 +2421,24 @@ class PTXEmitter:
                     self._lines.append(f'    @{pred} mov.{ptx_ty} {dest}, {true_op};')
                     self._lines.append(f'    @!{pred} mov.{ptx_ty} {dest}, {false_op};')
 
-                    # Mark the true/false/merge blocks as handled (skip them)
+                    # Mark true/false blocks as handled; also inline merge block
                     if not hasattr(self, '_skip_blocks'):
                         self._skip_blocks = set()
                     self._skip_blocks.add(term.true_bb)
                     self._skip_blocks.add(term.false_bb)
 
-                    # Jump to merge
-                    self._lines.append(f'    bra {merge_label};')
+                    # Inline the merge block's instructions (st.global etc.)
+                    # instead of emitting bra to a separate block
+                    merge_bb = bb_map.get(merge_label)
+                    if merge_bb:
+                        self._skip_blocks.add(merge_label)
+                        for merge_inst in merge_bb.instructions:
+                            self._emit_inst(merge_inst, self._kernel)
+                        # Emit merge block's terminator (bra if_merge_4 → EXIT)
+                        if merge_bb.terminator:
+                            self._emit_term(merge_bb.terminator)
+                    else:
+                        self._lines.append(f'    bra {merge_label};')
                     _tern_emitted = True
 
             if _tern_emitted:
