@@ -21,7 +21,8 @@ entry_1:
     mov.u32 %r1, %tid.x;
     add.u32 %r2, %r3, %r1;
     setp.lt.s32 %p0, %r2, %r0;
-    @!%p0 bra if_merge_4;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
 if_true_2:
     cvt.u64.u32 %rd3, %r2;
     shl.b64 %rd3, %rd3, 2;

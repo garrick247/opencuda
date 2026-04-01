@@ -2597,8 +2597,12 @@ class PTXEmitter:
                         and isinstance(f_bb.terminator, RetTerm)):
                     false_is_ret = True
                 if false_is_ret:
-                    # Invert: @!pred bra false_bb (exit), fall through to true_bb
-                    self._lines.append(f'    @!{pred} bra {term.false_bb};')
+                    # Emit normal branch pair — OpenPTXas if-converter handles
+                    # the diamond pattern correctly on both SM_120 and SM_89.
+                    # Previously used @!pred single branch but that conflicts
+                    # with SM_89 predicated execution + IADD3.cb carry.
+                    self._lines.append(f'    @{pred} bra {term.true_bb};')
+                    self._lines.append(f'    bra {term.false_bb};')
                 else:
                     self._lines.append(f'    @{pred} bra {term.true_bb};')
                     self._lines.append(f'    bra {term.false_bb};')
