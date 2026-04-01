@@ -114,8 +114,8 @@ if_merge_4:
 switch_exit_5:
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd4, %r3;
-    add.u64 %rd1, %rd0, %rd4;
-    st.global.s32 [%rd1], %r1;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.s32 [%rd0], %r1;
     bra if_merge_4;
 case_6:
     mov.s32 %r1, 0;
@@ -146,8 +146,12 @@ switch_next_18:
     bra switch_next_19;
 switch_next_19:
     setp.eq.s32 %p0, %r0, 3;
-    @%p0 bra case_12;
-    bra default_14;
+    @%p0 mov.s32 %r1, 3;
+    @!%p0 mov.s32 %r1, 4;
+    shl.b32 %r3, %r2, 2;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.s32 [%rd0], %r1;
+    bra if_merge_4;
 }
 
 .visible .entry neg_offset(

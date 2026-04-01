@@ -116,23 +116,24 @@ entry_1:
 if_true_2:
     mov.s32 %r2, 0;
     sub.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
     bra while_cond_5;
 if_merge_4:
     ret;
 while_cond_5:
-    setp.lt.s32 %p0, %r2, %r3;
+    setp.lt.s32 %p0, %r2, %r1;
     @%p0 bra while_body_6;
     bra while_exit_7;
 while_body_6:
-    shl.b32 %r1, %r2, 2;
-    cvt.s64.s32 %rd3, %r1;
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd3, %r3;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd2];
-    shl.b32 %r4, %r3, 2;
+    ld.global.s32 %r3, [%rd2];
+    shl.b32 %r4, %r1, 2;
     cvt.s64.s32 %rd4, %r4;
     add.u64 %rd2, %rd1, %rd4;
     ld.global.s32 %r4, [%rd2];
-    add.s32 %r5, %r1, %r4;
+    add.s32 %r5, %r3, %r4;
     setp.eq.s32 %p1, %r5, %r0;
     @%p1 bra if_true_8;
     bra if_merge_10;
@@ -144,19 +145,19 @@ while_exit_7:
 if_true_8:
     st.global.s32 [%rd0], %r2;
     add.u64 %rd2, %rd0, 4;
-    st.global.s32 [%rd2], %r3;
+    st.global.s32 [%rd2], %r1;
     ret;
 if_merge_10:
     setp.lt.s32 %p1, %r5, %r0;
     @%p1 bra if_true_11;
     bra if_false_12;
 if_true_11:
-    add.s32 %r1, %r2, 1;
-    mov.s32 %r2, %r1;
+    add.s32 %r3, %r2, 1;
+    mov.s32 %r2, %r3;
     bra while_cond_5;
 if_false_12:
-    sub.s32 %r4, %r3, 1;
-    mov.s32 %r3, %r4;
+    sub.s32 %r4, %r1, 1;
+    mov.s32 %r1, %r4;
     bra while_cond_5;
 }
 

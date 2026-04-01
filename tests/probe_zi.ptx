@@ -2,40 +2,11 @@
 .target sm_120
 .address_size 64
 
-.func (.param .s32 retval0) __devfn_is_odd(.param .s32 n);
 .func (.param .s32 retval0) __devfn_is_even(.param .s32 n);
-.func (.param .s32 retval0) __devfn_gcd(.param .s32 a, .param .s32 b);
 .func __devfn_sum_recursive(.param .u64 result, .param .u64 arr, .param .s32 len);
 .func (.param .s32 retval0) __devfn_recursive_sum_with_loop(.param .u64 arr, .param .s32 start, .param .s32 end);
-.func (.param .s32 retval0) __devfn_is_odd(
-    .param .s32 n)
-{
-    .reg .pred %p<1>;
-    .reg .b32 %r<2>;
-
-entry_1:
-    ld.param.s32 %r0, [n];
-    setp.eq.s32 %p0, %r0, 0;
-    @%p0 bra if_true_2;
-    bra if_false_3;
-if_true_2:
-    st.param.s32 [retval0], 0;
-    ret;
-if_false_3:
-    bra if_merge_4;
-if_merge_4:
-    sub.s32 %r1, %r0, 1;
-    {
-        .param .s32 _ca0_0;
-        .param .s32 _cr_0;
-        st.param.s32 [_ca0_0], %r1;
-        call.uni (_cr_0), __devfn_is_even, (_ca0_0);
-        ld.param.s32 %r0, [_cr_0];
-    }
-    st.param.s32 [retval0], %r0;
-    ret;
-}
-
+.func (.param .s32 retval0) __devfn_gcd(.param .s32 a, .param .s32 b);
+.func (.param .s32 retval0) __devfn_is_odd(.param .s32 n);
 .func (.param .s32 retval0) __devfn_is_even(
     .param .s32 n)
 {
@@ -46,12 +17,10 @@ entry_1:
     ld.param.s32 %r0, [n];
     setp.eq.s32 %p0, %r0, 0;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
     st.param.s32 [retval0], 1;
     ret;
-if_false_3:
-    bra if_merge_4;
 if_merge_4:
     sub.s32 %r1, %r0, 1;
     {
@@ -62,75 +31,6 @@ if_merge_4:
         ld.param.s32 %r0, [_cr_0];
     }
     st.param.s32 [retval0], %r0;
-    ret;
-}
-
-.func (.param .s32 retval0) __devfn_gcd(
-    .param .s32 a, .param .s32 b)
-{
-    .reg .pred %p<1>;
-    .reg .b32 %r<4>;
-
-entry_1:
-    ld.param.s32 %r0, [a];
-    ld.param.s32 %r1, [b];
-    setp.eq.s32 %p0, %r1, 0;
-    @%p0 bra if_true_2;
-    bra if_false_3;
-if_true_2:
-    st.param.s32 [retval0], %r0;
-    ret;
-if_false_3:
-    bra if_merge_4;
-if_merge_4:
-    setp.eq.s32 %p0, %r0, 0;
-    @%p0 bra if_true_5;
-    bra if_false_6;
-if_true_5:
-    st.param.s32 [retval0], %r1;
-    ret;
-if_false_6:
-    bra if_merge_7;
-if_merge_7:
-    setp.eq.s32 %p0, %r0, %r1;
-    @%p0 bra if_true_8;
-    bra if_false_9;
-if_true_8:
-    st.param.s32 [retval0], %r0;
-    ret;
-if_false_9:
-    bra if_merge_10;
-if_merge_10:
-    setp.gt.s32 %p0, %r0, %r1;
-    @%p0 bra if_true_11;
-    bra if_false_12;
-if_true_11:
-    sub.s32 %r2, %r0, %r1;
-    {
-        .param .s32 _ca0_0;
-        .param .s32 _ca1_0;
-        .param .s32 _cr_0;
-        st.param.s32 [_ca0_0], %r2;
-        st.param.s32 [_ca1_0], %r1;
-        call.uni (_cr_0), __devfn_gcd, (_ca0_0, _ca1_0);
-        ld.param.s32 %r3, [_cr_0];
-    }
-    st.param.s32 [retval0], %r3;
-    ret;
-if_false_12:
-    bra if_merge_13;
-if_merge_13:
-    sub.s32 %r2, %r1, %r0;
-    {
-        .param .s32 _ca0_1;
-        .param .s32 _ca1_1;
-        .param .s32 _cr_1;
-        st.param.s32 [_ca0_1], %r0;
-        st.param.s32 [_ca1_1], %r2;
-        call.uni (_cr_1), __devfn_gcd, (_ca0_1, _ca1_1);
-        ld.param.s32 %r3, [_cr_1];
-    }
-    st.param.s32 [retval0], %r3;
     ret;
 }
 
@@ -147,21 +47,18 @@ entry_1:
     ld.param.s32 %r0, [len];
     setp.le.s32 %p0, %r0, 0;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
     ret;
-if_false_3:
-    bra if_merge_4;
 if_merge_4:
     sub.s32 %r1, %r0, 1;
-    mul.lo.s32 %r2, %r1, 4;
-    cvt.s64.s32 %rd0, %r2;
+    shl.b32 %r0, %r1, 2;
+    cvt.s64.s32 %rd0, %r0;
     add.u64 %rd2, %rd1, %rd0;
-    ld.global.s32 %r1, [%rd2];
+    ld.global.s32 %r0, [%rd2];
     ld.global.s32 %r2, [%rd0];
-    add.s32 %r3, %r2, %r1;
+    add.s32 %r3, %r2, %r0;
     st.global.s32 [%rd0], %r3;
-    sub.s32 %r1, %r0, 1;
     {
         .param .u64 _ca0_0;
         .param .u64 _ca1_0;
@@ -188,21 +85,20 @@ entry_1:
     sub.s32 %r2, %r1, %r0;
     setp.le.s32 %p0, %r2, 1;
     @%p0 bra if_true_2;
-    bra if_false_3;
+    bra if_merge_4;
 if_true_2:
     setp.lt.s32 %p0, %r0, %r1;
-    mul.lo.s32 %r2, %r0, 4;
+    shl.b32 %r2, %r0, 2;
     cvt.s64.s32 %rd0, %r2;
     add.u64 %rd1, %rd0, %rd0;
     ld.global.s32 %r2, [%rd1];
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_false_3:
-    bra if_merge_4;
+    @%p0 mov.s32 %r4, %r2;
+    @!%p0 mov.s32 %r4, 0;
+    st.param.s32 [retval0], %r4;
+    ret;
 if_merge_4:
     add.s32 %r3, %r0, %r1;
     div.s32 %r4, %r3, 2;
-    mov.s32 %r3, %r4;
     {
         .param .u64 _ca0_0;
         .param .s32 _ca1_0;
@@ -210,34 +106,111 @@ if_merge_4:
         .param .s32 _cr_0;
         st.param.u64 [_ca0_0], %rd0;
         st.param.s32 [_ca1_0], %r0;
-        st.param.s32 [_ca2_0], %r3;
+        st.param.s32 [_ca2_0], %r4;
         call.uni (_cr_0), __devfn_recursive_sum_with_loop, (_ca0_0, _ca1_0, _ca2_0);
-        ld.param.s32 %r4, [_cr_0];
+        ld.param.s32 %r3, [_cr_0];
     }
-    mov.s32 %r0, %r4;
     {
         .param .u64 _ca0_1;
         .param .s32 _ca1_1;
         .param .s32 _ca2_1;
         .param .s32 _cr_1;
         st.param.u64 [_ca0_1], %rd0;
-        st.param.s32 [_ca1_1], %r3;
+        st.param.s32 [_ca1_1], %r4;
         st.param.s32 [_ca2_1], %r1;
         call.uni (_cr_1), __devfn_recursive_sum_with_loop, (_ca0_1, _ca1_1, _ca2_1);
-        ld.param.s32 %r4, [_cr_1];
+        ld.param.s32 %r0, [_cr_1];
     }
-    mov.s32 %r1, %r4;
-    add.s32 %r3, %r0, %r1;
+    add.s32 %r1, %r3, %r0;
+    st.param.s32 [retval0], %r1;
+    ret;
+}
+
+.func (.param .s32 retval0) __devfn_gcd(
+    .param .s32 a, .param .s32 b)
+{
+    .reg .pred %p<1>;
+    .reg .b32 %r<4>;
+
+entry_1:
+    ld.param.s32 %r0, [a];
+    ld.param.s32 %r1, [b];
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    st.param.s32 [retval0], %r0;
+    ret;
+if_merge_4:
+    setp.eq.s32 %p0, %r0, 0;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    st.param.s32 [retval0], %r1;
+    ret;
+if_merge_7:
+    setp.eq.s32 %p0, %r0, %r1;
+    @%p0 bra if_true_8;
+    bra if_merge_10;
+if_true_8:
+    st.param.s32 [retval0], %r0;
+    ret;
+if_merge_10:
+    setp.gt.s32 %p0, %r0, %r1;
+    @%p0 bra if_true_11;
+    bra if_merge_13;
+if_true_11:
+    sub.s32 %r2, %r0, %r1;
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _ca1_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r2;
+        st.param.s32 [_ca1_0], %r1;
+        call.uni (_cr_0), __devfn_gcd, (_ca0_0, _ca1_0);
+        ld.param.s32 %r3, [_cr_0];
+    }
     st.param.s32 [retval0], %r3;
     ret;
-tern_true_5:
-    mov.s32 %r4, %r2;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r4, 0;
-    bra tern_merge_7;
-tern_merge_7:
-    st.param.s32 [retval0], %r4;
+if_merge_13:
+    sub.s32 %r2, %r1, %r0;
+    {
+        .param .s32 _ca0_1;
+        .param .s32 _ca1_1;
+        .param .s32 _cr_1;
+        st.param.s32 [_ca0_1], %r0;
+        st.param.s32 [_ca1_1], %r2;
+        call.uni (_cr_1), __devfn_gcd, (_ca0_1, _ca1_1);
+        ld.param.s32 %r3, [_cr_1];
+    }
+    st.param.s32 [retval0], %r3;
+    ret;
+}
+
+.func (.param .s32 retval0) __devfn_is_odd(
+    .param .s32 n)
+{
+    .reg .pred %p<1>;
+    .reg .b32 %r<2>;
+
+entry_1:
+    ld.param.s32 %r0, [n];
+    setp.eq.s32 %p0, %r0, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    st.param.s32 [retval0], 0;
+    ret;
+if_merge_4:
+    sub.s32 %r1, %r0, 1;
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        call.uni (_cr_0), __devfn_is_even, (_ca0_0);
+        ld.param.s32 %r0, [_cr_0];
+    }
+    st.param.s32 [retval0], %r0;
     ret;
 }
 
@@ -262,9 +235,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd2, %rd4;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.s32 %r1, [%rd2];
     {
         .param .s32 _ca0_0;
         .param .s32 _cr_0;
@@ -273,7 +246,7 @@ if_true_2:
         ld.param.s32 %r2, [_cr_0];
     }
     st.global.s32 [%rd3], %r2;
-    add.u64 %rd2, %rd1, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
     ld.global.s32 %r0, [%rd0];
     {
         .param .s32 _ca0_1;
@@ -282,7 +255,7 @@ if_true_2:
         call.uni (_cr_1), __devfn_is_odd, (_ca0_1);
         ld.param.s32 %r1, [_cr_1];
     }
-    st.global.s32 [%rd2], %r1;
+    st.global.s32 [%rd1], %r1;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -308,11 +281,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.s32 %r2, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.s32 %r2, [%rd2];
     {
         .param .s32 _ca0_0;
         .param .s32 _ca1_0;

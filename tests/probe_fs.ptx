@@ -23,31 +23,24 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     setp.gt.f32 %p0, %f0, %f1;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
-if_merge_4:
-    ret;
-inline_my_max_merge_5:
+    @%p0 mov.f32 %f2, %f0;
+    @!%p0 mov.f32 %f2, %f1;
     st.global.f32 [%rd3], %f2;
     bra if_merge_4;
-tern_true_6:
-    mov.f32 %f2, %f0;
-    bra inline_my_max_merge_5;
-tern_false_7:
-    mov.f32 %f2, %f1;
-    bra inline_my_max_merge_5;
+if_merge_4:
+    ret;
 }
 
 .visible .entry template_minmax(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<2>;
+    .reg .f32 %f<1>;
     .reg .b32 %r<5>;
     .reg .b64 %rd<5>;
     .reg .pred %p<1>;
@@ -67,32 +60,17 @@ if_true_2:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r1, [%rd2];
     setp.lt.s32 %p0, %r1, 100;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
-if_merge_4:
-    ret;
-inline_my_min_merge_5:
+    @%p0 mov.s32 %r0, %r1;
+    @!%p0 mov.s32 %r0, 100;
     setp.gt.s32 %p0, %r0, -100;
-    @%p0 bra tern_true_11;
-    bra tern_false_12;
-tern_true_6:
-    mov.s32 %r0, %r1;
-    bra inline_my_min_merge_5;
-tern_false_7:
-    mov.s32 %r0, 100;
-    bra inline_my_min_merge_5;
-inline_my_max_merge_10:
+    @%p0 mov.f32 %f0, %r0;
+    @!%p0 mov.f32 %f0, 0fC2C80000;
     cvt.rzi.s32.f32 %r3, %f0;
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd4, %r4;
     add.u64 %rd1, %rd0, %rd4;
     st.global.s32 [%rd1], %r3;
     bra if_merge_4;
-tern_true_11:
-    cvt.rn.f32.s32 %f1, %r0;
-    mov.f32 %f0, %f1;
-    bra inline_my_max_merge_10;
-tern_false_12:
-    mov.f32 %f0, 0fC2C80000;
-    bra inline_my_max_merge_10;
+if_merge_4:
+    ret;
 }

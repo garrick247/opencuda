@@ -93,9 +93,9 @@ if_merge_4:
 .visible .entry threadfence_test(
     .param .u64 out, .param .u64 data, .param .s32 n)
 {
-    .reg .b32 %r<2>;
+    .reg .b32 %r<3>;
     .reg .b64 %rd<3>;
-    .reg .pred %p<3>;
+    .reg .pred %p<2>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
@@ -117,19 +117,29 @@ if_true_2:
 if_merge_4:
     bar.sync 0;
     setp.eq.s32 %p0, %r1, 1;
+    @%p0 bra land_rhs_5;
+    bra land_skip_6;
+land_rhs_5:
     ld.global.s32 %r1, [g_flag];
-    setp.eq.s32 %p1, %r1, 1;
-    and.pred %p2, %p0, %p1;
-    @%p2 bra if_true_5;
-    bra if_merge_7;
-if_true_5:
+    setp.eq.s32 %p0, %r1, 1;
+    selp.s32 %r2, 1, 0, %p0;
+    mov.s32 %r0, %r2;
+    bra land_merge_7;
+land_skip_6:
+    mov.s32 %r0, 0;
+    bra land_merge_7;
+land_merge_7:
+    setp.ne.s32 %p1, %r0, 0;
+    @%p1 bra if_true_8;
+    bra if_merge_10;
+if_true_8:
     add.u64 %rd2, %rd0, 4;
     add.u64 %rd0, %rd1, 4;
-    ld.global.s32 %r0, [%rd0];
-    st.global.s32 [%rd2], %r0;
+    ld.global.s32 %r1, [%rd0];
+    st.global.s32 [%rd2], %r1;
     membar.cta;
-    bra if_merge_7;
-if_merge_7:
+    bra if_merge_10;
+if_merge_10:
     ret;
 }
 
@@ -155,9 +165,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f2, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f2, [%rd1];
     mul.f32 %f3, %f0, %f2;
     add.f32 %f0, %f3, %f1;
     bra inline_apply_config_merge_5;

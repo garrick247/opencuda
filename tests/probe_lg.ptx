@@ -1,11 +1,14 @@
-[opencuda] Parsing tests/probe_lg.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_lg.ptx (5 kernels)
-[opencuda] Done.
- .u64 in, .param .s32 n)
+.version 9.0
+.target sm_120
+.address_size 64
+
+.extern .shared .align 4 .b8 smem[];
+
+.visible .entry ldg_sum(
+    .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -19,12 +22,12 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.nc.s32 %r1, [%rd2];
-    add.u64 %rd1, %rd0, %rd3;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.nc.s32 %r1, [%rd1];
+    add.u64 %rd0, %rd0, %rd2;
     shl.b32 %r2, %r1, 1;
-    st.global.s32 [%rd1], %r2;
+    st.global.s32 [%rd0], %r2;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -37,9 +40,9 @@ if_merge_4:
     .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, smem;
+    mov.u64 %rd0, smem;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [out];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r2, %r1;
@@ -49,11 +52,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
+    add.u64 %rd0, %rd0, %rd3;
     mul.lo.s32 %r1, %r2, %r2;
-    st.shared.s32 [%rd2], %r1;
+    st.shared.s32 [%rd0], %r1;
     bar.sync 0;
-    add.u64 %rd1, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
     ld.shared.s32 %r2, [%rd2];
     st.global.s32 [%rd1], %r2;
     bra if_merge_4;
@@ -83,24 +86,25 @@ if_true_2:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
+    mov.f32 %f1, 0f00000000;
     setp.gt.f32 %p0, %f0, 0f00000000;
     @%p0 bra if_true_5;
     bra if_false_6;
 if_merge_4:
     ret;
 if_true_5:
-    mul.f32 %f1, %f0, 0f40000000;
-    mov.f32 %f2, %f1;
+    mul.f32 %f2, %f0, 0f40000000;
+    mov.f32 %f1, %f2;
     bra if_merge_7;
 if_false_6:
-    sub.f32 %f1, 0f00000000, %f0;
-    mov.f32 %f2, %f1;
+    sub.f32 %f2, 0f00000000, %f0;
+    mov.f32 %f1, %f2;
     bra if_merge_7;
 if_merge_7:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
-    st.global.f32 [%rd1], %f2;
+    st.global.f32 [%rd1], %f1;
     bra if_merge_4;
 }
 

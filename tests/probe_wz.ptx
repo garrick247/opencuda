@@ -92,6 +92,7 @@ for_exit_8:
 
 .visible .entry lb_single(
     .param .u64 out, .param .u64 in, .param .s32 n)
+.maxntid 128, 1, 1
 {
     .reg .b32 %r<3>;
     .reg .b64 %rd<4>;
@@ -109,9 +110,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     mul.lo.s32 %r2, %r1, 3;
     st.global.s32 [%rd2], %r2;
     bra if_merge_4;
@@ -302,9 +303,9 @@ if_true_8:
     add.s32 %r7, %r1, %r5;
     shl.b32 %r2, %r7, 2;
     cvt.s64.s32 %rd3, %r2;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     st.global.f32 [%rd2], %f0;
     bra if_merge_10;
 if_merge_10:
@@ -330,31 +331,24 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     cvt.s64.s32 %rd4, %r2;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.u8 %r0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.u8 %r1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.u8 %r0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.u8 %r1, [%rd2];
     cvt.u32.u8 %r2, %r0;
     cvt.u32.u8 %r0, %r1;
     add.u32 %r1, %r2, %r0;
     setp.gt.u32 %p0, %r1, 255;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
+    @%p0 mov.u32 %r0, 255;
+    @!%p0 mov.u32 %r0, %r1;
+    cvt.u8.u32 %r2, %r0;
+    bra inline_sat_add_u8_merge_5;
 if_merge_4:
     ret;
 inline_sat_add_u8_merge_5:
     st.global.u8 [%rd3], %r2;
     bra if_merge_4;
-tern_true_6:
-    mov.u32 %r0, 255;
-    bra tern_merge_8;
-tern_false_7:
-    mov.u32 %r0, %r1;
-    bra tern_merge_8;
-tern_merge_8:
-    cvt.u8.u32 %r2, %r0;
-    bra inline_sat_add_u8_merge_5;
 }
 
 .visible .entry rgb_to_gray(
@@ -362,7 +356,7 @@ tern_merge_8:
 {
     .reg .f32 %f<4>;
     .reg .b32 %r<4>;
-    .reg .b64 %rd<6>;
+    .reg .b64 %rd<5>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -381,24 +375,24 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    cvt.s64.s32 %rd5, %r3;
-    add.u64 %rd4, %rd1, %rd5;
-    ld.global.u8 %r1, [%rd4];
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.u8 %r1, [%rd1];
     cvt.rn.f32.u8 %f0, %r1;
-    add.u64 %rd1, %rd2, %rd5;
-    ld.global.u8 %r0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.u8 %r0, [%rd2];
     cvt.rn.f32.u8 %f1, %r0;
-    add.u64 %rd4, %rd3, %rd5;
-    ld.global.u8 %r2, [%rd4];
+    add.u64 %rd3, %rd3, %rd4;
+    ld.global.u8 %r2, [%rd3];
     cvt.rn.f32.u8 %f2, %r2;
     mul.f32 %f3, 0f3E991687, %f0;
     mul.f32 %f0, 0f3F1645A2, %f1;
     add.f32 %f1, %f3, %f0;
     mul.f32 %f3, 0f3DE978D5, %f2;
     add.f32 %f0, %f1, %f3;
-    add.u64 %rd2, %rd0, %rd5;
+    add.u64 %rd0, %rd0, %rd4;
     cvt.rzi.u8.f32 %r1, %f0;
-    st.global.u8 [%rd2], %r1;
+    st.global.u8 [%rd0], %r1;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -433,19 +427,12 @@ entry_1:
     cvt.s64.s32 %rd6, %r1;
     add.u64 %rd4, %rd2, %rd6;
     ld.global.f32 %f0, [%rd4];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.f32 %f1, %f0;
-    bra tern_merge_4;
-tern_false_3:
-    mov.f32 %f1, 0fFF7FFFFF;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.f32 %f1, %f0;
+    @!%p0 mov.f32 %f1, 0fFF7FFFFF;
     st.shared.f32 [%rd3], %f1;
     bar.sync 0;
     mov.u32 %r0, %ntid.x;
-    div.u32 %r4, %r0, 2;
+    shr.b32 %r4, %r0, 1;
     cvt.s32.u32 %r3, %r4;
     shl.b32 %r1, %r2, 2;
     bra for_cond_5;
@@ -609,11 +596,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.s32 %r2, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.s32 %r2, [%rd2];
     and.b32 %r0, %r2, 7;
     mov.s32 %r2, 1;
     mov.s32 %r3, 0;

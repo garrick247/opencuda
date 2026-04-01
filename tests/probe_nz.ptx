@@ -49,7 +49,7 @@ if_merge_4:
     .param .u64 out, .param .u64 data, .param .u64 amounts, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -64,14 +64,14 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd3];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.u32 %r2, [%rd1];
-    add.u64 %rd3, %rd0, %rd4;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.u32 %r2, [%rd2];
+    add.u64 %rd0, %rd0, %rd3;
     shr.s32 %r0, %r1, %r2;
-    st.global.s32 [%rd3], %r0;
+    st.global.s32 [%rd0], %r0;
     bra if_merge_4;
 if_merge_4:
     ret;

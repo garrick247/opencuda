@@ -266,34 +266,20 @@ if_true_2:
     add.u64 %rd2, %rd3, %rd5;
     ld.global.f32 %f1, [%rd2];
     setp.lt.f32 %p0, %f0, %f1;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
-if_merge_4:
-    ret;
-inline_compute_minmax_merge_5:
+    @%p0 mov.f32 %f2, %f0;
+    @!%p0 mov.f32 %f2, %f1;
+    setp.gt.f32 %p0, %f0, %f1;
+    @%p0 mov.f32 %f3, %f0;
+    @!%p0 mov.f32 %f3, %f1;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd6, %r1;
-    add.u64 %rd4, %rd0, %rd6;
-    st.global.f32 [%rd4], %f2;
-    add.u64 %rd3, %rd1, %rd6;
-    st.global.f32 [%rd3], %f3;
+    add.u64 %rd0, %rd0, %rd6;
+    st.global.f32 [%rd0], %f2;
+    add.u64 %rd1, %rd1, %rd6;
+    st.global.f32 [%rd1], %f3;
     bra if_merge_4;
-tern_true_6:
-    mov.f32 %f2, %f0;
-    bra tern_merge_8;
-tern_false_7:
-    mov.f32 %f2, %f1;
-    bra tern_merge_8;
-tern_merge_8:
-    setp.gt.f32 %p0, %f0, %f1;
-    @%p0 bra tern_true_9;
-    bra tern_false_10;
-tern_true_9:
-    mov.f32 %f3, %f0;
-    bra inline_compute_minmax_merge_5;
-tern_false_10:
-    mov.f32 %f3, %f1;
-    bra inline_compute_minmax_merge_5;
+if_merge_4:
+    ret;
 }
 
 .visible .entry struct_ptr_field_inline(

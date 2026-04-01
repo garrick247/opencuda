@@ -37,8 +37,7 @@ inline_lerp_merge_5:
     bra inline_lerp_merge_7;
 inline_lerp_merge_7:
     sub.f32 %f3, %f1, %f0;
-    mul.f32 %f4, 0f3F800000, %f3;
-    add.f32 %f3, %f0, %f4;
+    add.f32 %f4, %f0, %f3;
     bra inline_lerp_merge_9;
 inline_lerp_merge_9:
     mul.lo.s32 %r1, %r2, 3;
@@ -55,7 +54,7 @@ inline_lerp_merge_9:
     shl.b32 %r3, %r0, 2;
     cvt.s64.s32 %rd7, %r3;
     add.u64 %rd1, %rd0, %rd7;
-    st.global.f32 [%rd1], %f3;
+    st.global.f32 [%rd1], %f4;
     bra if_merge_4;
 }
 

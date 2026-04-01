@@ -47,7 +47,9 @@ for_body_6:
     add.u64 %rd3, %rd1, %rd5;
     ld.global.f32 %f1, [%rd3];
     add.f16 %h2, %h0, %h1;
+    mov.b16 %h1, %h2;
     add.f32 %f2, %f0, %f1;
+    mov.f32 %f1, %f2;
     add.s32 %r2, %r1, 1;
     rem.s32 %r5, %r2, 4;
     setp.eq.s32 %p1, %r5, 0;
@@ -62,18 +64,18 @@ for_exit_8:
     cvt.s64.s32 %rd6, %r6;
     add.u64 %rd3, %rd2, %rd6;
     cvt.rn.f32.s32 %f3, %r1;
-    add.f32 %f1, %f0, %f3;
-    st.global.f32 [%rd3], %f1;
+    add.f32 %f2, %f0, %f3;
+    st.global.f32 [%rd3], %f2;
     ret;
 if_true_9:
-    cvt.f32.f16 %f4, %h2;
-    add.f32 %f1, %f2, %f4;
-    mov.f32 %f2, %f1;
-    cvt.rn.f16.f32 %h2, 0f00000000;
+    cvt.f32.f16 %f4, %h1;
+    add.f32 %f2, %f1, %f4;
+    mov.f32 %f1, %f2;
+    cvt.rn.f16.f32 %h1, 0f00000000;
     bra if_merge_11;
 if_merge_11:
-    mov.f32 %f0, %f2;
-    mov.b16 %h0, %h2;
+    mov.f32 %f0, %f1;
+    mov.b16 %h0, %h1;
     mov.s32 %r1, %r2;
     bra for_inc_7;
 }

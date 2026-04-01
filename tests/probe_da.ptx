@@ -5,10 +5,10 @@
 .visible .entry compute_areas(
     .param .u64 out, .param .u64 x0, .param .u64 y0, .param .u64 x1, .param .u64 y1, .param .s32 n)
 {
-    .reg .f32 %f<7>;
-    .reg .b32 %r<3>;
+    .reg .f32 %f<8>;
+    .reg .b32 %r<4>;
     .reg .b64 %rd<8>;
-    .reg .pred %p<3>;
+    .reg .pred %p<2>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
@@ -26,13 +26,13 @@ if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd6, %r0;
     add.u64 %rd5, %rd1, %rd6;
-    ld.global.f32 %f4, [%rd5];
+    ld.global.f32 %f0, [%rd5];
     add.u64 %rd1, %rd2, %rd6;
-    ld.global.f32 %f4, [%rd1];
+    ld.global.f32 %f1, [%rd1];
     add.u64 %rd5, %rd3, %rd6;
-    ld.global.f32 %f4, [%rd5];
+    ld.global.f32 %f2, [%rd5];
     add.u64 %rd2, %rd4, %rd6;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f3, [%rd2];
     bra inline_make_bbox_merge_5;
 if_merge_4:
     ret;
@@ -40,21 +40,27 @@ inline_make_bbox_merge_5:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd7, %r1;
     add.u64 %rd1, %rd0, %rd7;
-    sub.f32 %f4, %f0, %f1;
-    sub.f32 %f5, %f2, %f3;
+    sub.f32 %f4, %f2, %f0;
+    sub.f32 %f5, %f3, %f1;
     setp.gt.f32 %p0, %f4, 0f00000000;
-    setp.gt.f32 %p1, %f5, 0f00000000;
-    and.pred %p2, %p0, %p1;
-    mul.f32 %f6, %f4, %f5;
-    @%p2 bra tern_true_8;
-    bra tern_false_9;
+    @%p0 bra land_rhs_8;
+    bra land_skip_9;
 inline_bbox_area_merge_7:
-    st.global.f32 [%rd1], %f4;
+    st.global.f32 [%rd1], %f6;
     bra if_merge_4;
-tern_true_8:
-    mov.f32 %f4, %f6;
-    bra inline_bbox_area_merge_7;
-tern_false_9:
-    mov.f32 %f4, 0f00000000;
-    bra inline_bbox_area_merge_7;
+land_rhs_8:
+    setp.gt.f32 %p0, %f5, 0f00000000;
+    selp.s32 %r3, 1, 0, %p0;
+    mov.s32 %r0, %r3;
+    bra land_merge_10;
+land_skip_9:
+    mov.s32 %r0, 0;
+    bra land_merge_10;
+land_merge_10:
+    mul.f32 %f7, %f4, %f5;
+    setp.ne.s32 %p1, %r0, 0;
+    @%p1 mov.f32 %f6, %f7;
+    @!%p1 mov.f32 %f6, 0f00000000;
+    st.global.f32 [%rd1], %f6;
+    bra if_merge_4;
 }

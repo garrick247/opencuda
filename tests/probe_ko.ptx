@@ -97,9 +97,9 @@ if_merge_10:
     .reg .b64 %rd<7>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, s;
+    mov.u64 %rd0, s;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [out];
     ld.param.u64 %rd2, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -110,7 +110,7 @@ entry_1:
 if_true_2:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd3, %rd1, %rd5;
+    add.u64 %rd3, %rd0, %rd5;
     add.u64 %rd4, %rd2, %rd5;
     ld.global.s32 %r1, [%rd4];
     shl.b32 %r3, %r1, 1;
@@ -124,9 +124,9 @@ if_merge_4:
 if_true_5:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd6, %r0;
-    add.u64 %rd2, %rd0, %rd6;
-    add.u64 %rd3, %rd1, %rd6;
-    ld.shared.s32 %r1, [%rd3];
+    add.u64 %rd1, %rd1, %rd6;
+    add.u64 %rd0, %rd0, %rd6;
+    ld.shared.s32 %r1, [%rd0];
     st.global.s32 [%rd2], %r1;
     bra if_merge_7;
 if_merge_7:

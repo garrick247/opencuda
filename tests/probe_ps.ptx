@@ -249,42 +249,28 @@ if_merge_7:
 if_true_8:
     setp.gt.s32 %p0, %r0, 0;
     ld.global.s32 %r1, [%rd2];
-    @%p0 bra tern_true_11;
-    bra tern_false_12;
+    @%p0 mov.s32 %r3, %r1;
+    @!%p0 mov.s32 %r3, 0;
+    st.shared.s32 [%rd0], %r3;
+    bra if_merge_10;
 if_merge_10:
     setp.eq.s32 %p0, %r2, 31;
     @%p0 bra if_true_14;
     bra if_merge_16;
-tern_true_11:
-    mov.s32 %r3, %r1;
-    bra tern_merge_13;
-tern_false_12:
-    mov.s32 %r3, 0;
-    bra tern_merge_13;
-tern_merge_13:
-    st.shared.s32 [%rd0], %r3;
-    bra if_merge_10;
 if_true_14:
     add.u64 %rd3, %rd0, 132;
     setp.gt.s32 %p0, %r0, 32;
     add.u64 %rd4, %rd2, 128;
     ld.global.s32 %r1, [%rd4];
-    @%p0 bra tern_true_17;
-    bra tern_false_18;
+    @%p0 mov.s32 %r3, %r1;
+    @!%p0 mov.s32 %r3, 0;
+    st.shared.s32 [%rd3], %r3;
+    bra if_merge_16;
 if_merge_16:
     bar.sync 0;
     setp.lt.s32 %p0, %r2, 32;
     @%p0 bra land_rhs_20;
     bra land_skip_21;
-tern_true_17:
-    mov.s32 %r3, %r1;
-    bra tern_merge_19;
-tern_false_18:
-    mov.s32 %r3, 0;
-    bra tern_merge_19;
-tern_merge_19:
-    st.shared.s32 [%rd3], %r3;
-    bra if_merge_16;
 land_rhs_20:
     setp.lt.s32 %p0, %r2, %r0;
     selp.s32 %r5, 1, 0, %p0;
@@ -430,9 +416,9 @@ land_merge_23:
 if_true_24:
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd9, %r4;
-    add.u64 %rd2, %rd1, %rd9;
-    add.u64 %rd3, %rd0, %rd9;
-    ld.shared.s32 %r0, [%rd3];
+    add.u64 %rd1, %rd1, %rd9;
+    add.u64 %rd0, %rd0, %rd9;
+    ld.shared.s32 %r0, [%rd0];
     st.global.s32 [%rd2], %r0;
     bra if_merge_26;
 if_merge_26:
@@ -639,15 +625,8 @@ entry_1:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r1, [%rd2];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.s32 %r0, %r1;
-    bra tern_merge_4;
-tern_false_3:
-    mov.s32 %r0, 0;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.s32 %r0, %r1;
+    @!%p0 mov.s32 %r0, 0;
     shfl.sync.down.b32 %r1, %r0, 16, 31, 4294967295;
     add.s32 %r3, %r0, %r1;
     shfl.sync.down.b32 %r0, %r3, 8, 31, 4294967295;
@@ -690,15 +669,8 @@ entry_1:
     cvt.s64.s32 %rd4, %r0;
     add.u64 %rd3, %rd2, %rd4;
     ld.global.s32 %r0, [%rd3];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.s32 %r4, %r0;
-    bra tern_merge_4;
-tern_false_3:
-    mov.s32 %r4, 0;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.s32 %r4, %r0;
+    @!%p0 mov.s32 %r4, 0;
     shfl.sync.down.b32 %r0, %r4, 16, 31, 4294967295;
     add.s32 %r5, %r4, %r0;
     shfl.sync.down.b32 %r4, %r5, 8, 31, 4294967295;

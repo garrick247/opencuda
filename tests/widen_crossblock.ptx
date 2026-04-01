@@ -21,6 +21,7 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
+    mov.f32 %f0, 0f00000000;
     rem.s32 %r0, %r2, 2;
     setp.eq.s32 %p0, %r0, 0;
     @%p0 bra if_true_5;
@@ -31,20 +32,20 @@ if_true_5:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd3, %rd0, %rd4;
-    ld.global.f32 %f0, [%rd3];
-    mov.f32 %f1, %f0;
+    ld.global.f32 %f1, [%rd3];
+    mov.f32 %f0, %f1;
     bra if_merge_7;
 if_false_6:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd5, %r0;
     add.u64 %rd3, %rd1, %rd5;
-    ld.global.f32 %f0, [%rd3];
-    mov.f32 %f1, %f0;
+    ld.global.f32 %f1, [%rd3];
+    mov.f32 %f0, %f1;
     bra if_merge_7;
 if_merge_7:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd6, %r1;
     add.u64 %rd3, %rd2, %rd6;
-    st.global.f32 [%rd3], %f1;
+    st.global.f32 [%rd3], %f0;
     bra if_merge_4;
 }

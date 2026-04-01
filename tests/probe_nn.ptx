@@ -7,7 +7,7 @@
 {
     .reg .f32 %f<10>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<2>;
 
 entry_1:
@@ -35,47 +35,33 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     shl.b32 %r2, %r1, 2;
-    cvt.s64.s32 %rd4, %r2;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f4, [%rd3];
-    add.u64 %rd3, %rd2, %rd4;
-    ld.global.f32 %f5, [%rd3];
+    cvt.s64.s32 %rd3, %r2;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f4, [%rd1];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.f32 %f5, [%rd2];
     setp.neu.f32 %p1, %f0, 0f00000000;
     div.approx.f32 %f6, %f4, %f0;
-    @%p1 bra tern_true_11;
-    bra tern_false_12;
+    @%p1 mov.f32 %f7, %f6;
+    @!%p1 mov.f32 %f7, %f1;
+    setp.neu.f32 %p1, %f0, 0f00000000;
+    div.approx.f32 %f8, %f5, %f0;
+    @%p1 mov.f32 %f9, %f8;
+    @!%p1 mov.f32 %f9, %f1;
+    add.f32 %f4, %f2, %f7;
+    add.f32 %f8, %f3, %f9;
+    mov.f32 %f2, %f4;
+    mov.f32 %f3, %f8;
+    bra for_inc_7;
 for_inc_7:
     add.s32 %r2, %r1, 1;
     mov.s32 %r1, %r2;
     bra for_cond_5;
 for_exit_8:
     st.global.f32 [%rd0], %f2;
-    add.u64 %rd3, %rd0, 4;
-    st.global.f32 [%rd3], %f3;
+    add.u64 %rd2, %rd0, 4;
+    st.global.f32 [%rd2], %f3;
     bra if_merge_4;
-inline_norm_range_merge_9:
-    add.f32 %f4, %f2, %f7;
-    add.f32 %f8, %f3, %f9;
-    mov.f32 %f2, %f4;
-    mov.f32 %f3, %f8;
-    bra for_inc_7;
-inline_safe_ratio_merge_10:
-    setp.neu.f32 %p1, %f0, 0f00000000;
-    div.approx.f32 %f8, %f5, %f0;
-    @%p1 bra tern_true_16;
-    bra tern_false_17;
-tern_true_11:
-    mov.f32 %f7, %f6;
-    bra inline_safe_ratio_merge_10;
-tern_false_12:
-    mov.f32 %f7, %f1;
-    bra inline_safe_ratio_merge_10;
-tern_true_16:
-    mov.f32 %f9, %f8;
-    bra inline_norm_range_merge_9;
-tern_false_17:
-    mov.f32 %f9, %f1;
-    bra inline_norm_range_merge_9;
 }
 
 .visible .entry two_pass_norm(
@@ -129,34 +115,27 @@ for_cond_9:
 for_body_10:
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd5, %r3;
-    add.u64 %rd3, %rd1, %rd5;
-    ld.global.f32 %f2, [%rd3];
-    add.u64 %rd3, %rd2, %rd5;
-    ld.global.f32 %f3, [%rd3];
+    add.u64 %rd1, %rd1, %rd5;
+    ld.global.f32 %f2, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f3, [%rd2];
     setp.gt.f32 %p1, %f0, 0f00000000;
     div.approx.f32 %f4, %f2, %f0;
     mul.f32 %f2, %f4, %f3;
-    @%p1 bra tern_true_14;
-    bra tern_false_15;
+    @%p1 mov.f32 %f4, %f2;
+    @!%p1 mov.f32 %f4, 0f00000000;
+    add.f32 %f3, %f1, %f4;
+    mov.f32 %f1, %f3;
+    bra for_inc_11;
 for_inc_11:
     add.s32 %r3, %r2, 1;
     mov.s32 %r2, %r3;
     bra for_cond_9;
 for_exit_12:
     st.global.f32 [%rd0], %f0;
-    add.u64 %rd3, %rd0, 4;
-    st.global.f32 [%rd3], %f1;
+    add.u64 %rd2, %rd0, 4;
+    st.global.f32 [%rd2], %f1;
     bra if_merge_4;
-inline_weighted_norm_merge_13:
-    add.f32 %f3, %f1, %f4;
-    mov.f32 %f1, %f3;
-    bra for_inc_11;
-tern_true_14:
-    mov.f32 %f4, %f2;
-    bra inline_weighted_norm_merge_13;
-tern_false_15:
-    mov.f32 %f4, 0f00000000;
-    bra inline_weighted_norm_merge_13;
 }
 
 .visible .entry affine_walk(

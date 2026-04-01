@@ -5,15 +5,13 @@
 .visible .entry uint_overflow_test(
     .param .u64 out)
 {
-    .reg .b32 %r<1>;
     .reg .b64 %rd<2>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
-    st.global.u32 [%rd0], 4294967296;
+    st.global.u32 [%rd0], 0;
     add.u64 %rd1, %rd0, 4;
-    cvt.u32.s32 %r0, 2147483648;
-    st.global.u32 [%rd1], %r0;
+    st.global.u32 [%rd1], 2147483648;
     ret;
 }

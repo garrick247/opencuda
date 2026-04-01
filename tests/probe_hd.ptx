@@ -45,12 +45,12 @@ if_merge_4:
     .param .u64 counters, .param .u64 flags, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<3>;
-    .reg .pred %p<1>;
+    .reg .b64 %rd<6>;
+    .reg .pred %p<2>;
 
 entry_1:
     ld.param.u64 %rd0, [counters];
-    ld.param.u64 %rd0, [flags];
+    ld.param.u64 %rd1, [flags];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r2, %r1;
@@ -59,12 +59,31 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd2, %r0;
-    add.u64 %rd1, %rd0, %rd2;
-    ld.global.s32 %r1, [%rd1];
-    bra if_merge_4;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    setp.ne.s32 %p1, %r1, 0;
+    @%p1 bra if_true_5;
+    bra if_false_6;
 if_merge_4:
     ret;
+if_true_5:
+    shl.b32 %r0, %r2, 3;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd1, %rd0, %rd4;
+    ld.global.s32 %r1, [%rd1];
+    add.s32 %r0, %r1, 1;
+    st.global.s32 [%rd1], %r0;
+    bra if_merge_4;
+if_false_6:
+    shl.b32 %r1, %r2, 3;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd2, %rd0, %rd5;
+    add.u64 %rd1, %rd2, 4;
+    ld.global.s32 %r0, [%rd1];
+    add.s32 %r1, %r0, 1;
+    st.global.s32 [%rd1], %r1;
+    bra if_merge_4;
 }
 
 .visible .entry speed_sq(

@@ -34,15 +34,15 @@ if_true_2:
     cvt.f32.f16 %f0, %h0;
     shl.b32 %r4, %r3, 2;
     cvt.s64.s32 %rd6, %r4;
-    add.u64 %rd0, %rd1, %rd6;
-    ld.global.f32 %f1, [%rd0];
-    add.u64 %rd4, %rd2, %rd6;
-    ld.global.s32 %r0, [%rd4];
+    add.u64 %rd1, %rd1, %rd6;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd2, %rd2, %rd6;
+    ld.global.s32 %r0, [%rd2];
     cvt.rn.f32.s32 %f2, %r0;
-    add.u64 %rd1, %rd3, %rd6;
+    add.u64 %rd3, %rd3, %rd6;
     add.f32 %f3, %f0, %f1;
     add.f32 %f0, %f3, %f2;
-    st.global.f32 [%rd1], %f0;
+    st.global.f32 [%rd3], %f0;
     bra if_merge_4;
 if_merge_4:
     ret;

@@ -54,14 +54,10 @@ if_true_10:
     bra inline_extract_channel_merge_5;
 if_merge_12:
     setp.eq.s32 %p0, %r0, 2;
-    @%p0 bra if_true_14;
-    bra if_merge_16;
-if_true_14:
-    mov.f32 %f4, %f2;
-    bra inline_extract_channel_merge_5;
-if_merge_16:
-    mov.f32 %f4, %f3;
-    bra inline_extract_channel_merge_5;
+    @%p0 mov.f32 %f4, %f2;
+    @!%p0 mov.f32 %f4, %f3;
+    st.global.f32 [%rd2], %f4;
+    bra if_merge_4;
 }
 
 .visible .entry enum_switch(

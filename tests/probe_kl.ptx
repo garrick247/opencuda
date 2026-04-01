@@ -236,8 +236,11 @@ for_body_6:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r4, [%rd2];
     setp.gt.s32 %p1, %r4, 0;
-    @%p1 bra if_true_9;
-    bra if_false_10;
+    @%p1 mov.s32 %r1, 1;
+    @!%p1 mov.s32 %r1, 0;
+    setp.ne.s32 %p1, %r1, %r1;
+    @%p1 bra if_true_12;
+    bra for_inc_7;
 for_inc_7:
     add.s32 %r4, %r3, 1;
     mov.s32 %r3, %r4;
@@ -247,16 +250,6 @@ for_exit_8:
     add.u64 %rd2, %rd0, 4;
     st.global.s32 [%rd2], %r2;
     bra if_merge_4;
-if_true_9:
-    mov.s32 %r1, 1;
-    bra if_merge_11;
-if_false_10:
-    mov.s32 %r1, 0;
-    bra if_merge_11;
-if_merge_11:
-    setp.ne.s32 %p1, %r1, %r1;
-    @%p1 bra if_true_12;
-    bra for_inc_7;
 if_true_12:
     add.s32 %r5, %r2, 1;
     mov.s32 %r2, %r5;

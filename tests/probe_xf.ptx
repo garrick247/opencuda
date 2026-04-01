@@ -340,15 +340,8 @@ entry_1:
     cvt.s64.s32 %rd7, %r5;
     add.u64 %rd3, %rd2, %rd7;
     ld.global.s32 %r2, [%rd3];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.s32 %r5, %r2;
-    bra tern_merge_4;
-tern_false_3:
-    mov.s32 %r5, 0;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.s32 %r5, %r2;
+    @!%p0 mov.s32 %r5, 0;
     st.shared.s32 [%rd4], %r5;
     bar.sync 0;
     setp.lt.s32 %p0, %r1, %r0;

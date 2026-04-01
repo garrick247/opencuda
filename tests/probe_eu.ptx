@@ -2,7 +2,7 @@
 .target sm_120
 .address_size 64
 
-.visible .const .align 8 .u32 g_config;
+.visible .const .align 4 .b8 g_config[16];
 .visible .const .align 4 .f32 g_lut[8];
 
 .visible .entry use_config(
@@ -40,9 +40,9 @@ if_true_2:
     ld.global.nc.s32 %r3, [%rd3];
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd4, %r4;
-    add.u64 %rd2, %rd0, %rd4;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f1, [%rd3];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f1, [%rd1];
     mul.f32 %f2, %f1, %f0;
     add.s32 %r2, %r0, %r1;
     add.s32 %r4, %r2, %r3;
@@ -57,7 +57,6 @@ if_merge_4:
 .visible .entry local_struct_init(
     .param .u64 out, .param .s32 n)
 {
-    .reg .f32 %f<2>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<3>;
     .reg .pred %p<1>;
@@ -74,9 +73,7 @@ if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd2, %r0;
     add.u64 %rd1, %rd0, %rd2;
-    cvt.rn.f32.s32 %f0, 192;
-    mul.f32 %f1, %f0, 0f3F000000;
-    st.global.f32 [%rd1], %f1;
+    st.global.f32 [%rd1], 0f42C00000;
     bra if_merge_4;
 if_merge_4:
     ret;

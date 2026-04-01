@@ -60,17 +60,17 @@ if_true_2:
     add.u64 %rd3, %rd0, %rd4;
     mul.lo.s32 %r1, %r2, 12;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd0, %rd1, %rd5;
-    add.u64 %rd1, %rd2, %rd5;
+    add.u64 %rd1, %rd1, %rd5;
+    add.u64 %rd2, %rd2, %rd5;
     ld.global.f32 %f0, [%rd0];
     add.u64 %rd2, %rd0, 4;
     ld.global.f32 %f1, [%rd2];
     add.u64 %rd2, %rd0, 8;
     ld.global.f32 %f2, [%rd2];
-    ld.global.f32 %f3, [%rd1];
-    add.u64 %rd0, %rd1, 4;
+    ld.global.f32 %f3, [%rd2];
+    add.u64 %rd0, %rd2, 4;
     ld.global.f32 %f4, [%rd0];
-    add.u64 %rd2, %rd1, 8;
+    add.u64 %rd2, %rd2, 8;
     ld.global.f32 %f5, [%rd2];
     mul.f32 %f6, %f0, %f3;
     mul.f32 %f0, %f1, %f4;
@@ -184,14 +184,10 @@ land_skip_7:
     bra land_merge_8;
 land_merge_8:
     setp.ne.s32 %p1, %r3, 0;
-    @%p1 bra tern_true_9;
-    bra tern_false_10;
-tern_true_9:
-    mov.s32 %r0, 1;
-    bra inline_in_range_merge_5;
-tern_false_10:
-    mov.s32 %r0, 0;
-    bra inline_in_range_merge_5;
+    @%p1 mov.s32 %r0, 1;
+    @!%p1 mov.s32 %r0, 0;
+    st.global.s32 [%rd3], %r0;
+    bra if_merge_4;
 }
 
 .visible .entry scale_float2(

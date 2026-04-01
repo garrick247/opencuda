@@ -25,14 +25,12 @@ if_true_2:
 if_merge_4:
     ret;
 do_cond_6:
-    @%p0 bra do_cond_6;
     bra do_exit_7;
 do_exit_7:
-    shl.b32 %r1, %r2, 2;
-    cvt.s64.s32 %rd2, %r1;
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd2, %r0;
     add.u64 %rd1, %rd0, %rd2;
-    add.s32 %r1, %r3, %r0;
-    st.global.s32 [%rd1], %r1;
+    st.global.s32 [%rd1], %r3;
     bra if_merge_4;
 }
 

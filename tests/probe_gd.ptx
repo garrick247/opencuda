@@ -5,7 +5,7 @@
 .visible .entry mat2_kernel(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<7>;
+    .reg .f32 %f<17>;
     .reg .b32 %r<4>;
     .reg .b64 %rd<8>;
     .reg .pred %p<1>;
@@ -24,37 +24,69 @@ if_true_2:
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd3, %r1;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f2, [%rd2];
+    ld.global.f32 %f0, [%rd2];
     add.s32 %r1, %r0, 1;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd4, %r3;
     add.u64 %rd2, %rd1, %rd4;
-    ld.global.f32 %f3, [%rd2];
+    ld.global.f32 %f1, [%rd2];
     add.s32 %r1, %r0, 2;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd5, %r3;
     add.u64 %rd2, %rd1, %rd5;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f2, [%rd2];
     add.s32 %r1, %r0, 3;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd6, %r3;
     add.u64 %rd2, %rd1, %rd6;
-    ld.global.f32 %f5, [%rd2];
-    mul.f32 %f6, %f2, %f5;
-    mul.f32 %f2, %f3, %f4;
-    sub.f32 %f5, %f6, %f2;
+    ld.global.f32 %f3, [%rd2];
+    mul.f32 %f4, %f0, %f3;
+    mul.f32 %f5, %f1, %f2;
+    sub.f32 %f6, %f4, %f5;
     bra inline_det2_merge_6;
 if_merge_4:
     ret;
-inline_det2_merge_6:
-    setp.eq.f32 %p0, %f5, 0f00000000;
+inline_inv2_merge_5:
+    mul.f32 %f4, %f0, %f5;
+    mul.f32 %f7, %f1, %f8;
+    add.f32 %f9, %f4, %f7;
+    mul.f32 %f7, %f2, %f10;
+    mul.f32 %f11, %f3, %f12;
+    add.f32 %f13, %f7, %f11;
     bra inline_matmul2_merge_12;
+inline_det2_merge_6:
+    mov.f32 %f5, 0f00000000;
+    mov.f32 %f10, 0f00000000;
+    mov.f32 %f8, 0f00000000;
+    mov.f32 %f12, 0f00000000;
+    setp.eq.f32 %p0, %f6, 0f00000000;
+    @%p0 bra if_true_8;
+    bra if_false_9;
+if_true_8:
+    mov.f32 %f5, 0f00000000;
+    mov.f32 %f10, 0f00000000;
+    mov.f32 %f8, 0f00000000;
+    mov.f32 %f12, 0f00000000;
+    bra inline_inv2_merge_5;
+if_false_9:
+    div.approx.f32 %f7, 0f3F800000, %f6;
+    mul.f32 %f11, %f3, %f7;
+    sub.f32 %f14, 0f00000000, %f1;
+    mul.f32 %f15, %f14, %f7;
+    sub.f32 %f14, 0f00000000, %f2;
+    mul.f32 %f16, %f14, %f7;
+    mul.f32 %f14, %f0, %f7;
+    mov.f32 %f5, %f11;
+    mov.f32 %f10, %f15;
+    mov.f32 %f8, %f16;
+    mov.f32 %f12, %f14;
+    bra inline_inv2_merge_5;
 inline_matmul2_merge_12:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd7, %r0;
     add.u64 %rd1, %rd0, %rd7;
-    add.f32 %f3, %f0, %f1;
-    sub.f32 %f4, %f3, 0f40000000;
-    st.global.f32 [%rd1], %f4;
+    add.f32 %f4, %f9, %f13;
+    sub.f32 %f5, %f4, 0f40000000;
+    st.global.f32 [%rd1], %f5;
     bra if_merge_4;
 }

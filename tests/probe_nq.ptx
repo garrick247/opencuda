@@ -185,8 +185,11 @@ for_body_6:
     setp.gt.f32 %p1, %f0, 0f00000000;
     mul.f32 %f3, %f2, 0f40000000;
     mul.f32 %f4, %f2, 0f3F000000;
-    @%p1 bra tern_true_10;
-    bra tern_false_11;
+    @%p1 mov.f32 %f5, %f3;
+    @!%p1 mov.f32 %f5, %f4;
+    mov.f32 %f1, %f0;
+    mov.f32 %f2, %f5;
+    bra for_inc_7;
 for_inc_7:
     add.s32 %r2, %r1, 1;
     mov.s32 %r1, %r2;
@@ -196,14 +199,4 @@ for_exit_8:
     add.u64 %rd2, %rd0, 4;
     st.global.f32 [%rd2], %f2;
     bra if_merge_4;
-inline_adapt_step_merge_9:
-    mov.f32 %f1, %f0;
-    mov.f32 %f2, %f5;
-    bra for_inc_7;
-tern_true_10:
-    mov.f32 %f5, %f3;
-    bra inline_adapt_step_merge_9;
-tern_false_11:
-    mov.f32 %f5, %f4;
-    bra inline_adapt_step_merge_9;
 }

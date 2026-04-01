@@ -229,15 +229,8 @@ entry_1:
     cvt.s64.s32 %rd4, %r0;
     add.u64 %rd3, %rd2, %rd4;
     ld.global.s32 %r2, [%rd3];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.u32 %r3, %r2;
-    bra tern_merge_4;
-tern_false_3:
-    mov.u32 %r3, 2147483648;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.u32 %r3, %r2;
+    @!%p0 mov.u32 %r3, 2147483648;
     cvt.s32.u32 %r0, %r3;
     shfl.sync.bfly.b32 %r2, %r0, 16, 31, 4294967295;
     max.s32 %r3, %r0, %r2;
@@ -425,19 +418,19 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 3;
     cvt.s64.s32 %rd8, %r0;
-    add.u64 %rd4, %rd0, %rd8;
-    add.u64 %rd0, %rd1, %rd8;
-    ld.global.s64 %rd1, [%rd0];
-    add.u64 %rd0, %rd2, %rd8;
-    ld.global.s64 %rd2, [%rd0];
-    mov.s64 %rd0, 1;
+    add.u64 %rd0, %rd0, %rd8;
+    add.u64 %rd1, %rd1, %rd8;
+    ld.global.s64 %rd1, [%rd1];
+    add.u64 %rd2, %rd2, %rd8;
+    ld.global.s64 %rd2, [%rd2];
+    mov.s64 %rd2, 1;
     rem.s64 %rd5, %rd1, %rd3;
     mov.s64 %rd1, %rd5;
     bra while_cond_6;
 if_merge_4:
     ret;
 inline_powmod_merge_5:
-    st.global.s64 [%rd4], %rd0;
+    st.global.s64 [%rd4], %rd2;
     bra if_merge_4;
 while_cond_6:
     setp.gt.s64 %p0, %rd2, 0;
@@ -449,9 +442,9 @@ while_body_7:
     @%p1 bra if_true_9;
     bra if_merge_11;
 if_true_9:
-    mul.lo.s64 %rd5, %rd0, %rd1;
+    mul.lo.s64 %rd5, %rd2, %rd1;
     rem.s64 %rd6, %rd5, %rd3;
-    mov.s64 %rd0, %rd6;
+    mov.s64 %rd2, %rd6;
     bra if_merge_11;
 if_merge_11:
     shr.s64 %rd5, %rd2, 1;

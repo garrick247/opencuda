@@ -26,9 +26,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f4, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f4, [%rd1];
     mul.f32 %f5, %f0, %f4;
     add.f32 %f0, %f5, %f1;
     mul.f32 %f1, %f0, %f4;
@@ -63,9 +63,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     setp.le.f32 %p0, %f0, 0f00000000;
     @%p0 bra if_true_6;
     bra if_merge_8;

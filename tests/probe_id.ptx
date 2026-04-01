@@ -121,17 +121,10 @@ if_true_2:
     add.u64 %rd1, %rd0, 36;
     ld.global.s32 %r1, [%rd1];
     setp.eq.s32 %p0, %r1, %r0;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.s32 %r3, 1;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r3, 0;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.s32 %r3, 1;
+    @!%p0 mov.s32 %r3, 0;
     st.global.s32 [%rd2], %r3;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }

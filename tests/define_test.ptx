@@ -18,15 +18,16 @@ entry_1:
     mov.u32 %r2, %ctaid.x;
     shl.b32 %r3, %r2, 8;
     add.u32 %r2, %r1, %r3;
-    setp.lt.u32 %p0, %r2, %r0;
+    cvt.s32.u32 %r1, %r2;
+    setp.lt.s32 %p0, %r1, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r0, %r2, 2;
-    cvt.u64.u32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    shl.b32 %r3, %r1, 2;
+    cvt.s64.s32 %rd3, %r3;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     mul.f32 %f1, %f0, 0f40000000;
     st.global.f32 [%rd2], %f1;
     bra if_merge_4;

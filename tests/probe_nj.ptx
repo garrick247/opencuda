@@ -56,14 +56,14 @@ for_inc_7:
 inline_advance_and_bounce_merge_9:
     shl.b32 %r4, %r1, 2;
     cvt.s64.s32 %rd7, %r4;
-    add.u64 %rd5, %rd0, %rd7;
-    st.global.f32 [%rd5], %f6;
-    add.u64 %rd5, %rd1, %rd7;
-    st.global.f32 [%rd5], %f7;
-    add.u64 %rd5, %rd2, %rd7;
-    st.global.f32 [%rd5], %f8;
-    add.u64 %rd5, %rd3, %rd7;
-    st.global.f32 [%rd5], %f9;
+    add.u64 %rd0, %rd0, %rd7;
+    st.global.f32 [%rd0], %f6;
+    add.u64 %rd1, %rd1, %rd7;
+    st.global.f32 [%rd1], %f7;
+    add.u64 %rd2, %rd2, %rd7;
+    st.global.f32 [%rd2], %f8;
+    add.u64 %rd3, %rd3, %rd7;
+    st.global.f32 [%rd3], %f9;
     bra for_inc_7;
 inline_advance_merge_10:
     mov.f32 %f10, %f11;
@@ -193,10 +193,10 @@ inline_eval_seg_merge_9:
     add.f32 %f5, %f3, %f4;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd5, %r3;
-    add.u64 %rd3, %rd1, %rd5;
-    ld.global.f32 %f6, [%rd3];
-    add.u64 %rd3, %rd2, %rd5;
-    ld.global.f32 %f7, [%rd3];
+    add.u64 %rd1, %rd1, %rd5;
+    ld.global.f32 %f6, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f7, [%rd2];
     mul.f32 %f8, %f0, %f6;
     add.f32 %f6, %f8, %f1;
     bra inline_eval_seg_merge_12;
@@ -259,26 +259,19 @@ for_exit_8:
     setp.gt.s32 %p1, %r1, 0;
     cvt.rn.f32.s32 %f5, %r1;
     div.approx.f32 %f7, %f0, %f5;
-    @%p1 bra tern_true_12;
-    bra tern_false_13;
+    @%p1 mov.f32 %f3, %f7;
+    @!%p1 mov.f32 %f3, 0f00000000;
+    st.global.f32 [%rd0], %f3;
+    add.u64 %rd2, %rd0, 4;
+    setp.lt.s32 %p0, %r1, 2;
+    @%p0 bra if_true_17;
+    bra if_merge_19;
 inline_update_running_merge_9:
     mov.f32 %f0, %f4;
     mov.f32 %f1, %f6;
     mov.s32 %r1, %r3;
     mov.f32 %f2, %f3;
     bra for_inc_7;
-inline_running_mean_merge_11:
-    st.global.f32 [%rd0], %f3;
-    add.u64 %rd2, %rd0, 4;
-    setp.lt.s32 %p0, %r1, 2;
-    @%p0 bra if_true_17;
-    bra if_merge_19;
-tern_true_12:
-    mov.f32 %f3, %f7;
-    bra inline_running_mean_merge_11;
-tern_false_13:
-    mov.f32 %f3, 0f00000000;
-    bra inline_running_mean_merge_11;
 inline_running_var_merge_16:
     st.global.f32 [%rd2], %f4;
     add.u64 %rd3, %rd0, 8;

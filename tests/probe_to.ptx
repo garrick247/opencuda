@@ -23,11 +23,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     lg2.approx.f32 %f3, %f0;
     mul.f32 %f4, %f1, %f3;
     ex2.approx.f32 %f2, %f4;
@@ -58,11 +58,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     mul.f32 %f3, %f0, %f0;
     fma.rn.f32 %f4, %f1, %f1, %f3;
     sqrt.approx.f32 %f2, %f4;
@@ -93,11 +93,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     div.approx.f32 %f3, %f0, %f1;
     mul.f32 %f4, %f3, %f3;
     mul.f32 %f5, %f4, %f4;
@@ -129,9 +129,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     lg2.approx.f32 %f1, %f0;
     mul.f32 %f2, %f1, 0f3EAAAAAB;
     ex2.approx.f32 %r1, %f2;
@@ -164,16 +164,16 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd5, %r0;
-    add.u64 %rd4, %rd0, %rd5;
-    add.u64 %rd0, %rd2, %rd5;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd2, %rd3, %rd5;
-    ld.global.f32 %f1, [%rd2];
+    add.u64 %rd0, %rd0, %rd5;
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f0, [%rd2];
+    add.u64 %rd3, %rd3, %rd5;
+    ld.global.f32 %f1, [%rd3];
     mul.f32 %f3, %f0, %f0;
     fma.rn.f32 %f4, %f1, %f1, %f3;
     sqrt.approx.f32 %f2, %f4;
     st.global.f32 [%rd4], %f2;
-    add.u64 %rd3, %rd1, %rd5;
+    add.u64 %rd1, %rd1, %rd5;
     ld.global.f32 %f0, [%rd2];
     ld.global.f32 %f1, [%rd0];
     div.approx.f32 %f5, %f0, %f1;
@@ -181,7 +181,7 @@ if_true_2:
     mul.f32 %f7, %f6, %f6;
     fma.rn.f32 %f8, %f7, 0f3E4CCCCD, %f5;
     fma.rn.f32 %f2, %f6, 0fBEAAAAAB, %f8;
-    st.global.f32 [%rd3], %f2;
+    st.global.f32 [%rd1], %f2;
     bra if_merge_4;
 if_merge_4:
     ret;

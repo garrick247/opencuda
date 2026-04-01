@@ -273,20 +273,13 @@ if_false_10:
     bra if_false_13;
 if_true_12:
     setp.lt.s32 %p1, %r1, %r3;
-    @%p1 bra tern_true_15;
-    bra tern_false_16;
+    @%p1 mov.s32 %r5, %r3;
+    @!%p1 mov.s32 %r5, %r1;
+    mov.s32 %r1, %r5;
+    bra for_inc_7;
 if_false_13:
     setp.gt.s32 %p1, %r3, 10;
     @%p1 bra if_true_18;
-    bra for_inc_7;
-tern_true_15:
-    mov.s32 %r5, %r3;
-    bra tern_merge_17;
-tern_false_16:
-    mov.s32 %r5, %r1;
-    bra tern_merge_17;
-tern_merge_17:
-    mov.s32 %r1, %r5;
     bra for_inc_7;
 if_true_18:
     add.s32 %r5, %r1, 1;

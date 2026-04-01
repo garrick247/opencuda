@@ -49,23 +49,16 @@ for_exit_8:
     setp.gt.s32 %p1, %r1, 0;
     cvt.rn.f32.s32 %f4, %r1;
     div.approx.f32 %f5, %f0, %f4;
-    @%p1 bra tern_true_11;
-    bra tern_false_12;
+    @%p1 mov.f32 %f3, %f5;
+    @!%p1 mov.f32 %f3, 0f00000000;
+    mov.s32 %r3, 0;
+    mov.s32 %r4, 0;
+    bra for_cond_14;
 inline_step_s_merge_9:
     mov.f32 %f0, %f3;
     mov.f32 %f1, %f2;
     mov.s32 %r1, %r3;
     bra for_inc_7;
-tern_true_11:
-    mov.f32 %f3, %f5;
-    bra tern_merge_13;
-tern_false_12:
-    mov.f32 %f3, 0f00000000;
-    bra tern_merge_13;
-tern_merge_13:
-    mov.s32 %r3, 0;
-    mov.s32 %r4, 0;
-    bra for_cond_14;
 for_cond_14:
     setp.lt.s32 %p0, %r4, %r0;
     @%p0 bra for_body_15;

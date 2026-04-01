@@ -3,8 +3,8 @@
 .address_size 64
 
 .func (.param .s32 retval0) __devfn_factorial(.param .s32 n);
-.func (.param .s32 retval0) __devfn_gcd(.param .s32 a, .param .s32 b);
 .func (.param .s32 retval0) __devfn_fibonacci(.param .s32 n);
+.func (.param .s32 retval0) __devfn_gcd(.param .s32 a, .param .s32 b);
 .func (.param .s32 retval0) __devfn_factorial(
     .param .s32 n)
 {
@@ -30,36 +30,6 @@ if_merge_4:
     }
     mul.lo.s32 %r1, %r0, %r2;
     st.param.s32 [retval0], %r1;
-    ret;
-}
-
-.func (.param .s32 retval0) __devfn_gcd(
-    .param .s32 a, .param .s32 b)
-{
-    .reg .pred %p<1>;
-    .reg .b32 %r<3>;
-
-entry_1:
-    ld.param.s32 %r0, [a];
-    ld.param.s32 %r1, [b];
-    setp.eq.s32 %p0, %r1, 0;
-    @%p0 bra if_true_2;
-    bra if_merge_4;
-if_true_2:
-    st.param.s32 [retval0], %r0;
-    ret;
-if_merge_4:
-    rem.s32 %r2, %r0, %r1;
-    {
-        .param .s32 _ca0_0;
-        .param .s32 _ca1_0;
-        .param .s32 _cr_0;
-        st.param.s32 [_ca0_0], %r1;
-        st.param.s32 [_ca1_0], %r2;
-        call.uni (_cr_0), __devfn_gcd, (_ca0_0, _ca1_0);
-        ld.param.s32 %r0, [_cr_0];
-    }
-    st.param.s32 [retval0], %r0;
     ret;
 }
 
@@ -103,6 +73,36 @@ if_merge_7:
     }
     add.s32 %r1, %r2, %r0;
     st.param.s32 [retval0], %r1;
+    ret;
+}
+
+.func (.param .s32 retval0) __devfn_gcd(
+    .param .s32 a, .param .s32 b)
+{
+    .reg .pred %p<1>;
+    .reg .b32 %r<3>;
+
+entry_1:
+    ld.param.s32 %r0, [a];
+    ld.param.s32 %r1, [b];
+    setp.eq.s32 %p0, %r1, 0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    st.param.s32 [retval0], %r0;
+    ret;
+if_merge_4:
+    rem.s32 %r2, %r0, %r1;
+    {
+        .param .s32 _ca0_0;
+        .param .s32 _ca1_0;
+        .param .s32 _cr_0;
+        st.param.s32 [_ca0_0], %r1;
+        st.param.s32 [_ca1_0], %r2;
+        call.uni (_cr_0), __devfn_gcd, (_ca0_0, _ca1_0);
+        ld.param.s32 %r0, [_cr_0];
+    }
+    st.param.s32 [retval0], %r0;
     ret;
 }
 

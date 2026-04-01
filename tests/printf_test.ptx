@@ -9,14 +9,15 @@
 .visible .entry printf_test(
     .param .s32 n)
 {
-    .reg .b32 %r<3>;
+    .reg .b32 %r<4>;
     .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
-    setp.eq.u32 %p0, %r1, 0;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
@@ -33,7 +34,7 @@ if_true_2:
     st.param.b64 [_p0_0], %rd0;
     st.param.b64 [_p1_0], %rd3;
     call.uni (_rv_0), vprintf, (_p0_0, _p1_0);
-    ld.param.b32 %r2, [_rv_0];
+    ld.param.b32 %r3, [_rv_0];
     }
     bra if_merge_4;
 if_merge_4:

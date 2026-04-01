@@ -5,9 +5,9 @@
 .visible .entry nested_search(
     .param .u64 haystack, .param .u64 result, .param .s32 rows, .param .s32 cols, .param .s32 target)
 {
-    .reg .b32 %r<11>;
+    .reg .b32 %r<12>;
     .reg .b64 %rd<5>;
-    .reg .pred %p<3>;
+    .reg .pred %p<4>;
 
 entry_1:
     ld.param.u64 %rd0, [haystack];
@@ -36,38 +36,44 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     mov.s32 %r4, 0;
-    mul.lo.s32 %r7, %r6, %r1;
+    mov.s32 %r7, 0;
+    mul.lo.s32 %r8, %r6, %r1;
     bra for_cond_9;
 for_inc_7:
-    add.s32 %r8, %r6, 1;
-    mov.s32 %r6, %r8;
+    add.s32 %r9, %r6, 1;
+    mov.s32 %r6, %r9;
     bra for_cond_5;
 for_exit_8:
-    shl.b32 %r9, %r5, 2;
-    cvt.s64.s32 %rd3, %r9;
+    shl.b32 %r10, %r5, 2;
+    cvt.s64.s32 %rd3, %r10;
     add.u64 %rd2, %rd1, %rd3;
     st.global.s32 [%rd2], %r3;
     ret;
 for_cond_9:
-    setp.lt.s32 %p1, %r4, %r1;
+    setp.lt.s32 %p1, %r7, %r1;
     @%p1 bra for_body_10;
     bra for_exit_12;
 for_body_10:
-    add.s32 %r9, %r7, %r4;
-    shl.b32 %r10, %r9, 2;
-    cvt.s64.s32 %rd4, %r10;
+    add.s32 %r10, %r8, %r7;
+    shl.b32 %r11, %r10, 2;
+    cvt.s64.s32 %rd4, %r11;
     add.u64 %rd2, %rd0, %rd4;
-    ld.global.s32 %r9, [%rd2];
-    setp.eq.s32 %p2, %r9, %r2;
-    @%p2 bra for_exit_12;
+    ld.global.s32 %r10, [%rd2];
+    setp.eq.s32 %p2, %r10, %r2;
+    @%p2 bra if_true_13;
     bra for_inc_11;
 for_inc_11:
-    add.s32 %r10, %r4, 1;
-    mov.s32 %r4, %r10;
+    add.s32 %r11, %r7, 1;
+    mov.s32 %r7, %r11;
     bra for_cond_9;
 for_exit_12:
-    @%p0 bra for_inc_7;
+    setp.ne.s32 %p3, %r4, 0;
+    @%p3 bra for_inc_7;
     bra if_merge_19;
+if_true_13:
+    mov.s32 %r3, %r7;
+    mov.s32 %r4, 1;
+    bra for_exit_12;
 if_merge_19:
     mov.s32 %r3, -2;
     bra for_inc_7;

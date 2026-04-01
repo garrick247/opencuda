@@ -89,8 +89,13 @@ for_body_6:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f2, [%rd2];
     setp.lt.f32 %p1, %f2, %f0;
-    @%p1 bra tern_true_10;
-    bra tern_false_11;
+    @%p1 mov.f32 %f3, %f2;
+    @!%p1 mov.f32 %f3, %f0;
+    setp.gt.f32 %p1, %f2, %f1;
+    @%p1 mov.f32 %f4, %f2;
+    @!%p1 mov.f32 %f4, %f1;
+    add.s32 %r4, %r1, 1;
+    bra inline_update_bounds_merge_9;
 for_inc_7:
     add.s32 %r3, %r2, 1;
     mov.s32 %r2, %r3;
@@ -108,25 +113,6 @@ inline_update_bounds_merge_9:
     mov.f32 %f1, %f4;
     mov.s32 %r1, %r4;
     bra for_inc_7;
-tern_true_10:
-    mov.f32 %f3, %f2;
-    bra tern_merge_12;
-tern_false_11:
-    mov.f32 %f3, %f0;
-    bra tern_merge_12;
-tern_merge_12:
-    setp.gt.f32 %p1, %f2, %f1;
-    @%p1 bra tern_true_13;
-    bra tern_false_14;
-tern_true_13:
-    mov.f32 %f4, %f2;
-    bra tern_merge_15;
-tern_false_14:
-    mov.f32 %f4, %f1;
-    bra tern_merge_15;
-tern_merge_15:
-    add.s32 %r4, %r1, 1;
-    bra inline_update_bounds_merge_9;
 }
 
 .visible .entry poly_diff_sum(

@@ -19,15 +19,16 @@ entry_1:
     mov.u32 %r3, %ntid.x;
     mul.lo.u32 %r4, %r2, %r3;
     add.u32 %r2, %r1, %r4;
-    setp.lt.u32 %p0, %r2, %r0;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r3, %r2, 2;
-    cvt.u64.u32 %rd3, %r3;
-    add.u64 %rd2, %rd1, %rd3;
-    add.u64 %rd1, %rd0, %rd3;
-    ld.global.nc.f32 %f0, [%rd1];
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd3, %r1;
+    add.u64 %rd1, %rd1, %rd3;
+    add.u64 %rd0, %rd0, %rd3;
+    ld.global.nc.f32 %f0, [%rd0];
     mul.f32 %f1, %f0, 0f40000000;
     st.global.f32 [%rd2], %f1;
     bra if_merge_4;
@@ -52,15 +53,16 @@ entry_1:
     mov.u32 %r3, %ntid.x;
     mul.lo.u32 %r4, %r2, %r3;
     add.u32 %r2, %r1, %r4;
-    setp.lt.u32 %p0, %r2, %r0;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r3, %r2, 2;
-    cvt.u64.u32 %rd3, %r3;
-    add.u64 %rd2, %rd1, %rd3;
-    add.u64 %rd1, %rd0, %rd3;
-    ld.global.nc.f32 %f0, [%rd1];
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd3, %r1;
+    add.u64 %rd1, %rd1, %rd3;
+    add.u64 %rd0, %rd0, %rd3;
+    ld.global.nc.f32 %f0, [%rd0];
     add.f32 %f1, %f0, 0f3F800000;
     st.global.f32 [%rd2], %f1;
     bra if_merge_4;
@@ -85,15 +87,16 @@ entry_1:
     mov.u32 %r3, %ntid.x;
     mul.lo.u32 %r4, %r2, %r3;
     add.u32 %r2, %r1, %r4;
-    setp.lt.u32 %p0, %r2, %r0;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r3, %r2, 2;
-    cvt.u64.u32 %rd3, %r3;
-    add.u64 %rd2, %rd1, %rd3;
-    add.u64 %rd1, %rd0, %rd3;
-    ld.global.f32 %f0, [%rd1];
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd3, %r1;
+    add.u64 %rd1, %rd1, %rd3;
+    add.u64 %rd0, %rd0, %rd3;
+    ld.global.f32 %f0, [%rd0];
     st.global.f32 [%rd2], %f0;
     bra if_merge_4;
 if_merge_4:

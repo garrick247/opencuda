@@ -24,7 +24,9 @@ entry_1:
 if_true_2:
     mov.f32 %f0, 0f00000000;
     ld.global.f32 %f1, [%rd3];
-    ld.global.f32 %f2, [%rd3];
+    mov.f32 %f2, %f1;
+    ld.global.f32 %f1, [%rd3];
+    mov.f32 %f3, %f1;
     mov.s32 %r1, 0;
     bra for_cond_5;
 if_merge_4:
@@ -37,9 +39,9 @@ for_body_6:
     shl.b32 %r2, %r1, 2;
     cvt.s64.s32 %rd5, %r2;
     add.u64 %rd4, %rd3, %rd5;
-    ld.global.f32 %f3, [%rd4];
-    add.f32 %f4, %f0, %f3;
-    setp.gt.f32 %p1, %f3, %f1;
+    ld.global.f32 %f1, [%rd4];
+    add.f32 %f4, %f0, %f1;
+    setp.gt.f32 %p1, %f1, %f2;
     @%p1 bra if_true_9;
     bra if_merge_11;
 for_inc_7:
@@ -48,18 +50,18 @@ for_inc_7:
     bra for_cond_5;
 for_exit_8:
     st.global.f32 [%rd0], %f0;
-    st.global.f32 [%rd1], %f1;
-    st.global.f32 [%rd2], %f2;
+    st.global.f32 [%rd1], %f2;
+    st.global.f32 [%rd2], %f3;
     bra if_merge_4;
 if_true_9:
-    mov.f32 %f1, %f3;
+    mov.f32 %f2, %f1;
     bra if_merge_11;
 if_merge_11:
-    setp.lt.f32 %p1, %f3, %f2;
+    setp.lt.f32 %p1, %f1, %f3;
     @%p1 bra if_true_12;
     bra if_merge_14;
 if_true_12:
-    mov.f32 %f2, %f3;
+    mov.f32 %f3, %f1;
     bra if_merge_14;
 if_merge_14:
     mov.f32 %f0, %f4;
@@ -84,21 +86,23 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd2, %rd1, %rd4;
+    add.u64 %rd2, %rd1, 0;
+    shl.b32 %r1, %r0, 2;
+    cvt.s64.s32 %rd4, %r1;
+    add.u64 %rd3, %rd1, %rd4;
     mov.f32 %f0, 0f00000000;
     bra while_cond_5;
 if_merge_4:
     ret;
 while_cond_5:
-    setp.lt.u64 %p0, %rd1, %rd2;
+    setp.lt.u64 %p0, %rd2, %rd3;
     @%p0 bra while_body_6;
     bra while_exit_7;
 while_body_6:
-    ld.global.f32 %f1, [%rd1];
+    ld.global.f32 %f1, [%rd2];
     add.f32 %f2, %f0, %f1;
-    add.u64 %rd3, %rd1, 4;
-    add.u64 %rd1, %rd3, 0;
+    add.u64 %rd1, %rd2, 4;
+    add.u64 %rd2, %rd1, 0;
     mov.f32 %f0, %f2;
     bra while_cond_5;
 while_exit_7:
@@ -126,11 +130,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.s32 %r2, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.s32 %r2, [%rd2];
     bra while_cond_6;
 if_merge_4:
     ret;

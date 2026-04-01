@@ -1,8 +1,12 @@
-[opencuda] Parsing tests/probe_li.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_li.ptx (5 kernels)
-[opencuda] Done.
-ed %p<1>;
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry const_overflow(
+    .param .u64 out)
+{
+    .reg .b64 %rd<2>;
+    .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
@@ -148,16 +152,11 @@ if_false_7:
 .visible .entry const_chain(
     .param .u64 out)
 {
-    .reg .b32 %r<2>;
     .reg .b64 %rd<1>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
-    mov.s32 %r0, 1000000;
-    add.s32 %r1, %r0, 500000;
-    shl.b32 %r0, %r1, 1;
-    sub.s32 %r1, %r0, 1000000;
-    st.global.s32 [%rd0], %r1;
+    st.global.s32 [%rd0], 2000000;
     ret;
 }

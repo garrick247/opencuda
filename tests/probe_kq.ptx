@@ -21,21 +21,21 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     shl.b32 %r2, %r1, 1;
     bra inline_double_it_merge_6;
 if_merge_4:
     ret;
 inline_octo_it_merge_5:
-    st.global.s32 [%rd2], %r1;
+    st.global.s32 [%rd2], %r0;
     bra if_merge_4;
 inline_double_it_merge_6:
-    shl.b32 %r0, %r2, 1;
+    shl.b32 %r1, %r2, 1;
     bra inline_double_it_merge_9;
 inline_double_it_merge_9:
-    shl.b32 %r1, %r0, 1;
+    shl.b32 %r0, %r1, 1;
     bra inline_octo_it_merge_5;
 }
 
@@ -63,34 +63,20 @@ if_true_2:
     ld.global.s32 %r1, [%rd3];
     setp.lt.s32 %p0, %r1, 0;
     sub.s32 %r0, 0, %r1;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
-if_merge_4:
-    ret;
-inline_abs_neg_merge_5:
+    @%p0 mov.s32 %r6, %r0;
+    @!%p0 mov.s32 %r6, %r1;
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd5, %r3;
     add.u64 %rd1, %rd2, %rd5;
     ld.global.s32 %r4, [%rd1];
     setp.lt.s32 %p0, %r4, 0;
     sub.s32 %r5, 0, %r4;
-    @%p0 bra tern_true_11;
-    bra tern_false_12;
-tern_true_6:
-    mov.s32 %r6, %r0;
-    bra inline_abs_neg_merge_5;
-tern_false_7:
-    mov.s32 %r6, %r1;
-    bra inline_abs_neg_merge_5;
-inline_abs_neg_merge_10:
+    @%p0 mov.s32 %r7, %r5;
+    @!%p0 mov.s32 %r7, %r4;
     add.s32 %r3, %r6, %r7;
     bra inline_add_vals_merge_15;
-tern_true_11:
-    mov.s32 %r7, %r5;
-    bra inline_abs_neg_merge_10;
-tern_false_12:
-    mov.s32 %r7, %r4;
-    bra inline_abs_neg_merge_10;
+if_merge_4:
+    ret;
 inline_add_vals_merge_15:
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd6, %r4;
@@ -118,9 +104,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     setp.eq.s32 %p0, %r1, 0;
     @%p0 bra if_true_6;
     bra if_merge_8;

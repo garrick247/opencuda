@@ -1,8 +1,11 @@
-[opencuda] Parsing tests/probe_lr.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_lr.ptx (5 kernels)
-[opencuda] Done.
-.reg .f32 %f<2>;
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry atomic64_float(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<2>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<4>;
     .reg .pred %p<1>;
@@ -63,10 +66,10 @@ if_merge_4:
     .reg .b64 %rd<6>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, shared_min;
-    mov.u64 %rd2, shared_max;
+    mov.u64 %rd0, shared_min;
+    mov.u64 %rd1, shared_max;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd2, [out];
     ld.param.u64 %rd3, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -76,9 +79,9 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     ld.global.s32 %r1, [%rd3];
-    st.shared.s32 [%rd1], %r1;
+    st.shared.s32 [%rd0], %r1;
     ld.global.s32 %r1, [%rd3];
-    st.shared.s32 [%rd2], %r1;
+    st.shared.s32 [%rd1], %r1;
     bra if_merge_4;
 if_merge_4:
     bar.sync 0;
@@ -90,9 +93,9 @@ if_true_5:
     cvt.s64.s32 %rd5, %r0;
     add.u64 %rd4, %rd3, %rd5;
     ld.global.s32 %r1, [%rd4];
-    atom.shared.min.s32 %r0, [%rd1], %r1;
+    atom.shared.min.s32 %r0, [%rd0], %r1;
     ld.global.s32 %r1, [%rd4];
-    atom.shared.max.s32 %r0, [%rd2], %r1;
+    atom.shared.max.s32 %r0, [%rd1], %r1;
     bra if_merge_7;
 if_merge_7:
     bar.sync 0;
@@ -100,11 +103,11 @@ if_merge_7:
     @%p0 bra if_true_8;
     bra if_merge_10;
 if_true_8:
-    ld.shared.s32 %r2, [%rd1];
-    st.global.s32 [%rd0], %r2;
-    add.u64 %rd1, %rd0, 4;
-    ld.shared.s32 %r1, [%rd2];
-    st.global.s32 [%rd1], %r1;
+    ld.shared.s32 %r2, [%rd0];
+    st.global.s32 [%rd2], %r2;
+    add.u64 %rd0, %rd2, 4;
+    ld.shared.s32 %r1, [%rd1];
+    st.global.s32 [%rd0], %r1;
     bra if_merge_10;
 if_merge_10:
     ret;
@@ -129,15 +132,8 @@ entry_1:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.f32 %f1, %f0;
-    bra tern_merge_4;
-tern_false_3:
-    mov.f32 %f1, 0f00000000;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.f32 %f1, %f0;
+    @!%p0 mov.f32 %f1, 0f00000000;
     mov.f32 %f0, %f1;
     mov.s32 %r1, 16;
     bra for_cond_5;
@@ -183,15 +179,8 @@ entry_1:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r1, [%rd2];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.s32 %r0, %r1;
-    bra tern_merge_4;
-tern_false_3:
-    mov.s32 %r0, 0;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.s32 %r0, %r1;
+    @!%p0 mov.s32 %r0, 0;
     setp.gt.s32 %p0, %r0, 0;
     vote.sync.ballot.b32 %r1, %p0, 4294967295;
     setp.eq.s32 %p0, %r2, 0;

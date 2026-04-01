@@ -61,8 +61,16 @@ for_body_10:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f3, [%rd2];
     setp.gt.f32 %p2, %f3, %f1;
-    @%p2 bra tern_true_14;
-    bra tern_false_15;
+    @%p2 mov.f32 %f6, %f1;
+    @!%p2 mov.f32 %f6, %f3;
+    setp.gt.f32 %p2, %f3, %f1;
+    @%p2 mov.s32 %r9, 1;
+    @!%p2 mov.s32 %r9, 0;
+    add.f32 %f5, %f2, %f6;
+    add.s32 %r8, %r2, %r9;
+    mov.s32 %r2, %r8;
+    mov.f32 %f2, %f5;
+    bra for_inc_11;
 for_inc_11:
     add.s32 %r7, %r4, 1;
     mov.s32 %r4, %r7;
@@ -72,28 +80,6 @@ for_exit_12:
     setp.gt.f32 %p2, %f2, %f1;
     @%p2 bra if_true_21;
     bra if_merge_23;
-inline_clamp_to_merge_13:
-    add.f32 %f5, %f2, %f6;
-    add.s32 %r8, %r2, %r9;
-    mov.s32 %r2, %r8;
-    mov.f32 %f2, %f5;
-    bra for_inc_11;
-tern_true_14:
-    mov.f32 %f6, %f1;
-    bra tern_merge_16;
-tern_false_15:
-    mov.f32 %f6, %f3;
-    bra tern_merge_16;
-tern_merge_16:
-    setp.gt.f32 %p2, %f3, %f1;
-    @%p2 bra tern_true_17;
-    bra tern_false_18;
-tern_true_17:
-    mov.s32 %r9, 1;
-    bra inline_clamp_to_merge_13;
-tern_false_18:
-    mov.s32 %r9, 0;
-    bra inline_clamp_to_merge_13;
 if_true_21:
     mov.f32 %f1, %f2;
     bra if_merge_23;

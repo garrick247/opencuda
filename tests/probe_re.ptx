@@ -140,8 +140,8 @@ if_merge_4:
 switch_exit_5:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
-    add.u64 %rd2, %rd0, %rd4;
-    st.global.f32 [%rd2], %f1;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.f32 [%rd0], %f1;
     bra if_merge_4;
 case_6:
     mov.f32 %f1, 0f00000000;
@@ -165,8 +165,12 @@ switch_next_15:
     bra switch_next_16;
 switch_next_16:
     setp.eq.s32 %p0, %r0, 2;
-    @%p0 bra case_10;
-    bra default_12;
+    @%p0 mov.f32 %f1, 0f3F800000;
+    @!%p0 mov.f32 %f1, 0fBF800000;
+    shl.b32 %r1, %r2, 2;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.f32 [%rd0], %f1;
+    bra if_merge_4;
 }
 
 .visible .entry divmod_kernel(
@@ -212,10 +216,10 @@ inline_div_mod_merge_5:
     ld.local.s32 %r0, [%rd1];
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd8, %r3;
-    add.u64 %rd6, %rd2, %rd8;
-    st.global.s32 [%rd6], %r1;
-    add.u64 %rd5, %rd3, %rd8;
-    st.global.s32 [%rd5], %r0;
+    add.u64 %rd2, %rd2, %rd8;
+    st.global.s32 [%rd2], %r1;
+    add.u64 %rd3, %rd3, %rd8;
+    st.global.s32 [%rd3], %r0;
     bra if_merge_4;
 }
 

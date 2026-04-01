@@ -27,17 +27,8 @@ if_true_2:
     ld.global.f64 %fd0, [%rd2];
     setp.gt.f64 %p0, %fd0, 0d0000000000000000;
     sub.f64 %fd1, 0d0000000000000000, %fd0;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f64 %fd2, %fd0;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f64 %fd2, %fd1;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.f64 %fd2, %fd0;
+    @!%p0 mov.f64 %fd2, %fd1;
     sqrt.rn.f64 %fd3, %fd2;
     cvt.rn.f32.f64 %f0, %fd0;
     sin.approx.f32 %f1, %f0;
@@ -47,29 +38,15 @@ tern_merge_7:
     cvt.f64.f32 %fd4, %f3;
     add.f64 %fd5, %fd2, %fd4;
     setp.lt.f64 %p0, %fd0, 0d4024000000000000;
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f64 %fd2, %fd0;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f64 %fd2, 0d4024000000000000;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p0 mov.f64 %fd2, %fd0;
+    @!%p0 mov.f64 %fd2, 0d4024000000000000;
     cvt.rn.f32.f64 %f4, %fd2;
     mul.f32 %f5, %f4, 0f3FB8AA3B;
     ex2.approx.f32 %f6, %f5;
     cvt.f64.f32 %fd4, %f6;
     setp.gt.f64 %p0, %fd0, 0d0000000000000000;
-    @%p0 bra tern_true_11;
-    bra tern_false_12;
-tern_true_11:
-    mov.f64 %fd2, %fd0;
-    bra tern_merge_13;
-tern_false_12:
-    mov.f64 %fd2, 0d3FF0000000000000;
-    bra tern_merge_13;
-tern_merge_13:
+    @%p0 mov.f64 %fd2, %fd0;
+    @!%p0 mov.f64 %fd2, 0d3FF0000000000000;
     cvt.rn.f32.f64 %f7, %fd2;
     mul.f32 %f8, %f7, 0f3F317218;
     lg2.approx.f32 %f9, %f8;
@@ -82,6 +59,8 @@ tern_merge_13:
     add.f64 %fd5, %fd3, %fd6;
     st.global.f64 [%rd1], %fd5;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry double_accum(
@@ -139,7 +118,7 @@ for_exit_8:
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<8>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -153,22 +132,22 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd2];
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r1, [%rd1];
     div.s32 %r2, %r1, 2;
     rem.s32 %r3, %r1, 2;
     div.s32 %r4, %r1, 3;
     rem.s32 %r5, %r1, 7;
     div.s32 %r6, %r1, 16;
     rem.s32 %r7, %r1, 256;
-    add.u64 %rd1, %rd0, %rd3;
+    add.u64 %rd0, %rd0, %rd2;
     add.s32 %r0, %r2, %r3;
     add.s32 %r1, %r0, %r4;
     add.s32 %r2, %r1, %r5;
     add.s32 %r3, %r2, %r6;
     add.s32 %r4, %r3, %r7;
-    st.global.s32 [%rd1], %r4;
+    st.global.s32 [%rd0], %r4;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -262,43 +241,22 @@ if_true_2:
     ld.global.f32 %f0, [%rd2];
     setp.gt.f32 %p0, %f0, 0f7149F2CA;
     setp.lt.f32 %p1, %f0, 0fF149F2CA;
-    @%p1 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f1, 0fF149F2CA;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f1, %f0;
-    bra tern_merge_7;
-tern_merge_7:
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f32 %f2, 0f7149F2CA;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f32 %f2, %f1;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p1 mov.f32 %f1, 0fF149F2CA;
+    @!%p1 mov.f32 %f1, %f0;
+    @%p0 mov.f32 %f2, 0f7149F2CA;
+    @!%p0 mov.f32 %f2, %f1;
     setp.eq.f32 %p1, %f0, 0f00000000;
     div.approx.f32 %f1, 0f3F800000, %f0;
-    @%p1 bra tern_true_11;
-    bra tern_false_12;
-tern_true_11:
-    mov.f32 %f3, 0f00000000;
-    bra tern_merge_13;
-tern_false_12:
-    mov.f32 %f3, %f1;
-    bra tern_merge_13;
-tern_merge_13:
+    @%p1 mov.f32 %f3, 0f00000000;
+    @!%p1 mov.f32 %f3, %f1;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
     mul.f32 %f1, %f2, %f3;
     st.global.f32 [%rd1], %f1;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry large_struct_call(
@@ -428,8 +386,8 @@ if_true_2:
     ld.global.f32 %f0, [%rd3];
     shl.b32 %r1, %r2, 3;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd1, %rd2, %rd5;
-    ld.global.f64 %fd0, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f64 %fd0, [%rd2];
     cvt.f64.f32 %fd1, %f0;
     mul.f64 %fd2, %fd1, %fd0;
     mul.f64 %fd1, %fd0, %fd0;
@@ -438,8 +396,8 @@ if_true_2:
     add.f64 %fd3, %fd1, %fd0;
     sqrt.rn.f64 %fd1, %fd3;
     add.f64 %fd0, %fd2, %fd1;
-    add.u64 %rd3, %rd0, %rd5;
-    st.global.f64 [%rd3], %fd0;
+    add.u64 %rd0, %rd0, %rd5;
+    st.global.f64 [%rd0], %fd0;
     bra if_merge_4;
 if_merge_4:
     ret;

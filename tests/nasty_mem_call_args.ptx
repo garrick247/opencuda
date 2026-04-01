@@ -7,7 +7,7 @@
 {
     .reg .f32 %f<4>;
     .reg .b32 %r<5>;
-    .reg .b64 %rd<7>;
+    .reg .b64 %rd<6>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -28,16 +28,16 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r1, %r3, 2;
-    cvt.s64.s32 %rd6, %r1;
-    add.u64 %rd5, %rd0, %rd6;
-    ld.global.s32 %r4, [%rd5];
-    add.u64 %rd0, %rd1, %rd6;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd5, %rd2, %rd6;
-    ld.global.f32 %f1, [%rd5];
-    add.u64 %rd1, %rd3, %rd6;
-    ld.global.s32 %r0, [%rd1];
-    add.u64 %rd0, %rd4, %rd6;
+    cvt.s64.s32 %rd5, %r1;
+    add.u64 %rd0, %rd0, %rd5;
+    ld.global.s32 %r4, [%rd0];
+    add.u64 %rd1, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f1, [%rd2];
+    add.u64 %rd3, %rd3, %rd5;
+    ld.global.s32 %r0, [%rd3];
+    add.u64 %rd4, %rd4, %rd5;
     cvt.rn.f32.s32 %f2, %r4;
     mul.f32 %f3, %f2, %f0;
     cvt.rn.f32.s32 %f0, %r0;
@@ -47,6 +47,6 @@ if_true_2:
 if_merge_4:
     ret;
 inline_mix_compute_merge_5:
-    st.global.f32 [%rd0], %f1;
+    st.global.f32 [%rd4], %f1;
     bra if_merge_4;
 }

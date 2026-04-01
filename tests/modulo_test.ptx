@@ -6,7 +6,7 @@
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<5>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -26,11 +26,11 @@ if_true_2:
     ret;
 if_merge_4:
     shl.b32 %r1, %r3, 2;
-    cvt.s64.s32 %rd3, %r1;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r4, [%rd2];
-    add.u64 %rd1, %rd0, %rd3;
+    cvt.s64.s32 %rd2, %r1;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r4, [%rd1];
+    add.u64 %rd0, %rd0, %rd2;
     rem.s32 %r0, %r4, 7;
-    st.global.s32 [%rd1], %r0;
+    st.global.s32 [%rd0], %r0;
     ret;
 }

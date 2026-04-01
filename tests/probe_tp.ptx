@@ -22,9 +22,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     mul.f32 %f2, %f0, %f0;
     mul.f32 %f3, %f2, %f2;
     mul.f32 %f4, %f3, %f2;
@@ -62,26 +62,10 @@ if_true_2:
     ld.global.f32 %f0, [%rd2];
     setp.gt.f32 %p0, %f0, 0f3F800000;
     setp.lt.f32 %p1, %f0, 0fBF800000;
-    @%p1 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f1, 0fBF800000;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f1, %f0;
-    bra tern_merge_7;
-tern_merge_7:
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f32 %f2, 0f3F800000;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f32 %f2, %f1;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p1 mov.f32 %f1, 0fBF800000;
+    @!%p1 mov.f32 %f1, %f0;
+    @%p0 mov.f32 %f2, 0f3F800000;
+    @!%p0 mov.f32 %f2, %f1;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
@@ -98,6 +82,8 @@ tern_merge_10:
     mul.f32 %f1, %f6, %f10;
     st.global.f32 [%rd1], %f1;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry acos_kernel(
@@ -124,26 +110,10 @@ if_true_2:
     ld.global.f32 %f0, [%rd2];
     setp.gt.f32 %p0, %f0, 0f3F800000;
     setp.lt.f32 %p1, %f0, 0fBF800000;
-    @%p1 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f1, 0fBF800000;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f1, %f0;
-    bra tern_merge_7;
-tern_merge_7:
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f32 %f2, 0f3F800000;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f32 %f2, %f1;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p1 mov.f32 %f1, 0fBF800000;
+    @!%p1 mov.f32 %f1, %f0;
+    @%p0 mov.f32 %f2, 0f3F800000;
+    @!%p0 mov.f32 %f2, %f1;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
@@ -161,6 +131,8 @@ tern_merge_10:
     sub.f32 %f1, 0f3FC90FDB, %f12;
     st.global.f32 [%rd1], %f1;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry spherical_angles(
@@ -232,10 +204,10 @@ if_true_5:
 if_false_6:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd8, %r0;
-    add.u64 %rd4, %rd0, %rd8;
-    st.global.f32 [%rd4], 0f00000000;
-    add.u64 %rd5, %rd1, %rd8;
-    st.global.f32 [%rd5], 0f00000000;
+    add.u64 %rd0, %rd0, %rd8;
+    st.global.f32 [%rd0], 0f00000000;
+    add.u64 %rd1, %rd1, %rd8;
+    st.global.f32 [%rd1], 0f00000000;
     bra if_merge_4;
 }
 
@@ -277,26 +249,10 @@ if_true_2:
     div.approx.f32 %f3, %f4, %f5;
     setp.gt.f32 %p0, %f3, 0f3F800000;
     setp.lt.f32 %p1, %f3, 0fBF800000;
-    @%p1 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f0, 0fBF800000;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f0, %f3;
-    bra tern_merge_7;
-tern_merge_7:
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f32 %f1, 0f3F800000;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f32 %f1, %f0;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p1 mov.f32 %f0, 0fBF800000;
+    @!%p1 mov.f32 %f0, %f3;
+    @%p0 mov.f32 %f1, 0f3F800000;
+    @!%p0 mov.f32 %f1, %f0;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd6, %r1;
     add.u64 %rd2, %rd0, %rd6;
@@ -314,6 +270,8 @@ tern_merge_10:
     sub.f32 %f2, 0f3FC90FDB, %f15;
     st.global.f32 [%rd2], %f2;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry safe_asin(
@@ -372,23 +330,16 @@ if_true_8:
     bra if_merge_10;
 if_false_9:
     setp.gt.f32 %p0, %f0, 0f00000000;
-    @%p0 bra tern_true_11;
-    bra tern_false_12;
+    @%p0 mov.f32 %f2, 0f3FC90FDA;
+    @!%p0 mov.f32 %f2, 0fBFC90FDA;
+    mov.f32 %f1, %f2;
+    bra if_merge_10;
 if_merge_10:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
     add.u64 %rd1, %rd0, %rd4;
     st.global.f32 [%rd1], %f1;
     bra if_merge_4;
-tern_true_11:
-    mov.f32 %f2, 0f3FC90FDA;
-    bra tern_merge_13;
-tern_false_12:
-    mov.f32 %f2, 0fBFC90FDA;
-    bra tern_merge_13;
-tern_merge_13:
-    mov.f32 %f1, %f2;
-    bra if_merge_10;
 }
 
 .visible .entry phase_unwrap(

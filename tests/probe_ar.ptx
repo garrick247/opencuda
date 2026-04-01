@@ -5,14 +5,14 @@
 .visible .entry integrate(
     .param .u64 particles, .param .f32 dt, .param .s32 n)
 {
-    .reg .f32 %f<4>;
+    .reg .f32 %f<9>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<5>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.u64 %rd0, [particles];
-    ld.param.f32 %f3, [dt];
+    ld.param.f32 %f0, [dt];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r2, %r1;
@@ -23,19 +23,38 @@ if_true_2:
     mul.lo.s32 %r0, %r2, 28;
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd1, %rd0, %rd3;
-    add.u64 %rd2, %rd1, 24;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd2, %rd1, 4;
+    ld.global.f32 %f2, [%rd2];
+    add.u64 %rd2, %rd1, 8;
     ld.global.f32 %f3, [%rd2];
-    bra inline_vec3_add_merge_7;
+    add.u64 %rd2, %rd1, 12;
+    ld.global.f32 %f4, [%rd2];
+    add.u64 %rd2, %rd1, 16;
+    ld.global.f32 %f5, [%rd2];
+    add.u64 %rd2, %rd1, 20;
+    ld.global.f32 %f6, [%rd2];
+    add.u64 %rd2, %rd1, 24;
+    ld.global.f32 %f7, [%rd2];
+    mul.f32 %f7, %f4, %f0;
+    mul.f32 %f4, %f5, %f0;
+    mul.f32 %f5, %f6, %f0;
+    bra inline_vec3_scale_merge_5;
 if_merge_4:
     ret;
+inline_vec3_scale_merge_5:
+    add.f32 %f0, %f1, %f7;
+    add.f32 %f6, %f2, %f4;
+    add.f32 %f8, %f3, %f5;
+    bra inline_vec3_add_merge_7;
 inline_vec3_add_merge_7:
     mul.lo.s32 %r1, %r2, 28;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
     st.global.f32 [%rd1], %f0;
     add.u64 %rd2, %rd1, 4;
-    st.global.f32 [%rd2], %f1;
+    st.global.f32 [%rd2], %f6;
     add.u64 %rd2, %rd1, 8;
-    st.global.f32 [%rd2], %f2;
+    st.global.f32 [%rd2], %f8;
     bra if_merge_4;
 }

@@ -18,33 +18,35 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    cvt.s64.s32 %rd1, %r0;
-    mov.s32 %r1, 0;
+    mov.u64 %rd1, %clock64;
+    cvt.s64.u64 %rd2, %rd1;
     mov.s32 %r0, 0;
+    mov.s32 %r1, 0;
     bra for_cond_5;
 if_merge_4:
     ret;
 for_cond_5:
-    setp.lt.s32 %p0, %r0, 100;
+    setp.lt.s32 %p0, %r1, 100;
     @%p0 bra for_body_6;
     bra for_exit_8;
 for_body_6:
-    add.s32 %r3, %r1, %r0;
-    mov.s32 %r1, %r3;
+    add.s32 %r3, %r0, %r1;
+    mov.s32 %r0, %r3;
     bra for_inc_7;
 for_inc_7:
-    add.s32 %r3, %r0, 1;
-    mov.s32 %r0, %r3;
+    add.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
     bra for_cond_5;
 for_exit_8:
-    cvt.s64.s32 %rd2, %r3;
+    mov.u64 %rd1, %clock64;
+    cvt.s64.u64 %rd3, %rd1;
     shl.b32 %r3, %r2, 3;
     cvt.s64.s32 %rd5, %r3;
-    add.u64 %rd3, %rd0, %rd5;
-    sub.s64 %rd4, %rd2, %rd1;
-    cvt.s64.s32 %rd6, %r1;
-    add.s64 %rd2, %rd4, %rd6;
-    st.global.s64 [%rd3], %rd2;
+    add.u64 %rd1, %rd0, %rd5;
+    sub.s64 %rd4, %rd3, %rd2;
+    cvt.s64.s32 %rd6, %r0;
+    add.s64 %rd3, %rd4, %rd6;
+    st.global.s64 [%rd1], %rd3;
     bra if_merge_4;
 }
 
@@ -66,12 +68,13 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r2, %r3, 2;
-    cvt.s64.s32 %rd3, %r2;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r0, [%rd0];
-    st.global.s32 [%rd2], %r0;
+    nanosleep.u32 %r0;
+    shl.b32 %r0, %r3, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
+    st.global.s32 [%rd2], %r1;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -96,9 +99,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.volatile.global.s32 %r1, [%rd1];
     st.global.s32 [%rd2], %r1;
     bra if_merge_4;
 if_merge_4:

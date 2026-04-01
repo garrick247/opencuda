@@ -5,7 +5,7 @@
 .visible .entry vec3_brace_init(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<7>;
+    .reg .f32 %f<6>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<9>;
     .reg .pred %p<1>;
@@ -24,24 +24,27 @@ if_true_2:
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd3, %r1;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f3, [%rd2];
+    ld.global.f32 %f0, [%rd2];
     add.s32 %r2, %r0, 1;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd2, %rd1, %rd4;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f1, [%rd2];
     add.s32 %r2, %r0, 2;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd5, %r1;
     add.u64 %rd2, %rd1, %rd5;
-    ld.global.f32 %f5, [%rd2];
-    mul.f32 %f6, %f3, %f3;
-    mul.f32 %f3, %f4, %f4;
-    add.f32 %f4, %f6, %f3;
-    mul.f32 %f6, %f5, %f5;
-    add.f32 %f3, %f4, %f6;
-    add.f32 %f5, %f3, 0f322BCC77;
-    rsqrt.approx.f32 %f4, %f5;
+    ld.global.f32 %f2, [%rd2];
+    mul.f32 %f3, %f0, %f0;
+    mul.f32 %f4, %f1, %f1;
+    add.f32 %f5, %f3, %f4;
+    mul.f32 %f3, %f2, %f2;
+    add.f32 %f4, %f5, %f3;
+    add.f32 %f5, %f4, 0f322BCC77;
+    rsqrt.approx.f32 %f3, %f5;
+    mul.f32 %f4, %f0, %f3;
+    mul.f32 %f5, %f1, %f3;
+    mul.f32 %f0, %f2, %f3;
     bra inline_normalize_merge_5;
 if_merge_4:
     ret;
@@ -49,24 +52,24 @@ inline_normalize_merge_5:
     shl.b32 %r2, %r0, 2;
     cvt.s64.s32 %rd6, %r2;
     add.u64 %rd1, %rd0, %rd6;
-    st.global.f32 [%rd1], %f0;
+    st.global.f32 [%rd1], %f4;
     add.s32 %r1, %r0, 1;
     shl.b32 %r2, %r1, 2;
     cvt.s64.s32 %rd7, %r2;
     add.u64 %rd2, %rd0, %rd7;
-    st.global.f32 [%rd2], %f1;
+    st.global.f32 [%rd2], %f5;
     add.s32 %r1, %r0, 2;
     shl.b32 %r2, %r1, 2;
     cvt.s64.s32 %rd8, %r2;
     add.u64 %rd1, %rd0, %rd8;
-    st.global.f32 [%rd1], %f2;
+    st.global.f32 [%rd1], %f0;
     bra if_merge_4;
 }
 
 .visible .entry struct_return_assign(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<10>;
+    .reg .f32 %f<7>;
     .reg .b32 %r<4>;
     .reg .b64 %rd<7>;
     .reg .pred %p<1>;
@@ -85,42 +88,48 @@ if_true_2:
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd3, %r1;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f6, [%rd2];
+    ld.global.f32 %f0, [%rd2];
     add.s32 %r1, %r0, 1;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd4, %r3;
     add.u64 %rd2, %rd1, %rd4;
-    ld.global.f32 %f7, [%rd2];
+    ld.global.f32 %f1, [%rd2];
     add.s32 %r1, %r0, 2;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd5, %r3;
     add.u64 %rd2, %rd1, %rd5;
-    ld.global.f32 %f8, [%rd2];
-    mul.f32 %f9, %f6, %f6;
-    mul.f32 %f6, %f7, %f7;
-    add.f32 %f7, %f9, %f6;
-    mul.f32 %f9, %f8, %f8;
-    add.f32 %f6, %f7, %f9;
-    add.f32 %f8, %f6, 0f322BCC77;
-    rsqrt.approx.f32 %f7, %f8;
+    ld.global.f32 %f2, [%rd2];
+    mul.f32 %f3, %f0, %f0;
+    mul.f32 %f4, %f1, %f1;
+    add.f32 %f5, %f3, %f4;
+    mul.f32 %f3, %f2, %f2;
+    add.f32 %f4, %f5, %f3;
+    add.f32 %f5, %f4, 0f322BCC77;
+    rsqrt.approx.f32 %f3, %f5;
+    mul.f32 %f4, %f0, %f3;
+    mul.f32 %f5, %f1, %f3;
+    mul.f32 %f0, %f2, %f3;
     bra inline_normalize_merge_5;
 if_merge_4:
     ret;
 inline_normalize_merge_5:
-    mul.f32 %f9, %f0, %f0;
-    mul.f32 %f6, %f1, %f1;
-    add.f32 %f8, %f9, %f6;
-    mul.f32 %f7, %f2, %f2;
-    add.f32 %f9, %f8, %f7;
-    add.f32 %f6, %f9, 0f322BCC77;
-    rsqrt.approx.f32 %f8, %f6;
+    mul.f32 %f1, %f4, %f4;
+    mul.f32 %f2, %f5, %f5;
+    add.f32 %f3, %f1, %f2;
+    mul.f32 %f1, %f0, %f0;
+    add.f32 %f2, %f3, %f1;
+    add.f32 %f3, %f2, 0f322BCC77;
+    rsqrt.approx.f32 %f1, %f3;
+    mul.f32 %f2, %f4, %f1;
+    mul.f32 %f3, %f5, %f1;
+    mul.f32 %f6, %f0, %f1;
     bra inline_normalize_merge_7;
 inline_normalize_merge_7:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd6, %r0;
     add.u64 %rd1, %rd0, %rd6;
-    add.f32 %f7, %f3, %f4;
-    add.f32 %f9, %f7, %f5;
-    st.global.f32 [%rd1], %f9;
+    add.f32 %f1, %f2, %f3;
+    add.f32 %f2, %f1, %f6;
+    st.global.f32 [%rd1], %f2;
     bra if_merge_4;
 }

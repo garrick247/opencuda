@@ -7,7 +7,7 @@
 {
     .reg .f32 %f<4>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -21,21 +21,21 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd2];
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.f32 %f0, [%rd1];
     add.f32 %f1, %f0, 0f3F800000;
-    add.u64 %rd1, %rd0, %rd3;
+    add.u64 %rd0, %rd0, %rd2;
+    rcp.rn.f32 %f0, %f1;
     bra inline_fast_rcp_merge_5;
 if_merge_4:
     ret;
 inline_fast_rcp_merge_5:
-    rsqrt.approx.f32 %f0, %f1;
+    rsqrt.approx.f32 %f2, %f1;
     bra inline_fast_sqrt_rcp_merge_7;
 inline_fast_sqrt_rcp_merge_7:
-    cvt.rn.f32.s32 %f3, %r1;
-    add.f32 %f2, %f3, %f0;
-    st.global.f32 [%rd1], %f2;
+    add.f32 %f3, %f0, %f2;
+    st.global.f32 [%rd0], %f3;
     bra if_merge_4;
 }
 
@@ -58,40 +58,41 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
+    mov.s32 %r2, %r1;
     bra for_cond_6;
 if_merge_4:
     ret;
 inline_expensive_fn_merge_5:
-    st.global.s32 [%rd2], %r1;
+    st.global.s32 [%rd2], %r2;
     bra if_merge_4;
 for_cond_6:
-    mul.lo.s32 %r2, %r1, 1664525;
-    add.s32 %r0, %r2, 1013904223;
-    and.b32 %r2, %r0, 2147483647;
     mul.lo.s32 %r0, %r2, 1664525;
-    add.s32 %r2, %r0, 1013904223;
-    and.b32 %r0, %r2, 2147483647;
-    mul.lo.s32 %r2, %r0, 1664525;
-    add.s32 %r0, %r2, 1013904223;
-    and.b32 %r2, %r0, 2147483647;
-    mul.lo.s32 %r0, %r2, 1664525;
-    add.s32 %r2, %r0, 1013904223;
-    and.b32 %r0, %r2, 2147483647;
-    mul.lo.s32 %r2, %r0, 1664525;
-    add.s32 %r0, %r2, 1013904223;
-    and.b32 %r2, %r0, 2147483647;
-    mul.lo.s32 %r0, %r2, 1664525;
-    add.s32 %r2, %r0, 1013904223;
-    and.b32 %r0, %r2, 2147483647;
-    mul.lo.s32 %r2, %r0, 1664525;
-    add.s32 %r0, %r2, 1013904223;
-    and.b32 %r2, %r0, 2147483647;
-    mul.lo.s32 %r0, %r2, 1664525;
-    add.s32 %r2, %r0, 1013904223;
-    and.b32 %r0, %r2, 2147483647;
-    mov.s32 %r1, %r0;
+    add.s32 %r1, %r0, 1013904223;
+    and.b32 %r0, %r1, 2147483647;
+    mul.lo.s32 %r1, %r0, 1664525;
+    add.s32 %r0, %r1, 1013904223;
+    and.b32 %r1, %r0, 2147483647;
+    mul.lo.s32 %r0, %r1, 1664525;
+    add.s32 %r1, %r0, 1013904223;
+    and.b32 %r0, %r1, 2147483647;
+    mul.lo.s32 %r1, %r0, 1664525;
+    add.s32 %r0, %r1, 1013904223;
+    and.b32 %r1, %r0, 2147483647;
+    mul.lo.s32 %r0, %r1, 1664525;
+    add.s32 %r1, %r0, 1013904223;
+    and.b32 %r0, %r1, 2147483647;
+    mul.lo.s32 %r1, %r0, 1664525;
+    add.s32 %r0, %r1, 1013904223;
+    and.b32 %r1, %r0, 2147483647;
+    mul.lo.s32 %r0, %r1, 1664525;
+    add.s32 %r1, %r0, 1013904223;
+    and.b32 %r0, %r1, 2147483647;
+    mul.lo.s32 %r1, %r0, 1664525;
+    add.s32 %r0, %r1, 1013904223;
+    and.b32 %r1, %r0, 2147483647;
+    mov.s32 %r2, %r1;
     bra inline_expensive_fn_merge_5;
 }

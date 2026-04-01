@@ -23,7 +23,7 @@ if_true_2:
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd3, %r1;
     add.u64 %rd2, %rd0, %rd3;
-    st.global.s32 [%rd2], -2147483648;
+    st.global.s32 [%rd2], 2147483648;
     add.s32 %r1, %r0, 1;
     shl.b32 %r0, %r1, 2;
     cvt.s64.s32 %rd4, %r0;

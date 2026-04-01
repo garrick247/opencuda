@@ -176,8 +176,8 @@ inline_rank_update_merge_9:
     mov.f32 %f3, %f3;
     bra for_inc_7;
 if_true_10:
-    mov.f32 %f2, %f1;
     mov.f32 %f1, %f0;
+    mov.f32 %f2, %f1;
     bra if_merge_12;
 if_merge_12:
     setp.lt.f32 %p1, %f0, %f3;

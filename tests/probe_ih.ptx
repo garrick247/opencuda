@@ -6,9 +6,6 @@
 
 .global .align 1 .b8 _fmt_debug_print_0[8] = {110, 32, 61, 32, 37, 100, 10, 0};
 .global .align 1 .b8 _fmt_debug_print_1[13] = {105, 110, 91, 37, 100, 93, 32, 61, 32, 37, 102, 10, 0};
-.global .align 1 .b8 _fmt_debug_print_2[13] = {105, 110, 91, 37, 100, 93, 32, 61, 32, 37, 102, 10, 0};
-.global .align 1 .b8 _fmt_debug_print_3[13] = {105, 110, 91, 37, 100, 93, 32, 61, 32, 37, 102, 10, 0};
-.global .align 1 .b8 _fmt_debug_print_4[13] = {105, 110, 91, 37, 100, 93, 32, 61, 32, 37, 102, 10, 0};
 .global .align 1 .b8 _fmt_conditional_print_0[42] = {116, 104, 114, 101, 97, 100, 32, 37, 100, 58, 32, 118, 97, 108, 117, 101, 32, 37, 100, 32, 101, 120, 99, 101, 101, 100, 115, 32, 116, 104, 114, 101, 115, 104, 111, 108, 100, 32, 37, 100, 10, 0};
 .global .align 1 .b8 _fmt_print_types_0[19] = {117, 61, 37, 117, 32, 108, 108, 61, 37, 108, 108, 100, 32, 102, 61, 37, 102, 10, 0};
 
@@ -16,10 +13,10 @@
     .param .u64 in, .param .s32 n)
 {
     .reg .f32 %f<1>;
-    .reg .f64 %fd<4>;
-    .reg .b32 %r<8>;
-    .reg .b64 %rd<26>;
-    .reg .pred %p<1>;
+    .reg .f64 %fd<1>;
+    .reg .b32 %r<7>;
+    .reg .b64 %rd<12>;
+    .reg .pred %p<3>;
 
 entry_1:
     ld.param.u64 %rd0, [in];
@@ -43,91 +40,55 @@ if_true_2:
     st.param.b64 [_p0_0], %rd2;
     st.param.b64 [_p1_0], %rd5;
     call.uni (_rv_0), vprintf, (_p0_0, _p1_0);
-    ld.param.b32 %r3, [_rv_0];
+    ld.param.b32 %r4, [_rv_0];
     }
+    mov.s32 %r1, 0;
     bra for_cond_5;
 if_merge_4:
     ret;
 for_cond_5:
-    ld.global.f32 %f0, [%rd0];
-    mov.u64 %rd6, _fmt_debug_print_1;
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra land_rhs_9;
+    bra land_skip_10;
+for_body_6:
+    shl.b32 %r2, %r1, 2;
+    cvt.s64.s32 %rd6, %r2;
+    add.u64 %rd1, %rd0, %rd6;
+    ld.global.f32 %f0, [%rd1];
+    mov.u64 %rd7, _fmt_debug_print_1;
     .local .align 8 .b8 _valist_1[16];
-    mov.u64 %rd7, _valist_1;
-    cvt.s64.s32 %rd8, 0;
-    st.local.u64 [%rd7], %rd8;
+    mov.u64 %rd8, _valist_1;
+    cvt.s64.s32 %rd9, %r1;
+    st.local.u64 [%rd8], %rd9;
     cvt.f64.f32 %fd0, %f0;
-    add.u64 %rd9, %rd7, 8;
-    st.local.f64 [%rd9], %fd0;
-    cvta.local.u64 %rd10, %rd7;
+    add.u64 %rd10, %rd8, 8;
+    st.local.f64 [%rd10], %fd0;
+    cvta.local.u64 %rd11, %rd8;
     {
     .param .b64 _p0_1;
     .param .b64 _p1_1;
     .param .b32 _rv_1;
-    st.param.b64 [_p0_1], %rd6;
-    st.param.b64 [_p1_1], %rd10;
+    st.param.b64 [_p0_1], %rd7;
+    st.param.b64 [_p1_1], %rd11;
     call.uni (_rv_1), vprintf, (_p0_1, _p1_1);
-    ld.param.b32 %r4, [_rv_1];
+    ld.param.b32 %r5, [_rv_1];
     }
-    add.u64 %rd1, %rd0, 4;
-    ld.global.f32 %f0, [%rd1];
-    mov.u64 %rd11, _fmt_debug_print_2;
-    .local .align 8 .b8 _valist_2[16];
-    mov.u64 %rd12, _valist_2;
-    cvt.s64.s32 %rd13, 1;
-    st.local.u64 [%rd12], %rd13;
-    cvt.f64.f32 %fd1, %f0;
-    add.u64 %rd14, %rd12, 8;
-    st.local.f64 [%rd14], %fd1;
-    cvta.local.u64 %rd15, %rd12;
-    {
-    .param .b64 _p0_2;
-    .param .b64 _p1_2;
-    .param .b32 _rv_2;
-    st.param.b64 [_p0_2], %rd11;
-    st.param.b64 [_p1_2], %rd15;
-    call.uni (_rv_2), vprintf, (_p0_2, _p1_2);
-    ld.param.b32 %r5, [_rv_2];
-    }
-    add.u64 %rd1, %rd0, 8;
-    ld.global.f32 %f0, [%rd1];
-    mov.u64 %rd16, _fmt_debug_print_3;
-    .local .align 8 .b8 _valist_3[16];
-    mov.u64 %rd17, _valist_3;
-    cvt.s64.s32 %rd18, 2;
-    st.local.u64 [%rd17], %rd18;
-    cvt.f64.f32 %fd2, %f0;
-    add.u64 %rd19, %rd17, 8;
-    st.local.f64 [%rd19], %fd2;
-    cvta.local.u64 %rd20, %rd17;
-    {
-    .param .b64 _p0_3;
-    .param .b64 _p1_3;
-    .param .b32 _rv_3;
-    st.param.b64 [_p0_3], %rd16;
-    st.param.b64 [_p1_3], %rd20;
-    call.uni (_rv_3), vprintf, (_p0_3, _p1_3);
-    ld.param.b32 %r6, [_rv_3];
-    }
-    add.u64 %rd1, %rd0, 12;
-    ld.global.f32 %f0, [%rd1];
-    mov.u64 %rd21, _fmt_debug_print_4;
-    .local .align 8 .b8 _valist_4[16];
-    mov.u64 %rd22, _valist_4;
-    cvt.s64.s32 %rd23, 3;
-    st.local.u64 [%rd22], %rd23;
-    cvt.f64.f32 %fd3, %f0;
-    add.u64 %rd24, %rd22, 8;
-    st.local.f64 [%rd24], %fd3;
-    cvta.local.u64 %rd25, %rd22;
-    {
-    .param .b64 _p0_4;
-    .param .b64 _p1_4;
-    .param .b32 _rv_4;
-    st.param.b64 [_p0_4], %rd21;
-    st.param.b64 [_p1_4], %rd25;
-    call.uni (_rv_4), vprintf, (_p0_4, _p1_4);
-    ld.param.b32 %r7, [_rv_4];
-    }
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
+    bra for_cond_5;
+land_rhs_9:
+    setp.lt.s32 %p1, %r1, 4;
+    selp.s32 %r6, 1, 0, %p1;
+    mov.s32 %r3, %r6;
+    bra land_merge_11;
+land_skip_10:
+    mov.s32 %r3, 0;
+    bra land_merge_11;
+land_merge_11:
+    setp.ne.s32 %p2, %r3, 0;
+    @%p2 bra for_body_6;
     bra if_merge_4;
 }
 

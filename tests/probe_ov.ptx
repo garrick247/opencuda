@@ -30,8 +30,8 @@ if_merge_4:
 switch_exit_5:
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd4, %r3;
-    add.u64 %rd1, %rd0, %rd4;
-    st.global.s32 [%rd1], %r0;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.s32 [%rd0], %r0;
     bra if_merge_4;
 case_6:
     mov.s32 %r0, 10;
@@ -59,8 +59,12 @@ switch_next_17:
     bra switch_next_18;
 switch_next_18:
     setp.eq.s32 %p0, %r1, 3;
-    @%p0 bra case_11;
-    bra default_13;
+    @%p0 mov.s32 %r0, 30;
+    @!%p0 mov.s32 %r0, -1;
+    shl.b32 %r3, %r2, 2;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.s32 [%rd0], %r0;
+    bra if_merge_4;
 }
 
 .visible .entry struct_return(

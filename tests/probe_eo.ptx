@@ -23,11 +23,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.nc.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.nc.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.nc.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.nc.f32 %f1, [%rd2];
     add.f32 %f2, %f0, %f1;
     st.global.f32 [%rd3], %f2;
     bra if_merge_4;
@@ -51,7 +51,7 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    st.global.s32 [%rd0], %r0;
+    st.volatile.global.s32 [%rd0], %r0;
     bra if_merge_4;
 if_merge_4:
     ret;

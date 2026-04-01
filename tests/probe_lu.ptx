@@ -1,8 +1,12 @@
-[opencuda] Parsing tests/probe_lu.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_lu.ptx (5 kernels)
-[opencuda] Done.
-1>;
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry unroll_16(
+    .param .u64 out)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<1>;
     .reg .pred %p<1>;
 
 entry_1:

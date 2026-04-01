@@ -24,27 +24,11 @@ if_true_2:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.u32 %r1, [%rd2];
     setp.gt.u32 %p0, %r1, 2147483648;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.u32 %r0, 1;
-    bra tern_merge_7;
-tern_false_6:
-    mov.u32 %r0, 0;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.u32 %r0, 1;
+    @!%p0 mov.u32 %r0, 0;
     setp.ge.u32 %p0, %r1, 4294967295;
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.u32 %r3, 1;
-    bra tern_merge_10;
-tern_false_9:
-    mov.u32 %r3, 0;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p0 mov.u32 %r3, 1;
+    @!%p0 mov.u32 %r3, 0;
     shl.b32 %r4, %r2, 1;
     shl.b32 %r5, %r4, 2;
     cvt.s64.s32 %rd4, %r5;
@@ -56,6 +40,8 @@ tern_merge_10:
     add.u64 %rd2, %rd0, %rd5;
     st.global.u32 [%rd2], %r3;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry unsigned_wrap(

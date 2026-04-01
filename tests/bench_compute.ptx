@@ -27,8 +27,8 @@ entry_1:
 if_true_2:
     shl.b32 %r1, %r3, 2;
     cvt.s64.s32 %rd3, %r1;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd2];
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     mul.f32 %f1, 0f3C23D70A, %f0;
     add.f32 %f2, %f1, 0f3CA3D70A;
     mul.f32 %f1, %f2, %f0;
@@ -57,8 +57,8 @@ if_true_2:
     add.f32 %f2, %f1, 0f3E0F5C29;
     mul.f32 %f1, %f2, %f0;
     add.f32 %f0, %f1, 0f3E19999A;
-    add.u64 %rd1, %rd0, %rd3;
-    st.global.f32 [%rd1], %f0;
+    add.u64 %rd0, %rd0, %rd3;
+    st.global.f32 [%rd0], %f0;
     bra if_merge_4;
 if_merge_4:
     ret;

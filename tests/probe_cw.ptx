@@ -5,7 +5,7 @@
 .visible .entry vector_angles(
     .param .u64 out, .param .u64 a, .param .u64 b, .param .s32 n)
 {
-    .reg .f32 %f<10>;
+    .reg .f32 %f<14>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<6>;
     .reg .pred %p<1>;
@@ -26,66 +26,60 @@ if_true_2:
     add.u64 %rd3, %rd0, %rd4;
     shl.b32 %r1, %r2, 3;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd0, %rd1, %rd5;
-    add.u64 %rd1, %rd2, %rd5;
-    ld.global.f32 %f4, [%rd0];
-    ld.global.f32 %f5, [%rd0];
-    mul.f32 %f6, %f4, %f5;
+    add.u64 %rd1, %rd1, %rd5;
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f0, [%rd0];
     add.u64 %rd2, %rd0, 4;
-    ld.global.f32 %f4, [%rd2];
-    ld.global.f32 %f5, [%rd2];
-    mul.f32 %f7, %f4, %f5;
-    add.f32 %f4, %f6, %f7;
+    ld.global.f32 %f1, [%rd2];
+    ld.global.f32 %f2, [%rd2];
+    add.u64 %rd0, %rd2, 4;
+    ld.global.f32 %f3, [%rd0];
+    mul.f32 %f4, %f0, %f0;
+    mul.f32 %f5, %f1, %f1;
+    add.f32 %f6, %f4, %f5;
     bra inline_vec2_dot_merge_8;
 if_merge_4:
     ret;
 inline_vec2_angle_merge_5:
-    st.global.f32 [%rd3], %f9;
+    st.global.f32 [%rd3], %f4;
     bra if_merge_4;
 inline_vec2_norm_merge_6:
-    ld.global.f32 %f5, [%rd1];
-    ld.global.f32 %f6, [%rd1];
-    mul.f32 %f7, %f5, %f6;
-    add.u64 %rd2, %rd1, 4;
-    ld.global.f32 %f6, [%rd2];
-    ld.global.f32 %f8, [%rd2];
-    mul.f32 %f9, %f6, %f8;
-    add.f32 %f6, %f7, %f9;
+    mul.f32 %f5, %f2, %f2;
+    mul.f32 %f7, %f3, %f3;
+    add.f32 %f8, %f5, %f7;
     bra inline_vec2_dot_merge_14;
 inline_vec2_len_merge_7:
-    ld.global.f32 %f8, [%rd0];
-    add.u64 %rd2, %rd0, 4;
-    ld.global.f32 %f7, [%rd2];
+    div.approx.f32 %f7, %f0, %f9;
+    div.approx.f32 %f10, %f1, %f9;
     bra inline_vec2_norm_merge_6;
 inline_vec2_dot_merge_8:
-    sqrt.approx.f32 %f9, %f4;
+    sqrt.approx.f32 %f9, %f6;
     bra inline_vec2_len_merge_7;
 inline_vec2_norm_merge_12:
-    mul.f32 %f7, %f0, %f1;
-    mul.f32 %f5, %f2, %f3;
-    add.f32 %f8, %f7, %f5;
-    mov.f32 %f9, %f8;
+    mul.f32 %f5, %f7, %f9;
+    mul.f32 %f11, %f10, %f12;
+    add.f32 %f13, %f5, %f11;
     bra inline_vec2_dot_merge_18;
 inline_vec2_len_merge_13:
-    ld.global.f32 %f5, [%rd1];
-    add.u64 %rd2, %rd1, 4;
-    ld.global.f32 %f8, [%rd2];
+    div.approx.f32 %f9, %f2, %f11;
+    div.approx.f32 %f12, %f3, %f11;
     bra inline_vec2_norm_merge_12;
 inline_vec2_dot_merge_14:
-    sqrt.approx.f32 %f8, %f6;
+    sqrt.approx.f32 %f11, %f8;
     bra inline_vec2_len_merge_13;
 inline_vec2_dot_merge_18:
-    setp.gt.f32 %p0, %f9, 0f3F800000;
+    mov.f32 %f4, %f13;
+    setp.gt.f32 %p0, %f4, 0f3F800000;
     @%p0 bra if_true_20;
     bra if_merge_22;
 if_true_20:
-    mov.f32 %f9, 0f3F800000;
+    mov.f32 %f4, 0f3F800000;
     bra if_merge_22;
 if_merge_22:
-    setp.lt.f32 %p0, %f9, 0fBF800000;
+    setp.lt.f32 %p0, %f4, 0fBF800000;
     @%p0 bra if_true_23;
     bra inline_vec2_angle_merge_5;
 if_true_23:
-    mov.f32 %f9, 0fBF800000;
+    mov.f32 %f4, 0fBF800000;
     bra inline_vec2_angle_merge_5;
 }

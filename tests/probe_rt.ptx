@@ -6,7 +6,7 @@
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -20,12 +20,12 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.volatile.global.s32 %r1, [%rd2];
-    add.u64 %rd1, %rd0, %rd3;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.volatile.global.s32 %r1, [%rd1];
+    add.u64 %rd0, %rd0, %rd2;
     shl.b32 %r2, %r1, 1;
-    st.volatile.global.s32 [%rd1], %r2;
+    st.volatile.global.s32 [%rd0], %r2;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -146,11 +146,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.nc.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.nc.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.nc.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.nc.f32 %f1, [%rd2];
     add.f32 %f2, %f0, %f1;
     st.global.f32 [%rd3], %f2;
     bra if_merge_4;
@@ -179,9 +179,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.nc.f32 %f1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.nc.f32 %f1, [%rd1];
     mul.f32 %f2, %f1, %f0;
     st.global.f32 [%rd2], %f2;
     bra if_merge_4;
@@ -223,10 +223,10 @@ if_merge_4:
 if_true_5:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd6, %r0;
-    add.u64 %rd2, %rd0, %rd6;
-    ld.shared.s32 %r1, [%rd2];
-    add.u64 %rd3, %rd1, %rd6;
-    st.global.s32 [%rd3], %r1;
+    add.u64 %rd0, %rd0, %rd6;
+    ld.shared.s32 %r1, [%rd0];
+    add.u64 %rd1, %rd1, %rd6;
+    st.global.s32 [%rd1], %r1;
     membar.gl;
     bra if_merge_7;
 if_merge_7:

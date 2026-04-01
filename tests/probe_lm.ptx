@@ -1,10 +1,13 @@
-[opencuda] Parsing tests/probe_lm.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_lm.ptx (5 kernels)
-[opencuda] Done.
- .reg .f32 %f<4>;
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry float_ptr_arith(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .f32 %f<4>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -18,17 +21,17 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd2];
-    add.u64 %rd1, %rd2, 4;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd1, %rd1, 4;
     ld.global.f32 %f1, [%rd1];
-    add.u64 %rd1, %rd2, 8;
+    add.u64 %rd1, %rd1, 8;
     ld.global.f32 %f2, [%rd1];
-    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd0, %rd2;
     add.f32 %f3, %f0, %f1;
     add.f32 %f0, %f3, %f2;
-    st.global.f32 [%rd2], %f0;
+    st.global.f32 [%rd0], %f0;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -39,7 +42,7 @@ if_merge_4:
 {
     .reg .f64 %fd<3>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -53,14 +56,14 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 3;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.f64 %fd0, [%rd2];
-    add.u64 %rd1, %rd2, 8;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.f64 %fd0, [%rd1];
+    add.u64 %rd1, %rd1, 8;
     ld.global.f64 %fd1, [%rd1];
-    add.u64 %rd2, %rd0, %rd3;
+    add.u64 %rd0, %rd0, %rd2;
     mul.f64 %fd2, %fd0, %fd1;
-    st.global.f64 [%rd2], %fd2;
+    st.global.f64 [%rd0], %fd2;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -92,12 +95,12 @@ if_true_2:
     ld.global.f32 %f0, [%rd3];
     shl.b32 %r1, %r2, 3;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd1, %rd2, %rd5;
-    ld.global.f64 %fd0, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f64 %fd0, [%rd2];
     cvt.f64.f32 %fd2, %f0;
     add.f64 %fd1, %fd2, %fd0;
-    add.u64 %rd3, %rd0, %rd5;
-    st.global.f64 [%rd3], %fd1;
+    add.u64 %rd0, %rd0, %rd5;
+    st.global.f64 [%rd0], %fd1;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -108,7 +111,7 @@ if_merge_4:
 {
     .reg .f32 %f<3>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -123,15 +126,15 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd3];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f0, [%rd1];
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.f32 %f0, [%rd2];
     cvt.rn.f32.s32 %f2, %r1;
     add.f32 %f1, %f2, %f0;
-    add.u64 %rd3, %rd0, %rd4;
-    st.global.f32 [%rd3], %f1;
+    add.u64 %rd0, %rd0, %rd3;
+    st.global.f32 [%rd0], %f1;
     bra if_merge_4;
 if_merge_4:
     ret;

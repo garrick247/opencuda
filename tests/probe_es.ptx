@@ -6,7 +6,7 @@
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -20,15 +20,15 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd2];
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r1, [%rd1];
     setp.gt.s32 %p0, %r1, 0;
     vote.sync.ballot.b32 %r2, %p0, 4294967295;
-    add.u64 %rd1, %rd0, %rd3;
+    add.u64 %rd0, %rd0, %rd2;
     popc.b32 %r1, %r2;
     cvt.s32.s32 %r0, %r1;
-    st.global.s32 [%rd1], %r0;
+    st.global.s32 [%rd0], %r0;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -38,7 +38,7 @@ if_merge_4:
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<3>;
 
 entry_1:
@@ -52,18 +52,18 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd2];
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r1, [%rd1];
     setp.gt.s32 %p0, %r1, 0;
     vote.sync.any.pred %p1, %p0, 4294967295;
     selp.s32 %r2, 1, 0, %p1;
     vote.sync.all.pred %p2, %p0, 4294967295;
     selp.s32 %r1, 1, 0, %p2;
-    add.u64 %rd1, %rd0, %rd3;
+    add.u64 %rd0, %rd0, %rd2;
     shl.b32 %r0, %r2, 1;
     add.s32 %r2, %r0, %r1;
-    st.global.s32 [%rd1], %r2;
+    st.global.s32 [%rd0], %r2;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -91,6 +91,7 @@ if_true_2:
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
+    mov.f32 %f1, %f0;
     mov.s32 %r1, 16;
     bra for_cond_5;
 if_merge_4:
@@ -100,9 +101,9 @@ for_cond_5:
     @%p0 bra for_body_6;
     bra for_exit_8;
 for_body_6:
-    shfl.sync.down.b32 %f1, %f0, %r1, 31, 4294967295;
-    add.f32 %f2, %f0, %f1;
-    mov.f32 %f0, %f2;
+    shfl.sync.down.b32 %f0, %f1, %r1, 31, 4294967295;
+    add.f32 %f2, %f1, %f0;
+    mov.f32 %f1, %f2;
     bra for_inc_7;
 for_inc_7:
     shr.s32 %r0, %r1, 1;
@@ -118,6 +119,6 @@ if_true_9:
     shl.b32 %r3, %r0, 2;
     cvt.s64.s32 %rd4, %r3;
     add.u64 %rd1, %rd0, %rd4;
-    st.global.f32 [%rd1], %f0;
+    st.global.f32 [%rd1], %f1;
     bra if_merge_4;
 }

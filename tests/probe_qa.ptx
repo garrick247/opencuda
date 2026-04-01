@@ -150,8 +150,14 @@ if_true_2:
     st.local.s32 [%rd0], 0;
     st.local.s32 [%rd1], 0;
     setp.lt.s32 %p0, %r1, %r0;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
+    @%p0 mov.s32 %r4, %r1;
+    @!%p0 mov.s32 %r4, %r0;
+    st.local.s32 [%rd0], %r4;
+    setp.gt.s32 %p0, %r1, %r0;
+    @%p0 mov.s32 %r5, %r1;
+    @!%p0 mov.s32 %r5, %r0;
+    st.local.s32 [%rd1], %r5;
+    bra inline_minmax_merge_5;
 if_merge_4:
     ret;
 inline_minmax_merge_5:
@@ -159,31 +165,11 @@ inline_minmax_merge_5:
     ld.local.s32 %r4, [%rd1];
     shl.b32 %r5, %r2, 2;
     cvt.s64.s32 %rd8, %r5;
-    add.u64 %rd6, %rd2, %rd8;
-    st.global.s32 [%rd6], %r3;
-    add.u64 %rd5, %rd3, %rd8;
-    st.global.s32 [%rd5], %r4;
+    add.u64 %rd2, %rd2, %rd8;
+    st.global.s32 [%rd2], %r3;
+    add.u64 %rd3, %rd3, %rd8;
+    st.global.s32 [%rd3], %r4;
     bra if_merge_4;
-tern_true_6:
-    mov.s32 %r4, %r1;
-    bra tern_merge_8;
-tern_false_7:
-    mov.s32 %r4, %r0;
-    bra tern_merge_8;
-tern_merge_8:
-    st.local.s32 [%rd0], %r4;
-    setp.gt.s32 %p0, %r1, %r0;
-    @%p0 bra tern_true_9;
-    bra tern_false_10;
-tern_true_9:
-    mov.s32 %r5, %r1;
-    bra tern_merge_11;
-tern_false_10:
-    mov.s32 %r5, %r0;
-    bra tern_merge_11;
-tern_merge_11:
-    st.local.s32 [%rd1], %r5;
-    bra inline_minmax_merge_5;
 }
 
 .visible .entry accum_kernel(
@@ -256,9 +242,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     shl.b32 %r2, %r1, 1;
     bra inline_double_val_merge_7;
 if_merge_4:

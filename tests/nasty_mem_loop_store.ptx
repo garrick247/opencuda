@@ -5,7 +5,7 @@
 .visible .entry nasty_mem_loop_store(
     .param .u64 out, .param .u64 in, .param .s32 stride, .param .s32 n)
 {
-    .reg .f32 %f<3>;
+    .reg .f32 %f<2>;
     .reg .b32 %r<6>;
     .reg .b64 %rd<8>;
     .reg .pred %p<1>;
@@ -37,29 +37,24 @@ for_cond_5:
     shl.b32 %r1, %r5, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
-    cvt.rn.f32.s32 %f1, 1;
-    mul.f32 %f2, %f0, %f1;
-    st.global.f32 [%rd1], %f2;
+    st.global.f32 [%rd1], %f0;
     add.s32 %r3, %r5, 1;
     shl.b32 %r2, %r3, 2;
     cvt.s64.s32 %rd5, %r2;
     add.u64 %rd2, %rd0, %rd5;
-    cvt.rn.f32.s32 %f1, 2;
-    mul.f32 %f2, %f0, %f1;
-    st.global.f32 [%rd2], %f2;
+    mul.f32 %f1, %f0, 0f40000000;
+    st.global.f32 [%rd2], %f1;
     add.s32 %r1, %r5, 2;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd6, %r3;
     add.u64 %rd1, %rd0, %rd6;
-    cvt.rn.f32.s32 %f1, 3;
-    mul.f32 %f2, %f0, %f1;
-    st.global.f32 [%rd1], %f2;
+    mul.f32 %f1, %f0, 0f40400000;
+    st.global.f32 [%rd1], %f1;
     add.s32 %r2, %r5, 3;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd7, %r1;
     add.u64 %rd2, %rd0, %rd7;
-    cvt.rn.f32.s32 %f1, 4;
-    mul.f32 %f2, %f0, %f1;
-    st.global.f32 [%rd2], %f2;
+    mul.f32 %f1, %f0, 0f40800000;
+    st.global.f32 [%rd2], %f1;
     bra if_merge_4;
 }

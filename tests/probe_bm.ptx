@@ -4,7 +4,7 @@
 
 .visible .global .align 4 .s32 g_counter;
 .visible .global .align 4 .f32 g_scale;
-.visible .const .align 8 .u32 c_params;
+.visible .const .align 4 .b8 c_params[12];
 
 .visible .entry use_device_global(
     .param .u64 out, .param .s32 n)

@@ -42,8 +42,10 @@ for_body_6:
     setp.gt.s32 %p1, %r2, 0;
     st.local.s32 [%rd0], 0;
     st.local.s32 [%rd1], 0;
-    @%p1 bra tern_true_9;
-    bra tern_false_10;
+    @%p1 mov.u64 %rd4, %rd0;
+    @!%p1 mov.u64 %rd4, %rd1;
+    ld.local.s32 %r3, [%rd4];
+    bra for_inc_7;
 for_inc_7:
     add.s32 %r2, %r1, 1;
     mov.s32 %r1, %r2;
@@ -53,15 +55,6 @@ for_exit_8:
     add.u64 %rd4, %rd2, 4;
     st.global.s32 [%rd4], 0;
     bra if_merge_4;
-tern_true_9:
-    add.u64 %rd4, %rd0, 0;
-    bra tern_merge_11;
-tern_false_10:
-    add.u64 %rd4, %rd1, 0;
-    bra tern_merge_11;
-tern_merge_11:
-    ld.local.s32 %r3, [%rd4];
-    bra for_inc_7;
 }
 
 .visible .entry local_struct_array(
@@ -381,13 +374,13 @@ if_true_8:
     cvta.to.global.u64 %rd1, %rd1;
     shl.b32 %r0, %r1, 3;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd0, %rd1, %rd4;
-    add.u64 %rd1, %rd0, 4;
+    add.u64 %rd1, %rd1, %rd4;
+    add.u64 %rd1, %rd1, 4;
     st.global.s32 [%rd1], 0;
-    mov.u64 %rd0, g_cache;
-    cvta.to.global.u64 %rd0, %rd0;
-    add.u64 %rd1, %rd0, %rd4;
-    st.global.f32 [%rd1], 0f00000000;
+    mov.u64 %rd1, g_cache;
+    cvta.to.global.u64 %rd1, %rd1;
+    add.u64 %rd0, %rd0, %rd4;
+    st.global.f32 [%rd0], 0f00000000;
     bra if_merge_4;
 }
 
@@ -396,7 +389,7 @@ if_true_8:
 {
     .reg .f32 %f<1>;
     .reg .b32 %r<4>;
-    .reg .b64 %rd<6>;
+    .reg .b64 %rd<5>;
     .reg .pred %p<2>;
 
 entry_1:
@@ -427,15 +420,15 @@ if_true_5:
     mov.u64 %rd0, g_cache;
     cvta.to.global.u64 %rd0, %rd0;
     shl.b32 %r0, %r2, 3;
-    cvt.s64.s32 %rd5, %r0;
-    add.u64 %rd3, %rd0, %rd5;
-    ld.global.f32 %f0, [%rd3];
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd0, %rd0, %rd3;
+    ld.global.f32 %f0, [%rd0];
     st.global.f32 [%rd2], %f0;
     add.u64 %rd2, %rd1, %rd4;
     mov.u64 %rd0, g_cache;
     cvta.to.global.u64 %rd0, %rd0;
-    add.u64 %rd3, %rd0, %rd5;
-    add.u64 %rd1, %rd3, 4;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd0, 4;
     ld.global.s32 %r2, [%rd1];
     st.global.s32 [%rd2], %r2;
     bra if_merge_7;

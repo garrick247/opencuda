@@ -7,13 +7,13 @@
 {
     .shared .f32 warp_sums[8];
     .reg .f32 %f<3>;
-    .reg .b32 %r<6>;
+    .reg .b32 %r<9>;
     .reg .b64 %rd<15>;
-    .reg .pred %p<3>;
+    .reg .pred %p<4>;
 
-    mov.u64 %rd1, warp_sums;
+    mov.u64 %rd0, warp_sums;
 entry_1:
-    ld.param.u64 %rd0, [out_sum];
+    ld.param.u64 %rd1, [out_sum];
     ld.param.u64 %rd2, [out_mean];
     ld.param.u64 %rd3, [out_depth];
     ld.param.u64 %rd4, [nodes];
@@ -33,15 +33,9 @@ entry_1:
     add.u64 %rd5, %rd4, %rd7;
     add.u64 %rd6, %rd5, 12;
     ld.global.f32 %f0, [%rd6];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.f32 %f1, %f0;
-    bra tern_merge_4;
-tern_false_3:
-    mov.f32 %f1, 0f00000000;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.f32 %f1, %f0;
+    @!%p0 mov.f32 %f1, 0f00000000;
+    mov.f32 %f0, %f1;
     mov.s32 %r2, 16;
     bra for_cond_6;
 inline_reduce_warp_merge_5:
@@ -53,9 +47,9 @@ for_cond_6:
     @%p1 bra for_body_7;
     bra inline_reduce_warp_merge_5;
 for_body_7:
-    shfl.sync.down.b32 %f0, %f1, %r2, 31, 4294967295;
-    add.f32 %f2, %f1, %f0;
-    mov.f32 %f1, %f2;
+    shfl.sync.down.b32 %f1, %f0, %r2, 31, 4294967295;
+    add.f32 %f2, %f0, %f1;
+    mov.f32 %f0, %f2;
     bra for_inc_8;
 for_inc_8:
     shr.s32 %r5, %r2, 1;
@@ -64,90 +58,110 @@ for_inc_8:
 if_true_11:
     shl.b32 %r2, %r4, 2;
     cvt.s64.s32 %rd8, %r2;
-    add.u64 %rd5, %rd1, %rd8;
-    st.shared.f32 [%rd5], %f1;
+    add.u64 %rd5, %rd0, %rd8;
+    st.shared.f32 [%rd5], %f0;
     bra if_merge_13;
 if_merge_13:
     bar.sync 0;
     setp.eq.s32 %p0, %r4, 0;
+    @%p0 bra land_rhs_14;
+    bra land_skip_15;
+land_rhs_14:
     setp.lt.s32 %p1, %r1, 8;
-    and.pred %p2, %p0, %p1;
-    @%p2 bra if_true_14;
-    bra if_merge_16;
-if_true_14:
-    shl.b32 %r5, %r1, 2;
-    cvt.s64.s32 %rd9, %r5;
-    add.u64 %rd6, %rd1, %rd9;
-    ld.shared.f32 %f1, [%rd6];
-    mov.s32 %r4, 16;
-    bra for_cond_18;
-if_merge_16:
-    setp.lt.s32 %p0, %r3, %r0;
-    @%p0 bra if_true_26;
-    bra if_merge_28;
-inline_reduce_warp_merge_17:
-    setp.eq.s32 %p1, %r1, 0;
-    @%p1 bra if_true_23;
-    bra if_merge_16;
-for_cond_18:
-    setp.gt.s32 %p2, %r4, 0;
-    @%p2 bra for_body_19;
-    bra inline_reduce_warp_merge_17;
-for_body_19:
-    shfl.sync.down.b32 %f0, %f1, %r4, 31, 4294967295;
-    add.f32 %f2, %f1, %f0;
-    mov.f32 %f1, %f2;
-    bra for_inc_20;
-for_inc_20:
-    shr.s32 %r2, %r4, 1;
-    mov.s32 %r4, %r2;
-    bra for_cond_18;
-if_true_23:
-    atom.global.add.f32 %f0, [%rd0], %f1;
-    bra if_merge_16;
-if_true_26:
+    selp.s32 %r7, 1, 0, %p1;
+    mov.s32 %r5, %r7;
+    bra land_merge_16;
+land_skip_15:
     mov.s32 %r5, 0;
-    bra while_cond_30;
-if_merge_28:
+    bra land_merge_16;
+land_merge_16:
+    setp.ne.s32 %p2, %r5, 0;
+    @%p2 bra if_true_17;
+    bra if_merge_19;
+if_true_17:
+    shl.b32 %r4, %r1, 2;
+    cvt.s64.s32 %rd9, %r4;
+    add.u64 %rd6, %rd0, %rd9;
+    ld.shared.f32 %f0, [%rd6];
+    mov.s32 %r2, 16;
+    bra for_cond_21;
+if_merge_19:
+    setp.lt.s32 %p0, %r3, %r0;
+    @%p0 bra if_true_29;
+    bra if_merge_31;
+inline_reduce_warp_merge_20:
+    setp.eq.s32 %p1, %r1, 0;
+    @%p1 bra if_true_26;
+    bra if_merge_19;
+for_cond_21:
+    setp.gt.s32 %p2, %r2, 0;
+    @%p2 bra for_body_22;
+    bra inline_reduce_warp_merge_20;
+for_body_22:
+    shfl.sync.down.b32 %f1, %f0, %r2, 31, 4294967295;
+    add.f32 %f2, %f0, %f1;
+    mov.f32 %f0, %f2;
+    bra for_inc_23;
+for_inc_23:
+    shr.s32 %r5, %r2, 1;
+    mov.s32 %r2, %r5;
+    bra for_cond_21;
+if_true_26:
+    atom.global.add.f32 %f1, [%rd1], %f0;
+    bra if_merge_19;
+if_true_29:
+    mov.s32 %r4, 0;
+    bra while_cond_33;
+if_merge_31:
     ret;
-inline_find_depth_merge_29:
+inline_find_depth_merge_32:
     shl.b32 %r0, %r3, 2;
     cvt.s64.s32 %rd10, %r0;
     add.u64 %rd5, %rd3, %rd10;
-    st.global.s32 [%rd5], %r5;
+    st.global.s32 [%rd5], %r4;
     mul.lo.s32 %r1, %r3, 24;
     cvt.s64.s32 %rd11, %r1;
     add.u64 %rd0, %rd4, %rd11;
     add.u64 %rd1, %rd0, 20;
-    ld.global.s32 %r4, [%rd1];
-    setp.eq.s32 %p0, %r4, 2;
-    @%p0 bra if_true_34;
-    bra if_merge_28;
-while_cond_30:
-    mul.lo.s32 %r2, %r3, 24;
-    cvt.s64.s32 %rd12, %r2;
+    ld.global.s32 %r2, [%rd1];
+    setp.eq.s32 %p0, %r2, 2;
+    @%p0 bra if_true_40;
+    bra if_merge_31;
+while_cond_33:
+    mul.lo.s32 %r5, %r3, 24;
+    cvt.s64.s32 %rd12, %r5;
     add.u64 %rd6, %rd4, %rd12;
     ld.global.s32 %r1, [%rd6];
     setp.ne.s32 %p1, %r1, -1;
-    setp.lt.s32 %p2, %r5, 8;
-    and.pred %p0, %p1, %p2;
-    @%p0 bra while_body_31;
-    bra inline_find_depth_merge_29;
-while_body_31:
-    mul.lo.s32 %r4, %r3, 24;
-    cvt.s64.s32 %rd13, %r4;
+    @%p1 bra land_rhs_36;
+    bra land_skip_37;
+while_body_34:
+    mul.lo.s32 %r2, %r3, 24;
+    cvt.s64.s32 %rd13, %r2;
     add.u64 %rd5, %rd4, %rd13;
     ld.global.s32 %r1, [%rd5];
-    add.s32 %r4, %r5, 1;
-    mov.s32 %r5, %r4;
+    add.s32 %r6, %r4, 1;
+    mov.s32 %r4, %r6;
     mov.s32 %r3, %r1;
-    bra while_cond_30;
-if_true_34:
-    mul.lo.s32 %r0, %r3, 24;
-    cvt.s64.s32 %rd14, %r0;
+    bra while_cond_33;
+land_rhs_36:
+    setp.lt.s32 %p2, %r4, 8;
+    selp.s32 %r8, 1, 0, %p2;
+    mov.s32 %r1, %r8;
+    bra land_merge_38;
+land_skip_37:
+    mov.s32 %r1, 0;
+    bra land_merge_38;
+land_merge_38:
+    setp.ne.s32 %p3, %r1, 0;
+    @%p3 bra while_body_34;
+    bra inline_find_depth_merge_32;
+if_true_40:
+    mul.lo.s32 %r6, %r3, 24;
+    cvt.s64.s32 %rd14, %r6;
     add.u64 %rd0, %rd4, %rd14;
     add.u64 %rd1, %rd0, 12;
     ld.global.f32 %f2, [%rd1];
     st.global.f32 [%rd2], %f2;
-    bra if_merge_28;
+    bra if_merge_31;
 }

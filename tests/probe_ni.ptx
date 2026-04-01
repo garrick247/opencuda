@@ -40,103 +40,47 @@ for_body_6:
     add.u64 %rd4, %rd2, %rd5;
     ld.global.f32 %f3, [%rd4];
     setp.lt.f32 %p1, %f2, %f3;
-    @%p1 bra tern_true_10;
-    bra tern_false_11;
+    @%p1 mov.f32 %f6, %f2;
+    @!%p1 mov.f32 %f6, %f3;
+    setp.gt.f32 %p1, %f2, %f3;
+    @%p1 mov.f32 %f7, %f2;
+    @!%p1 mov.f32 %f7, %f3;
+    shl.b32 %r3, %r1, 2;
+    cvt.s64.s32 %rd6, %r3;
+    add.u64 %rd2, %rd2, %rd6;
+    ld.global.f32 %f4, [%rd2];
+    add.u64 %rd3, %rd3, %rd6;
+    ld.global.f32 %f5, [%rd3];
+    setp.lt.f32 %p1, %f4, %f5;
+    @%p1 mov.f32 %f8, %f4;
+    @!%p1 mov.f32 %f8, %f5;
+    setp.gt.f32 %p2, %f4, %f5;
+    @%p2 mov.f32 %f9, %f4;
+    @!%p2 mov.f32 %f9, %f5;
+    setp.lt.f32 %p1, %f6, %f8;
+    @%p1 mov.f32 %f4, %f6;
+    @!%p1 mov.f32 %f4, %f8;
+    setp.gt.f32 %p2, %f7, %f9;
+    @%p2 mov.f32 %f5, %f7;
+    @!%p2 mov.f32 %f5, %f9;
+    setp.lt.f32 %p1, %f0, %f4;
+    @%p1 mov.f32 %f6, %f0;
+    @!%p1 mov.f32 %f6, %f4;
+    setp.gt.f32 %p1, %f1, %f5;
+    @%p1 mov.f32 %f7, %f1;
+    @!%p1 mov.f32 %f7, %f5;
+    mov.f32 %f0, %f6;
+    mov.f32 %f1, %f7;
+    bra for_inc_7;
 for_inc_7:
     add.s32 %r2, %r1, 1;
     mov.s32 %r1, %r2;
     bra for_cond_5;
 for_exit_8:
     st.global.f32 [%rd0], %f0;
-    add.u64 %rd4, %rd0, 4;
-    st.global.f32 [%rd4], %f1;
+    add.u64 %rd3, %rd0, 4;
+    st.global.f32 [%rd3], %f1;
     bra if_merge_4;
-inline_make_minmax_merge_9:
-    shl.b32 %r3, %r1, 2;
-    cvt.s64.s32 %rd6, %r3;
-    add.u64 %rd4, %rd2, %rd6;
-    ld.global.f32 %f4, [%rd4];
-    add.u64 %rd4, %rd3, %rd6;
-    ld.global.f32 %f5, [%rd4];
-    setp.lt.f32 %p1, %f4, %f5;
-    @%p1 bra tern_true_18;
-    bra tern_false_19;
-tern_true_10:
-    mov.f32 %f6, %f2;
-    bra tern_merge_12;
-tern_false_11:
-    mov.f32 %f6, %f3;
-    bra tern_merge_12;
-tern_merge_12:
-    setp.gt.f32 %p1, %f2, %f3;
-    @%p1 bra tern_true_13;
-    bra tern_false_14;
-tern_true_13:
-    mov.f32 %f7, %f2;
-    bra inline_make_minmax_merge_9;
-tern_false_14:
-    mov.f32 %f7, %f3;
-    bra inline_make_minmax_merge_9;
-inline_make_minmax_merge_17:
-    setp.lt.f32 %p1, %f6, %f8;
-    @%p1 bra tern_true_26;
-    bra tern_false_27;
-tern_true_18:
-    mov.f32 %f8, %f4;
-    bra tern_merge_20;
-tern_false_19:
-    mov.f32 %f8, %f5;
-    bra tern_merge_20;
-tern_merge_20:
-    setp.gt.f32 %p2, %f4, %f5;
-    @%p2 bra tern_true_21;
-    bra tern_false_22;
-tern_true_21:
-    mov.f32 %f9, %f4;
-    bra inline_make_minmax_merge_17;
-tern_false_22:
-    mov.f32 %f9, %f5;
-    bra inline_make_minmax_merge_17;
-inline_merge_minmax_merge_25:
-    setp.lt.f32 %p1, %f0, %f4;
-    @%p1 bra tern_true_34;
-    bra tern_false_35;
-tern_true_26:
-    mov.f32 %f4, %f6;
-    bra tern_merge_28;
-tern_false_27:
-    mov.f32 %f4, %f8;
-    bra tern_merge_28;
-tern_merge_28:
-    setp.gt.f32 %p2, %f7, %f9;
-    @%p2 bra tern_true_29;
-    bra tern_false_30;
-tern_true_29:
-    mov.f32 %f5, %f7;
-    bra inline_merge_minmax_merge_25;
-tern_false_30:
-    mov.f32 %f5, %f9;
-    bra inline_merge_minmax_merge_25;
-inline_merge_minmax_merge_33:
-    mov.f32 %f0, %f6;
-    mov.f32 %f1, %f7;
-    bra for_inc_7;
-tern_true_34:
-    mov.f32 %f6, %f0;
-    bra tern_merge_36;
-tern_false_35:
-    mov.f32 %f6, %f4;
-    bra tern_merge_36;
-tern_merge_36:
-    setp.gt.f32 %p1, %f1, %f5;
-    @%p1 bra tern_true_37;
-    bra tern_false_38;
-tern_true_37:
-    mov.f32 %f7, %f1;
-    bra inline_merge_minmax_merge_33;
-tern_false_38:
-    mov.f32 %f7, %f5;
-    bra inline_merge_minmax_merge_33;
 }
 
 .visible .entry bucket_accumulate(
@@ -144,7 +88,7 @@ tern_false_38:
 {
     .reg .f32 %f<5>;
     .reg .b32 %r<11>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<3>;
 
 entry_1:
@@ -171,11 +115,11 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     shl.b32 %r4, %r3, 2;
-    cvt.s64.s32 %rd4, %r4;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f1, [%rd3];
-    add.u64 %rd3, %rd2, %rd4;
-    ld.global.s32 %r4, [%rd3];
+    cvt.s64.s32 %rd3, %r4;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.s32 %r4, [%rd2];
     mov.f32 %f2, 0f00000000;
     mov.s32 %r5, 0;
     mov.s32 %r6, %r4;
@@ -186,12 +130,12 @@ for_inc_7:
     bra for_cond_5;
 for_exit_8:
     st.global.f32 [%rd0], %f0;
-    add.u64 %rd3, %rd0, 4;
+    add.u64 %rd2, %rd0, 4;
     cvt.rn.f32.s32 %f3, %r1;
-    st.global.f32 [%rd3], %f3;
-    add.u64 %rd3, %rd0, 8;
+    st.global.f32 [%rd2], %f3;
+    add.u64 %rd2, %rd0, 8;
     cvt.rn.f32.s32 %f3, %r2;
-    st.global.f32 [%rd3], %f3;
+    st.global.f32 [%rd2], %f3;
     bra if_merge_4;
 inline_classify_bucket_merge_9:
     setp.ne.s32 %p1, %r2, %r6;
@@ -249,9 +193,9 @@ if_merge_27:
     .param .u64 out, .param .u64 in, .param .s32 n, .param .f32 tol)
 {
     .reg .f32 %f<4>;
-    .reg .b32 %r<6>;
+    .reg .b32 %r<7>;
     .reg .b64 %rd<4>;
-    .reg .pred %p<3>;
+    .reg .pred %p<2>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
@@ -284,14 +228,24 @@ do_body_5:
     bra do_cond_6;
 do_cond_6:
     setp.lt.s32 %p0, %r2, %r0;
-    setp.lt.f32 %p1, %f1, %f0;
-    and.pred %p2, %p0, %p1;
-    @%p2 bra do_body_5;
-    bra do_exit_7;
+    @%p0 bra land_rhs_8;
+    bra land_skip_9;
 do_exit_7:
     st.global.f32 [%rd0], %f1;
     add.u64 %rd2, %rd0, 4;
     cvt.rn.f32.s32 %f2, %r1;
     st.global.f32 [%rd2], %f2;
     bra if_merge_4;
+land_rhs_8:
+    setp.lt.f32 %p0, %f1, %f0;
+    selp.s32 %r6, 1, 0, %p0;
+    mov.s32 %r4, %r6;
+    bra land_merge_10;
+land_skip_9:
+    mov.s32 %r4, 0;
+    bra land_merge_10;
+land_merge_10:
+    setp.ne.s32 %p1, %r4, 0;
+    @%p1 bra do_body_5;
+    bra do_exit_7;
 }

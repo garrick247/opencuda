@@ -5,7 +5,7 @@
 .visible .global .align 4 .s32 g_lut[8];
 .visible .global .align 4 .s32 g_counter;
 .visible .global .align 4 .f32 g_scales[4];
-.visible .global .align 8 .u32 g_config;
+.visible .global .align 4 .b8 g_config[12];
 .visible .global .align 4 .s32 g_bins[16];
 .visible .global .align 4 .s32 g_bias;
 
@@ -154,9 +154,9 @@ if_true_2:
     div.s32 %r1, %r2, %r0;
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd2, %rd0, %rd4;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f1, [%rd3];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f1, [%rd1];
     mul.f32 %f2, %f1, %f0;
     add.s32 %r2, %r1, 1;
     cvt.rn.f32.s32 %f0, %r2;
@@ -203,7 +203,7 @@ if_merge_4:
     .param .u64 out)
 {
     .reg .b32 %r<2>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -215,12 +215,12 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r1, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd1, %rd0, %rd3;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd0, %rd0, %rd2;
     mov.u64 %rd0, g_bins;
     cvta.to.global.u64 %rd0, %rd0;
-    add.u64 %rd2, %rd0, %rd3;
-    ld.global.s32 %r1, [%rd2];
+    add.u64 %rd0, %rd0, %rd2;
+    ld.global.s32 %r1, [%rd0];
     st.global.s32 [%rd1], %r1;
     bra if_merge_4;
 if_merge_4:
@@ -246,9 +246,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     ld.global.s32 %r2, [g_bias];
     add.s32 %r0, %r1, %r2;
     bra inline_apply_bias_merge_5;
@@ -278,9 +278,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     ld.global.s32 %r2, [g_bias];
     add.s32 %r0, %r1, %r2;
     bra inline_apply_bias_merge_5;

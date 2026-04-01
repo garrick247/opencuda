@@ -1,0 +1,81 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry goto_skip(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    setp.le.s32 %p0, %r1, 1;
+    @%p0 bra lor_skip_6;
+    bra lor_rhs_5;
+if_merge_4:
+    ret;
+lor_rhs_5:
+    setp.ge.s32 %p0, 0, 100;
+    selp.s32 %r3, 1, 0, %p0;
+    mov.s32 %r0, %r3;
+    bra lor_merge_7;
+lor_skip_6:
+    mov.s32 %r0, 1;
+    bra lor_merge_7;
+lor_merge_7:
+    bra if_merge_10;
+if_merge_10:
+    rem.s32 %r0, %r1, 2;
+    setp.eq.s32 %p0, %r0, 0;
+    bra tern_merge_13;
+tern_merge_13:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd1, %rd0, %rd4;
+    st.global.s32 [%rd1], 1;
+    bra if_merge_4;
+}
+
+.visible .entry label_only(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.ge.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ret;
+if_merge_4:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r1, [%rd1];
+    shl.b32 %r2, %r1, 1;
+    add.s32 %r1, %r2, 1;
+    add.u64 %rd0, %rd0, %rd2;
+    st.global.s32 [%rd0], %r1;
+    ret;
+}

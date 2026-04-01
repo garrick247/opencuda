@@ -11,10 +11,10 @@
     .reg .b64 %rd<9>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, _local_18;
-    mov.u64 %rd2, _local_19;
+    mov.u64 %rd0, _local_18;
+    mov.u64 %rd1, _local_19;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd2, [out];
     ld.param.u64 %rd3, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -34,33 +34,33 @@ if_true_2:
     cvt.s64.s32 %rd6, %r3;
     add.u64 %rd4, %rd3, %rd6;
     ld.global.s32 %r1, [%rd4];
-    st.local.s32 [%rd1], %r2;
-    st.local.s32 [%rd2], %r1;
-    ld.local.s32 %r3, [%rd1];
-    ld.local.s32 %r2, [%rd2];
+    st.local.s32 [%rd0], %r2;
+    st.local.s32 [%rd1], %r1;
+    ld.local.s32 %r3, [%rd0];
+    ld.local.s32 %r2, [%rd1];
     setp.gt.s32 %p0, %r3, %r2;
     @%p0 bra if_true_6;
     bra inline_minmax_merge_5;
 if_merge_4:
     ret;
 inline_minmax_merge_5:
-    ld.local.s32 %r1, [%rd1];
-    ld.local.s32 %r3, [%rd2];
+    ld.local.s32 %r1, [%rd0];
+    ld.local.s32 %r3, [%rd1];
     shl.b32 %r2, %r0, 2;
     cvt.s64.s32 %rd7, %r2;
-    add.u64 %rd3, %rd0, %rd7;
+    add.u64 %rd3, %rd2, %rd7;
     st.global.s32 [%rd3], %r1;
     add.s32 %r2, %r0, 1;
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd8, %r4;
-    add.u64 %rd4, %rd0, %rd8;
+    add.u64 %rd4, %rd2, %rd8;
     st.global.s32 [%rd4], %r3;
     bra if_merge_4;
 if_true_6:
-    ld.local.s32 %r3, [%rd1];
-    ld.local.s32 %r2, [%rd2];
-    st.local.s32 [%rd1], %r2;
-    st.local.s32 [%rd2], %r3;
+    ld.local.s32 %r3, [%rd0];
+    ld.local.s32 %r2, [%rd1];
+    st.local.s32 [%rd0], %r2;
+    st.local.s32 [%rd1], %r3;
     bra inline_minmax_merge_5;
 }
 
@@ -106,10 +106,10 @@ for_cond_6:
 for_body_7:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd6, %r0;
-    add.u64 %rd2, %rd0, %rd6;
-    ld.global.s32 %r4, [%rd2];
-    add.u64 %rd2, %rd1, %rd6;
-    ld.global.s32 %r0, [%rd2];
+    add.u64 %rd0, %rd0, %rd6;
+    ld.global.s32 %r4, [%rd0];
+    add.u64 %rd1, %rd1, %rd6;
+    ld.global.s32 %r0, [%rd1];
     mul.lo.s32 %r5, %r4, %r0;
     add.s32 %r4, %r3, %r5;
     mov.s32 %r3, %r4;

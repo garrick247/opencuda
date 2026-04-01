@@ -267,12 +267,12 @@ for_exit_11:
     add.s32 %r1, %r8, %r6;
     shl.b32 %r0, %r1, 2;
     cvt.s64.s32 %rd10, %r0;
-    add.u64 %rd3, %rd0, %rd10;
-    st.global.f32 [%rd3], %f0;
-    add.u64 %rd4, %rd1, %rd10;
-    st.global.f32 [%rd4], %f1;
-    add.u64 %rd5, %rd2, %rd10;
-    st.global.f32 [%rd5], %f2;
+    add.u64 %rd0, %rd0, %rd10;
+    st.global.f32 [%rd0], %f0;
+    add.u64 %rd1, %rd1, %rd10;
+    st.global.f32 [%rd1], %f1;
+    add.u64 %rd2, %rd2, %rd10;
+    st.global.f32 [%rd2], %f2;
     ret;
 }
 
@@ -281,7 +281,7 @@ for_exit_11:
 {
     .reg .f32 %f<8>;
     .reg .b32 %r<6>;
-    .reg .b64 %rd<6>;
+    .reg .b64 %rd<5>;
     .reg .pred %p<2>;
 
 entry_1:
@@ -330,9 +330,9 @@ if_merge_7:
     add.u64 %rd2, %rd0, %rd4;
     ld.global.f32 %f2, [%rd2];
     shl.b32 %r0, %r1, 2;
-    cvt.s64.s32 %rd5, %r0;
-    add.u64 %rd3, %rd0, %rd5;
-    ld.global.f32 %f3, [%rd3];
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd0, %rd0, %rd3;
+    ld.global.f32 %f3, [%rd0];
     mul.f32 %f4, %f2, %f0;
     mul.f32 %f5, %f3, %f1;
     sub.f32 %f6, %f4, %f5;
@@ -340,11 +340,11 @@ if_merge_7:
     mul.f32 %f4, %f2, %f1;
     mul.f32 %f5, %f3, %f0;
     add.f32 %f6, %f4, %f5;
-    st.global.f32 [%rd3], %f6;
+    st.global.f32 [%rd0], %f6;
     add.u64 %rd0, %rd1, %rd4;
     ld.global.f32 %f2, [%rd0];
-    add.u64 %rd2, %rd1, %rd5;
-    ld.global.f32 %f3, [%rd2];
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f3, [%rd1];
     mul.f32 %f4, %f2, %f0;
     mul.f32 %f5, %f3, %f1;
     sub.f32 %f6, %f4, %f5;
@@ -352,7 +352,7 @@ if_merge_7:
     mul.f32 %f4, %f2, %f1;
     mul.f32 %f5, %f3, %f0;
     add.f32 %f6, %f4, %f5;
-    st.global.f32 [%rd2], %f6;
+    st.global.f32 [%rd1], %f6;
     ret;
 }
 
@@ -621,9 +621,9 @@ for_body_31:
     add.s32 %r2, %r9, %r1;
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd12, %r3;
-    add.u64 %rd0, %rd1, %rd12;
-    add.u64 %rd3, %rd2, %rd12;
-    ld.global.f32 %f3, [%rd3];
+    add.u64 %rd1, %rd1, %rd12;
+    add.u64 %rd2, %rd2, %rd12;
+    ld.global.f32 %f3, [%rd2];
     sub.f32 %f2, %f3, %f0;
     mul.f32 %f6, %f2, 0f3FB8AA3B;
     ex2.approx.f32 %f4, %f6;
@@ -889,9 +889,9 @@ for_exit_11:
     add.s32 %r2, %r8, %r6;
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd7, %r0;
-    add.u64 %rd1, %rd0, %rd7;
-    add.u64 %rd2, %rd3, %rd7;
-    ld.global.f32 %f2, [%rd2];
+    add.u64 %rd0, %rd0, %rd7;
+    add.u64 %rd3, %rd3, %rd7;
+    ld.global.f32 %f2, [%rd3];
     add.f32 %f3, %f0, %f2;
     st.global.f32 [%rd1], %f3;
     ret;

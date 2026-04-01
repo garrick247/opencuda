@@ -24,13 +24,13 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd5, %r0;
-    add.u64 %rd4, %rd0, %rd5;
-    add.u64 %rd0, %rd1, %rd5;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd5;
-    ld.global.f32 %f1, [%rd1];
-    add.u64 %rd0, %rd3, %rd5;
-    ld.global.f32 %f2, [%rd0];
+    add.u64 %rd0, %rd0, %rd5;
+    add.u64 %rd1, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f1, [%rd2];
+    add.u64 %rd3, %rd3, %rd5;
+    ld.global.f32 %f2, [%rd3];
     sub.f32 %f3, %f1, %f0;
     mul.f32 %f1, %f3, %f2;
     add.f32 %f2, %f0, %f1;
@@ -61,9 +61,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     setp.lt.s32 %p0, %r1, 0;
     @%p0 bra if_true_6;
     bra if_merge_8;
@@ -77,12 +77,8 @@ if_true_6:
     bra inline_clamp_i_merge_5;
 if_merge_8:
     setp.gt.s32 %p0, %r1, 255;
-    @%p0 bra if_true_10;
-    bra if_merge_12;
-if_true_10:
-    mov.s32 %r2, 255;
-    bra inline_clamp_i_merge_5;
-if_merge_12:
-    mov.s32 %r2, %r1;
-    bra inline_clamp_i_merge_5;
+    @%p0 mov.s32 %r2, 255;
+    @!%p0 mov.s32 %r2, %r1;
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
 }

@@ -156,15 +156,8 @@ for_inc_7:
     bra for_cond_5;
 for_exit_8:
     setp.lt.s32 %p0, %r2, %r1;
-    @%p0 bra tern_true_13;
-    bra tern_false_14;
-tern_true_13:
-    mov.s32 %r3, %r2;
-    bra tern_merge_15;
-tern_false_14:
-    mov.s32 %r3, -1;
-    bra tern_merge_15;
-tern_merge_15:
+    @%p0 mov.s32 %r3, %r2;
+    @!%p0 mov.s32 %r3, -1;
     st.global.s32 [%rd0], %r3;
     bra if_merge_4;
 }

@@ -1,8 +1,11 @@
-[opencuda] Parsing tests/probe_lj.cu...
-[opencuda] 4 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_lj.ptx (4 kernels)
-[opencuda] Done.
-u64 out, .param .u64 in, .param .s32 n)
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .global .align 4 .s32 g_counter;
+
+.visible .entry call_guard_return(
+    .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<3>;
     .reg .b64 %rd<4>;
@@ -20,9 +23,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     setp.gt.s32 %p0, %r1, 100;
     @%p0 bra if_true_6;
     bra if_merge_8;
@@ -36,20 +39,16 @@ if_true_6:
     bra inline_guard_return_merge_5;
 if_merge_8:
     setp.lt.s32 %p0, %r1, 0;
-    @%p0 bra if_true_10;
-    bra if_merge_12;
-if_true_10:
-    mov.s32 %r2, 0;
-    bra inline_guard_return_merge_5;
-if_merge_12:
-    mov.s32 %r2, %r1;
-    bra inline_guard_return_merge_5;
+    @%p0 mov.s32 %r2, 0;
+    @!%p0 mov.s32 %r2, %r1;
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
 }
 
 .visible .entry nested_device_call(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .b32 %r<4>;
+    .reg .b32 %r<5>;
     .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
@@ -65,9 +64,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     mul.lo.s32 %r0, %r1, %r1;
     add.s32 %r1, %r0, 1;
     bra inline_inner_fn_merge_6;
@@ -77,11 +76,11 @@ inline_outer_fn_merge_5:
     st.global.s32 [%rd2], %r0;
     bra if_merge_4;
 inline_inner_fn_merge_6:
-    mul.lo.s32 %r0, %r2, %r2;
-    add.s32 %r3, %r0, 1;
+    mul.lo.s32 %r3, %r2, %r2;
+    add.s32 %r4, %r3, 1;
     bra inline_inner_fn_merge_8;
 inline_inner_fn_merge_8:
-    add.s32 %r0, %r1, %r3;
+    add.s32 %r0, %r1, %r4;
     bra inline_outer_fn_merge_5;
 }
 

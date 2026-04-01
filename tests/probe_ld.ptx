@@ -92,34 +92,19 @@ if_merge_4:
 for_cond_5:
     ld.global.s32 %r1, [%rd1];
     add.s32 %r2, %r0, %r1;
-    add.u64 %rd2, %rd1, 4;
-    ld.global.s32 %r1, [%rd2];
-    add.s32 %r3, %r2, %r1;
     add.u64 %rd2, %rd1, 8;
-    ld.global.s32 %r2, [%rd2];
-    add.s32 %r1, %r3, %r2;
-    add.u64 %rd2, %rd1, 12;
-    ld.global.s32 %r3, [%rd2];
-    add.s32 %r2, %r1, %r3;
-    add.u64 %rd2, %rd1, 16;
     ld.global.s32 %r1, [%rd2];
     add.s32 %r3, %r2, %r1;
-    add.u64 %rd2, %rd1, 20;
+    add.u64 %rd2, %rd1, 16;
     ld.global.s32 %r2, [%rd2];
     add.s32 %r1, %r3, %r2;
     add.u64 %rd2, %rd1, 24;
     ld.global.s32 %r3, [%rd2];
     add.s32 %r2, %r1, %r3;
-    add.u64 %rd2, %rd1, 28;
+    add.u64 %rd2, %rd1, 32;
     ld.global.s32 %r1, [%rd2];
     add.s32 %r3, %r2, %r1;
-    add.u64 %rd2, %rd1, 32;
-    ld.global.s32 %r2, [%rd2];
-    add.s32 %r1, %r3, %r2;
-    add.u64 %rd2, %rd1, 36;
-    ld.global.s32 %r3, [%rd2];
-    add.s32 %r2, %r1, %r3;
-    mov.s32 %r0, %r2;
+    mov.s32 %r0, %r3;
     bra for_exit_8;
 for_exit_8:
     st.global.s32 [%rd0], %r0;

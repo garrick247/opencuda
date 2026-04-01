@@ -5,7 +5,7 @@
 .visible .entry lighting(
     .param .u64 out, .param .u64 normals, .param .u32 light_dir, .param .s32 n)
 {
-    .reg .f32 %f<15>;
+    .reg .f32 %f<13>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<5>;
     .reg .pred %p<1>;
@@ -24,67 +24,45 @@ if_true_2:
     mul.lo.s32 %r0, %r2, 12;
     cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f6, [%rd2];
-    ld.global.f32 %f7, [%rd2];
-    mul.f32 %f8, %f6, %f7;
+    ld.global.f32 %f0, [%rd2];
     add.u64 %rd1, %rd2, 4;
-    ld.global.f32 %f6, [%rd1];
-    ld.global.f32 %f7, [%rd1];
-    mul.f32 %f9, %f6, %f7;
-    add.f32 %f6, %f8, %f9;
+    ld.global.f32 %f1, [%rd1];
     add.u64 %rd1, %rd2, 8;
-    ld.global.f32 %f7, [%rd1];
-    ld.global.f32 %f8, [%rd1];
-    mul.f32 %f9, %f7, %f8;
-    add.f32 %f7, %f6, %f9;
-    sqrt.approx.f32 %f8, %f7;
+    ld.global.f32 %f2, [%rd1];
+    mul.f32 %f3, %f0, %f0;
+    mul.f32 %f4, %f1, %f1;
+    add.f32 %f5, %f3, %f4;
+    mul.f32 %f3, %f2, %f2;
+    add.f32 %f4, %f5, %f3;
+    sqrt.approx.f32 %f5, %f4;
     bra inline_length_merge_6;
 if_merge_4:
     ret;
 inline_normalize_merge_5:
-    mul.f32 %f6, %f0, %f0;
-    mul.f32 %f9, %f1, %f1;
-    add.f32 %f7, %f6, %f9;
-    mul.f32 %f9, %f2, %f2;
-    add.f32 %f10, %f7, %f9;
-    sqrt.approx.f32 %f7, %f10;
+    sqrt.approx.f32 %f3, 0f00000000;
     bra inline_length_merge_10;
 inline_length_merge_6:
-    ld.global.f32 %f9, [%rd2];
-    div.approx.f32 %f10, %f9, %f8;
-    add.u64 %rd1, %rd2, 4;
-    ld.global.f32 %f9, [%rd1];
-    div.approx.f32 %f11, %f9, %f8;
-    add.u64 %rd1, %rd2, 8;
-    ld.global.f32 %f9, [%rd1];
-    div.approx.f32 %f12, %f9, %f8;
+    div.approx.f32 %f4, %f0, %f5;
+    div.approx.f32 %f6, %f1, %f5;
+    div.approx.f32 %f7, %f2, %f5;
     bra inline_normalize_merge_5;
 inline_normalize_merge_9:
-    mul.f32 %f6, %f10, %f13;
-    mul.f32 %f9, %f11, %f9;
-    add.f32 %f13, %f6, %f9;
-    mul.f32 %f9, %f12, %f13;
-    add.f32 %f14, %f13, %f9;
+    mul.f32 %f8, %f4, %f9;
+    mul.f32 %f10, %f6, %f9;
+    add.f32 %f11, %f8, %f10;
+    mul.f32 %f10, %f7, %f9;
+    add.f32 %f12, %f11, %f10;
     bra inline_dot_merge_13;
 inline_length_merge_10:
-    div.approx.f32 %f13, %f3, %f7;
-    div.approx.f32 %f9, %f4, %f7;
-    div.approx.f32 %f13, %f5, %f7;
+    div.approx.f32 %f9, 0f00000000, %f3;
     bra inline_normalize_merge_9;
 inline_dot_merge_13:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
-    add.u64 %rd1, %rd0, %rd4;
-    setp.gt.f32 %p0, %f14, 0f00000000;
-    @%p0 bra tern_true_15;
-    bra tern_false_16;
-tern_true_15:
-    mov.f32 %f9, %f14;
-    bra tern_merge_17;
-tern_false_16:
-    mov.f32 %f9, 0f00000000;
-    bra tern_merge_17;
-tern_merge_17:
-    st.global.f32 [%rd1], %f9;
+    add.u64 %rd2, %rd0, %rd4;
+    setp.gt.f32 %p0, %f12, 0f00000000;
+    @%p0 mov.f32 %f3, %f12;
+    @!%p0 mov.f32 %f3, 0f00000000;
+    st.global.f32 [%rd2], %f3;
     bra if_merge_4;
 }

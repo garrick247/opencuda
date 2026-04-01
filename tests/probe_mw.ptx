@@ -56,10 +56,10 @@ for_inc_7:
 for_exit_8:
     shl.b32 %r6, %r3, 2;
     cvt.s64.s32 %rd7, %r6;
-    add.u64 %rd3, %rd0, %rd7;
-    st.global.f32 [%rd3], %f2;
-    add.u64 %rd2, %rd1, %rd7;
-    st.global.s32 [%rd2], %r2;
+    add.u64 %rd0, %rd0, %rd7;
+    st.global.f32 [%rd0], %f2;
+    add.u64 %rd1, %rd1, %rd7;
+    st.global.s32 [%rd1], %r2;
     bra if_merge_4;
 inline_advance_merge_9:
     mov.f32 %f2, %f1;
@@ -96,7 +96,7 @@ if_merge_16:
     .param .u64 out_pos, .param .u64 out_frame, .param .u64 in_pos, .param .u64 in_vel, .param .u64 in_active, .param .f32 dt, .param .f32 bound, .param .s32 steps, .param .s32 n)
 {
     .reg .f32 %f<11>;
-    .reg .b32 %r<12>;
+    .reg .b32 %r<13>;
     .reg .b64 %rd<8>;
     .reg .pred %p<5>;
 
@@ -148,15 +148,15 @@ for_inc_7:
 for_exit_8:
     shl.b32 %r6, %r3, 2;
     cvt.s64.s32 %rd7, %r6;
-    add.u64 %rd3, %rd0, %rd7;
-    st.global.f32 [%rd3], %f3;
-    add.u64 %rd2, %rd1, %rd7;
-    st.global.s32 [%rd2], %r2;
+    add.u64 %rd0, %rd0, %rd7;
+    st.global.f32 [%rd0], %f3;
+    add.u64 %rd1, %rd1, %rd7;
+    st.global.s32 [%rd1], %r2;
     bra if_merge_4;
 inline_advance_bounded_merge_9:
     setp.eq.s32 %p1, %r7, 0;
-    @%p1 bra if_true_28;
-    bra if_merge_30;
+    @%p1 bra if_true_31;
+    bra if_merge_33;
 if_true_10:
     mov.f32 %f5, %f3;
     mov.f32 %f6, %f4;
@@ -169,10 +169,8 @@ if_merge_12:
     bra if_merge_17;
 inline_advance_merge_14:
     setp.lt.f32 %p2, %f7, %f2;
-    setp.gt.f32 %p3, %f7, %f1;
-    or.pred %p4, %p2, %p3;
-    @%p4 bra if_true_23;
-    bra if_merge_25;
+    @%p2 bra lor_skip_24;
+    bra lor_rhs_23;
 if_true_15:
     mov.f32 %f7, %f3;
     mov.f32 %f8, %f4;
@@ -196,25 +194,37 @@ if_merge_21:
     mov.s32 %r9, %r11;
     mov.s32 %r10, %r4;
     bra inline_advance_merge_14;
-if_true_23:
+lor_rhs_23:
+    setp.gt.f32 %p2, %f7, %f1;
+    selp.s32 %r12, 1, 0, %p2;
+    mov.s32 %r11, %r12;
+    bra lor_merge_25;
+lor_skip_24:
+    mov.s32 %r11, 1;
+    bra lor_merge_25;
+lor_merge_25:
+    setp.ne.s32 %p4, %r11, 0;
+    @%p4 bra if_true_26;
+    bra if_merge_28;
+if_true_26:
     mov.f32 %f5, %f7;
     mov.f32 %f6, %f8;
     mov.s32 %r8, %r9;
     mov.s32 %r7, 0;
     bra inline_advance_bounded_merge_9;
-if_merge_25:
+if_merge_28:
     mov.f32 %f5, %f7;
     mov.f32 %f6, %f8;
     mov.s32 %r8, %r9;
     mov.s32 %r7, %r10;
     bra inline_advance_bounded_merge_9;
-if_true_28:
+if_true_31:
     mov.f32 %f3, %f5;
     mov.f32 %f4, %f6;
     mov.s32 %r2, %r8;
     mov.s32 %r4, %r7;
     bra for_exit_8;
-if_merge_30:
+if_merge_33:
     mov.f32 %f3, %f5;
     mov.f32 %f4, %f6;
     mov.s32 %r2, %r8;

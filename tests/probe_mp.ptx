@@ -21,9 +21,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     setp.lt.s32 %p0, %r1, 0;
     @%p0 bra if_true_6;
     bra if_merge_8;
@@ -51,14 +51,10 @@ if_true_14:
     bra inline_classify_merge_5;
 if_merge_16:
     setp.lt.s32 %p0, %r1, 100;
-    @%p0 bra if_true_18;
-    bra if_merge_20;
-if_true_18:
-    mov.s32 %r2, 2;
-    bra inline_classify_merge_5;
-if_merge_20:
-    mov.s32 %r2, 3;
-    bra inline_classify_merge_5;
+    @%p0 mov.s32 %r2, 2;
+    @!%p0 mov.s32 %r2, 3;
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
 }
 
 .visible .entry safe_div_kernel(
@@ -82,11 +78,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     setp.eq.f32 %p0, %f1, 0f00000000;
     @%p0 bra if_true_6;
     bra if_merge_8;
@@ -241,9 +237,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f2, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f2, [%rd1];
     sub.f32 %f3, %f1, %f0;
     setp.eq.f32 %p0, %f3, 0f00000000;
     @%p0 bra if_true_6;
@@ -270,14 +266,10 @@ if_true_11:
     bra inline_clamp_merge_10;
 if_merge_13:
     setp.gt.f32 %p0, %f5, 0f3F800000;
-    @%p0 bra if_true_15;
-    bra if_merge_17;
-if_true_15:
-    mov.f32 %f4, 0f3F800000;
-    bra inline_clamp_merge_10;
-if_merge_17:
-    mov.f32 %f4, %f5;
-    bra inline_clamp_merge_10;
+    @%p0 mov.f32 %f4, 0f3F800000;
+    @!%p0 mov.f32 %f4, %f5;
+    mov.f32 %f1, %f4;
+    bra inline_normalize_merge_5;
 }
 
 .visible .entry first_pos_kernel(

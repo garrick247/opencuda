@@ -241,15 +241,8 @@ entry_1:
     setp.lt.s32 %p0, %r2, %r0;
     add.u64 %rd4, %rd2, %rd5;
     ld.global.f32 %f0, [%rd4];
-    @%p0 bra tern_true_2;
-    bra tern_false_3;
-tern_true_2:
-    mov.f32 %f1, %f0;
-    bra tern_merge_4;
-tern_false_3:
-    mov.f32 %f1, 0f00000000;
-    bra tern_merge_4;
-tern_merge_4:
+    @%p0 mov.f32 %f1, %f0;
+    @!%p0 mov.f32 %f1, 0f00000000;
     st.shared.f32 [%rd3], %f1;
     bar.sync 0;
     shl.b32 %r1, %r2, 2;
@@ -262,15 +255,8 @@ tern_merge_4:
     cvt.s64.s32 %rd7, %r3;
     add.u64 %rd3, %rd0, %rd7;
     ld.shared.f32 %f1, [%rd3];
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-tern_true_5:
-    mov.f32 %f2, %f1;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f2, 0f00000000;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.f32 %f2, %f1;
+    @!%p0 mov.f32 %f2, 0f00000000;
     bar.sync 0;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd8, %r1;
@@ -284,9 +270,9 @@ tern_merge_7:
 if_true_8:
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd9, %r3;
-    add.u64 %rd2, %rd1, %rd9;
-    add.u64 %rd3, %rd0, %rd9;
-    ld.shared.f32 %f0, [%rd3];
+    add.u64 %rd1, %rd1, %rd9;
+    add.u64 %rd0, %rd0, %rd9;
+    ld.shared.f32 %f0, [%rd0];
     st.global.f32 [%rd2], %f0;
     bra if_merge_10;
 if_merge_10:
@@ -315,30 +301,14 @@ entry_1:
 if_true_2:
     mov.u32 %r1, %ctaid.x;
     setp.eq.u32 %p0, %r1, 0;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.s32 %r4, 1;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r4, 0;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.s32 %r4, 1;
+    @!%p0 mov.s32 %r4, 0;
     mov.u32 %r0, %tid.x;
     mov.u32 %r2, %ntid.x;
     sub.u32 %r1, %r2, 1;
     setp.eq.u32 %p0, %r0, %r1;
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.s32 %r0, 1;
-    bra tern_merge_10;
-tern_false_9:
-    mov.s32 %r0, 0;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p0 mov.s32 %r0, 1;
+    @!%p0 mov.s32 %r0, 0;
     shl.b32 %r2, %r3, 2;
     cvt.s64.s32 %rd2, %r2;
     add.u64 %rd1, %rd0, %rd2;
@@ -346,6 +316,8 @@ tern_merge_10:
     add.s32 %r2, %r1, %r0;
     st.global.s32 [%rd1], %r2;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry nested_atomic(

@@ -111,7 +111,7 @@ if_false_10:
 .visible .entry find_pair(
     .param .u64 out, .param .u64 a, .param .u64 b, .param .s32 n)
 {
-    .reg .b32 %r<10>;
+    .reg .b32 %r<13>;
     .reg .b64 %rd<7>;
     .reg .pred %p<4>;
 
@@ -135,51 +135,71 @@ if_merge_4:
     ret;
 for_cond_5:
     setp.lt.s32 %p0, %r4, %r0;
-    setp.eq.s32 %p1, %r3, 0;
-    and.pred %p2, %p0, %p1;
-    @%p2 bra for_body_6;
-    bra for_exit_8;
+    @%p0 bra land_rhs_9;
+    bra land_skip_10;
 for_body_6:
     add.s32 %r5, %r4, 1;
     mov.s32 %r6, %r5;
-    shl.b32 %r5, %r4, 2;
-    cvt.s64.s32 %rd5, %r5;
+    shl.b32 %r7, %r4, 2;
+    cvt.s64.s32 %rd5, %r7;
     add.u64 %rd3, %rd1, %rd5;
-    bra for_cond_9;
+    bra for_cond_12;
 for_inc_7:
-    add.s32 %r5, %r4, 1;
-    mov.s32 %r4, %r5;
+    add.s32 %r7, %r4, 1;
+    mov.s32 %r4, %r7;
     bra for_cond_5;
 for_exit_8:
     st.global.s32 [%rd0], %r1;
     add.u64 %rd4, %rd0, 4;
     st.global.s32 [%rd4], %r2;
     bra if_merge_4;
-for_cond_9:
+land_rhs_9:
+    setp.eq.s32 %p1, %r3, 0;
+    selp.s32 %r11, 1, 0, %p1;
+    mov.s32 %r8, %r11;
+    bra land_merge_11;
+land_skip_10:
+    mov.s32 %r8, 0;
+    bra land_merge_11;
+land_merge_11:
+    setp.ne.s32 %p2, %r8, 0;
+    @%p2 bra for_body_6;
+    bra for_exit_8;
+for_cond_12:
     setp.lt.s32 %p1, %r6, %r0;
-    setp.eq.s32 %p2, %r3, 0;
-    and.pred %p3, %p1, %p2;
-    @%p3 bra for_body_10;
-    bra for_inc_7;
-for_body_10:
-    ld.global.s32 %r7, [%rd3];
-    shl.b32 %r8, %r6, 2;
-    cvt.s64.s32 %rd6, %r8;
+    @%p1 bra land_rhs_16;
+    bra land_skip_17;
+for_body_13:
+    ld.global.s32 %r8, [%rd3];
+    shl.b32 %r9, %r6, 2;
+    cvt.s64.s32 %rd6, %r9;
     add.u64 %rd4, %rd2, %rd6;
-    ld.global.s32 %r8, [%rd4];
-    add.s32 %r9, %r7, %r8;
-    setp.eq.s32 %p2, %r9, 0;
-    @%p2 bra if_true_13;
-    bra for_inc_11;
-for_inc_11:
-    add.s32 %r7, %r6, 1;
-    mov.s32 %r6, %r7;
-    bra for_cond_9;
-if_true_13:
+    ld.global.s32 %r9, [%rd4];
+    add.s32 %r10, %r8, %r9;
+    setp.eq.s32 %p2, %r10, 0;
+    @%p2 bra if_true_19;
+    bra for_inc_14;
+for_inc_14:
+    add.s32 %r9, %r6, 1;
+    mov.s32 %r6, %r9;
+    bra for_cond_12;
+land_rhs_16:
+    setp.eq.s32 %p2, %r3, 0;
+    selp.s32 %r12, 1, 0, %p2;
+    mov.s32 %r10, %r12;
+    bra land_merge_18;
+land_skip_17:
+    mov.s32 %r10, 0;
+    bra land_merge_18;
+land_merge_18:
+    setp.ne.s32 %p3, %r10, 0;
+    @%p3 bra for_body_13;
+    bra for_inc_7;
+if_true_19:
     mov.s32 %r1, %r4;
     mov.s32 %r2, %r6;
     mov.s32 %r3, 1;
-    bra for_inc_11;
+    bra for_inc_14;
 }
 
 .visible .entry gcd_loop(

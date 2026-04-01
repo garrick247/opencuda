@@ -5,7 +5,7 @@
 .visible .entry atomic_cas_test(
     .param .u64 lock, .param .u64 out, .param .s32 tid_in)
 {
-    .reg .b32 %r<1>;
+    .reg .b32 %r<2>;
     .reg .b64 %rd<2>;
     .reg .pred %p<1>;
 
@@ -13,12 +13,12 @@ entry_1:
     ld.param.u64 %rd0, [lock];
     ld.param.u64 %rd1, [out];
     ld.param.s32 %r0, [tid_in];
-    atom.global.cas.b32 %r0, [%rd0], 0, 1;
-    setp.eq.s32 %p0, %r0, 0;
+    atom.global.cas.b32 %r1, [%rd0], 0, 1;
+    setp.eq.s32 %p0, %r1, 0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    ld.global.s32 %r0, [%rd1];
+    st.global.s32 [%rd1], %r0;
     atom.global.exch.b32 %r0, [%rd0], 0;
     bra if_merge_4;
 if_merge_4:

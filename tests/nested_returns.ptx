@@ -18,48 +18,41 @@ entry_1:
     mov.u32 %r3, %ntid.x;
     mul.lo.u32 %r4, %r2, %r3;
     add.u32 %r2, %r1, %r4;
-    setp.lt.u32 %p0, %r2, %r0;
+    cvt.s32.u32 %r3, %r2;
+    setp.lt.s32 %p0, %r3, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r3, %r2, 2;
-    cvt.u64.u32 %rd3, %r3;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r0, [%rd0];
-    setp.eq.s32 %p0, %r0, 0;
+    shl.b32 %r1, %r3, 2;
+    cvt.s64.s32 %rd3, %r1;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r4, [%rd1];
+    setp.eq.s32 %p0, %r4, 0;
     @%p0 bra if_true_6;
     bra if_merge_8;
 if_merge_4:
     ret;
 inline_sign_and_magnitude_merge_5:
-    st.global.s32 [%rd2], %r1;
+    st.global.s32 [%rd2], %r0;
     bra if_merge_4;
 if_true_6:
-    mov.s32 %r1, 0;
+    mov.s32 %r0, 0;
     bra inline_sign_and_magnitude_merge_5;
 if_merge_8:
-    setp.gt.s32 %p0, %r0, 0;
+    setp.gt.s32 %p0, %r4, 0;
     @%p0 bra if_true_10;
     bra if_false_11;
 if_true_10:
-    setp.gt.s32 %p0, %r0, 100;
-    @%p0 bra if_true_13;
-    bra if_merge_15;
+    setp.gt.s32 %p0, %r4, 100;
+    @%p0 mov.s32 %r0, 2;
+    @!%p0 mov.s32 %r0, 1;
+    st.global.s32 [%rd2], %r0;
+    bra if_merge_4;
 if_false_11:
-    setp.lt.s32 %p0, %r0, -100;
-    @%p0 bra if_true_18;
-    bra if_merge_20;
-if_true_13:
-    mov.s32 %r1, 2;
-    bra inline_sign_and_magnitude_merge_5;
-if_merge_15:
-    mov.s32 %r1, 1;
-    bra inline_sign_and_magnitude_merge_5;
-if_true_18:
-    mov.s32 %r1, -2;
-    bra inline_sign_and_magnitude_merge_5;
-if_merge_20:
-    mov.s32 %r1, -1;
-    bra inline_sign_and_magnitude_merge_5;
+    setp.lt.s32 %p0, %r4, -100;
+    @%p0 mov.s32 %r0, -2;
+    @!%p0 mov.s32 %r0, -1;
+    st.global.s32 [%rd2], %r0;
+    bra if_merge_4;
 }

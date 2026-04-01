@@ -19,6 +19,8 @@ def main():
     ap.add_argument("--out", default=None, help="Output .cubin")
     ap.add_argument("--emit-ptx", action="store_true",
                     help="Emit PTX text instead of cubin")
+    ap.add_argument("--arch", default="sm_120",
+                    help="Target architecture (sm_89 or sm_120)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -51,7 +53,7 @@ def main():
         # Concatenate all kernels into one PTX module
         all_ptx = []
         all_ptx.append('.version 9.0')
-        all_ptx.append('.target sm_120')
+        all_ptx.append(f'.target {args.arch}')
         all_ptx.append('.address_size 64')
         all_ptx.append('')
         # Emit module-level preamble (vprintf extern + format string globals) before kernels

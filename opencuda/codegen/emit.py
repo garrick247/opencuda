@@ -515,7 +515,7 @@ class PTXEmitter:
                     ptr_reg = m.group(2)
                     if dest_reg == ptr_reg:
                         continue
-                    scope_end = adds[k + 1][0] if k + 1 < len(adds) else len(body_lines)
+                    scope_end = len(body_lines)  # rename must reach store instructions after all adds
                     body_lines[add_i] = body_lines[add_i].replace(
                         f'add.u64 {dest_reg}, {ptr_reg}',
                         f'add.u64 {ptr_reg}, {ptr_reg}', 1)
@@ -686,7 +686,7 @@ class PTXEmitter:
                         continue
                     # Determine the scope: from this add to the next add (exclusive),
                     # or to end of body_lines if this is the last add.
-                    scope_end = adds[k + 1][0] if k + 1 < len(adds) else len(body_lines)
+                    scope_end = len(body_lines)  # rename must reach store instructions after all adds
                     # Rewrite the add itself to be in-place
                     body_lines[add_i] = body_lines[add_i].replace(
                         f'add.u64 {dest_reg}, {ptr_reg}',
@@ -716,7 +716,7 @@ class PTXEmitter:
         # Build the full PTX
         ptx = []
         ptx.append('.version 9.0')
-        ptx.append('.target sm_120')
+        ptx.append(f'.target {getattr(self, "_target", "sm_120")}')
         ptx.append('.address_size 64')
         ptx.append('')
 

@@ -1,0 +1,78 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .const .align 4 .s32 dc_int;
+.visible .const .align 4 .f32 cd_float;
+.visible .const .align 4 .f32 c_only;
+.visible .const .align 4 .s32 cd_table[8];
+
+.visible .entry const_qual_test(
+    .param .u64 out, .param .s32 n)
+{
+    .reg .f32 %f<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    ld.const.s32 %r0, [dc_int];
+    cvt.rn.f32.s32 %f0, %r0;
+    ld.const.f32 %f1, [cd_float];
+    mul.f32 %f2, %f0, %f1;
+    ld.const.f32 %f0, [c_only];
+    cvt.rn.f32.s32 %f1, %r2;
+    mul.f32 %f3, %f0, %f1;
+    add.f32 %f0, %f2, %f3;
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd2, %r1;
+    add.u64 %rd1, %rd0, %rd2;
+    st.global.f32 [%rd1], %f0;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+
+.visible .entry const_table_test(
+    .param .u64 out, .param .u64 idx, .param .s32 n)
+{
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<5>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [idx];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd2];
+    and.b32 %r3, %r1, 7;
+    add.u64 %rd1, %rd0, %rd3;
+    mov.u64 %rd2, cd_table;
+    cvta.to.const.u64 %rd2, %rd2;
+    shl.b32 %r0, %r3, 2;
+    cvt.s64.s32 %rd4, %r0;
+    add.u64 %rd0, %rd2, %rd4;
+    ld.global.nc.s32 %r1, [%rd0];
+    mul.lo.s32 %r3, %r1, %r2;
+    st.global.s32 [%rd1], %r3;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}

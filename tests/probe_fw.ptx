@@ -5,7 +5,7 @@
 .visible .entry vec_ops(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<5>;
+    .reg .f32 %f<9>;
     .reg .b32 %r<4>;
     .reg .b64 %rd<9>;
     .reg .pred %p<1>;
@@ -24,20 +24,29 @@ if_true_2:
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd5, %r1;
     add.u64 %rd2, %rd1, %rd5;
-    ld.global.f32 %f3, [%rd2];
+    ld.global.f32 %f0, [%rd2];
     add.s32 %r1, %r0, 1;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd6, %r3;
     add.u64 %rd3, %rd1, %rd6;
-    ld.global.f32 %f3, [%rd3];
+    ld.global.f32 %f1, [%rd3];
     add.s32 %r1, %r0, 2;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd7, %r3;
     add.u64 %rd4, %rd1, %rd7;
+    ld.global.f32 %f2, [%rd4];
     ld.global.f32 %f3, [%rd4];
-    ld.global.f32 %f3, [%rd4];
-    ld.global.f32 %f3, [%rd3];
-    ld.global.f32 %f3, [%rd2];
+    ld.global.f32 %f4, [%rd3];
+    ld.global.f32 %f5, [%rd2];
+    mul.f32 %f6, %f1, %f5;
+    mul.f32 %f7, %f2, %f4;
+    sub.f32 %f8, %f6, %f7;
+    mul.f32 %f6, %f2, %f3;
+    mul.f32 %f7, %f0, %f5;
+    sub.f32 %f2, %f6, %f7;
+    mul.f32 %f5, %f0, %f4;
+    mul.f32 %f6, %f1, %f3;
+    sub.f32 %f7, %f5, %f6;
     bra inline_cross3_merge_5;
 if_merge_4:
     ret;
@@ -45,8 +54,8 @@ inline_cross3_merge_5:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd8, %r0;
     add.u64 %rd1, %rd0, %rd8;
-    add.f32 %f3, %f0, %f1;
-    add.f32 %f4, %f3, %f2;
+    add.f32 %f0, %f8, %f2;
+    add.f32 %f4, %f0, %f7;
     st.global.f32 [%rd1], %f4;
     bra if_merge_4;
 }
@@ -54,7 +63,7 @@ inline_cross3_merge_5:
 .visible .entry dot_kernel(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<7>;
+    .reg .f32 %f<5>;
     .reg .b32 %r<4>;
     .reg .b64 %rd<8>;
     .reg .pred %p<1>;
@@ -73,12 +82,12 @@ if_true_2:
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd3, %r1;
     add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f0, [%rd2];
     add.s32 %r1, %r0, 1;
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd4, %r3;
     add.u64 %rd2, %rd1, %rd4;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f1, [%rd2];
     bra inline_make_float2_t_merge_5;
 if_merge_4:
     ret;
@@ -87,21 +96,21 @@ inline_make_float2_t_merge_5:
     shl.b32 %r3, %r1, 2;
     cvt.s64.s32 %rd5, %r3;
     add.u64 %rd2, %rd1, %rd5;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f2, [%rd2];
     shl.b32 %r1, %r0, 2;
     cvt.s64.s32 %rd6, %r1;
     add.u64 %rd2, %rd1, %rd6;
-    ld.global.f32 %f4, [%rd2];
+    ld.global.f32 %f3, [%rd2];
     bra inline_make_float2_t_merge_7;
 inline_make_float2_t_merge_7:
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd7, %r3;
     add.u64 %rd2, %rd0, %rd7;
-    mul.f32 %f4, %f0, %f1;
-    mul.f32 %f5, %f2, %f3;
-    add.f32 %f6, %f4, %f5;
+    mul.f32 %f4, %f0, %f2;
+    mul.f32 %f2, %f1, %f3;
+    add.f32 %f3, %f4, %f2;
     bra inline_dot2_merge_9;
 inline_dot2_merge_9:
-    st.global.f32 [%rd2], %f6;
+    st.global.f32 [%rd2], %f3;
     bra if_merge_4;
 }

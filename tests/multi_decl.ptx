@@ -5,7 +5,6 @@
 .visible .entry multi_decl_test(
     .param .u64 out, .param .s32 n)
 {
-    .reg .f32 %f<2>;
     .reg .b32 %r<3>;
     .reg .b64 %rd<4>;
     .reg .pred %p<1>;
@@ -19,20 +18,16 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    mov.s32 %r0, 6;
-    shl.b32 %r1, %r2, 1;
-    shl.b32 %r2, %r1, 2;
-    cvt.s64.s32 %rd2, %r2;
+    shl.b32 %r0, %r2, 1;
+    shl.b32 %r1, %r0, 2;
+    cvt.s64.s32 %rd2, %r1;
     add.u64 %rd1, %rd0, %rd2;
-    cvt.rn.f32.s32 %f0, %r0;
-    add.f32 %f1, 0f40400000, %f0;
-    st.global.f32 [%rd1], %f1;
-    add.s32 %r0, %r1, 1;
-    shl.b32 %r2, %r0, 2;
-    cvt.s64.s32 %rd3, %r2;
+    st.global.f32 [%rd1], 0f41100000;
+    add.s32 %r2, %r0, 1;
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd3, %r1;
     add.u64 %rd1, %rd0, %rd3;
-    cvt.rn.f32.s32 %f0, 2;
-    st.global.f32 [%rd1], %f0;
+    st.global.f32 [%rd1], 0f40000000;
     bra if_merge_4;
 if_merge_4:
     ret;

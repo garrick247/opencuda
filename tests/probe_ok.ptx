@@ -310,8 +310,10 @@ for_exit_8:
     setp.gt.s32 %p1, %r1, 0;
     cvt.rn.f32.s32 %f1, %r1;
     div.approx.f32 %f2, %f0, %f1;
-    @%p1 bra tern_true_12;
-    bra tern_false_13;
+    @%p1 mov.f32 %f1, %f2;
+    @!%p1 mov.f32 %f1, 0f00000000;
+    st.global.f32 [%rd0], %f1;
+    bra if_merge_4;
 if_true_9:
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd4, %r4;
@@ -322,13 +324,4 @@ if_true_9:
     mov.f32 %f0, %f3;
     mov.s32 %r1, %r4;
     bra for_inc_7;
-tern_true_12:
-    mov.f32 %f1, %f2;
-    bra tern_merge_14;
-tern_false_13:
-    mov.f32 %f1, 0f00000000;
-    bra tern_merge_14;
-tern_merge_14:
-    st.global.f32 [%rd0], %f1;
-    bra if_merge_4;
 }

@@ -92,7 +92,7 @@ for_exit_8:
 {
     .reg .f32 %f<3>;
     .reg .b32 %r<5>;
-    .reg .b64 %rd<6>;
+    .reg .b64 %rd<5>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -119,12 +119,12 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     shl.b32 %r3, %r2, 2;
-    cvt.s64.s32 %rd5, %r3;
-    add.u64 %rd4, %rd2, %rd5;
-    ld.global.f32 %f1, [%rd4];
+    cvt.s64.s32 %rd4, %r3;
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     add.f32 %f2, %f0, %f1;
-    add.u64 %rd4, %rd3, %rd5;
-    ld.global.s32 %r3, [%rd4];
+    add.u64 %rd3, %rd3, %rd4;
+    ld.global.s32 %r3, [%rd3];
     add.s32 %r4, %r1, %r3;
     mov.f32 %f0, %f2;
     mov.s32 %r1, %r4;

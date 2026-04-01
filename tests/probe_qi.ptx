@@ -7,7 +7,7 @@
 {
     .reg .f32 %f<5>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<2>;
 
 entry_1:
@@ -32,14 +32,14 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     shl.b32 %r2, %r1, 2;
-    cvt.s64.s32 %rd4, %r2;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f1, [%rd3];
-    ld.global.f32 %f2, [%rd3];
+    cvt.s64.s32 %rd3, %r2;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f1, [%rd1];
+    ld.global.f32 %f2, [%rd1];
     mul.f32 %f3, %f1, %f2;
-    add.u64 %rd3, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd3];
-    ld.global.f32 %f2, [%rd3];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.f32 %f1, [%rd2];
+    ld.global.f32 %f2, [%rd2];
     mul.f32 %f4, %f1, %f2;
     add.f32 %f1, %f3, %f4;
     setp.lt.f32 %p1, %f1, %f0;
@@ -83,41 +83,20 @@ if_true_2:
     setp.eq.s32 %p0, %r0, 0;
     setp.eq.s32 %p1, %r0, 1;
     setp.eq.s32 %p2, %r0, 2;
-    @%p2 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f1, 0f3DE978D5;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f1, 0f00000000;
-    bra tern_merge_7;
-tern_merge_7:
-    @%p1 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f32 %f2, 0f3F1645A2;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f32 %f2, %f1;
-    bra tern_merge_10;
-tern_merge_10:
-    @%p0 bra tern_true_11;
-    bra tern_false_12;
-tern_true_11:
-    mov.f32 %f1, 0f3E991687;
-    bra tern_merge_13;
-tern_false_12:
-    mov.f32 %f1, %f2;
-    bra tern_merge_13;
-tern_merge_13:
+    @%p2 mov.f32 %f1, 0f3DE978D5;
+    @!%p2 mov.f32 %f1, 0f00000000;
+    @%p1 mov.f32 %f2, 0f3F1645A2;
+    @!%p1 mov.f32 %f2, %f1;
+    @%p0 mov.f32 %f1, 0f3E991687;
+    @!%p0 mov.f32 %f1, %f2;
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
     add.u64 %rd1, %rd0, %rd4;
     mul.f32 %f2, %f0, %f1;
     st.global.f32 [%rd1], %f2;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry tensor3d_access(
@@ -300,17 +279,8 @@ if_true_2:
     cvt.s64.s32 %rd3, %r3;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f1, %f0;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f1, 0f00000000;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.f32 %f1, %f0;
+    @!%p0 mov.f32 %f1, 0f00000000;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd2, %rd1, %rd4;
@@ -322,15 +292,8 @@ tern_merge_7:
     cvt.s64.s32 %rd5, %r3;
     add.u64 %rd2, %rd1, %rd5;
     ld.global.f32 %f3, [%rd2];
-    @%p0 bra tern_true_8;
-    bra tern_false_9;
-tern_true_8:
-    mov.f32 %f4, %f3;
-    bra tern_merge_10;
-tern_false_9:
-    mov.f32 %f4, 0f00000000;
-    bra tern_merge_10;
-tern_merge_10:
+    @%p0 mov.f32 %f4, %f3;
+    @!%p0 mov.f32 %f4, 0f00000000;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd6, %r1;
     add.u64 %rd2, %rd0, %rd6;
@@ -341,6 +304,8 @@ tern_merge_10:
     add.f32 %f1, %f2, %f3;
     st.global.f32 [%rd2], %f1;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry block2d_kernel(
@@ -371,9 +336,9 @@ entry_1:
     cvt.s32.u32 %r5, %r0;
     shl.b32 %r4, %r5, 2;
     cvt.s64.s32 %rd3, %r4;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     add.s32 %r3, %r1, %r2;
     add.s32 %r0, %r3, 1;
     cvt.rn.f32.s32 %f1, %r0;

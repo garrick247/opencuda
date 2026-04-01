@@ -130,23 +130,16 @@ if_true_2:
     atom.global.add.s32 %r0, [%rd0], 1;
     setp.gt.s32 %p0, %r0, 5;
     sub.s32 %r0, 0, %r1;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.s32 %r3, %r1;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r3, %r0;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.s32 %r3, %r1;
+    @!%p0 mov.s32 %r3, %r0;
     add.s32 %r4, %r2, 1;
     shl.b32 %r5, %r4, 2;
     cvt.s64.s32 %rd4, %r5;
     add.u64 %rd1, %rd0, %rd4;
     st.global.s32 [%rd1], %r3;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry const_fold_boundary(
@@ -169,26 +162,19 @@ if_true_2:
     cvt.s64.s32 %rd2, %r0;
     add.u64 %rd1, %rd0, %rd2;
     setp.gt.s32 %p0, 2147483647, -2147483648;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.s32 %r1, -1073741827;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r1, -1073741823;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.s32 %r1, -1073741827;
+    @!%p0 mov.s32 %r1, -1073741823;
     st.global.s32 [%rd1], %r1;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry no_dead_volatile(
     .param .u64 shared_flag, .param .u64 out, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -202,12 +188,12 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    st.volatile.global.s32 [%rd2], %r2;
-    add.u64 %rd0, %rd1, %rd3;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd0, %rd0, %rd2;
+    st.volatile.global.s32 [%rd0], %r2;
+    add.u64 %rd1, %rd1, %rd2;
     shl.b32 %r1, %r2, 1;
-    st.global.s32 [%rd0], %r1;
+    st.global.s32 [%rd1], %r1;
     bra if_merge_4;
 if_merge_4:
     ret;
@@ -247,8 +233,11 @@ for_body_6:
     setp.gt.s32 %p1, %r1, %r3;
     sub.s32 %r4, %r1, %r3;
     sub.s32 %r5, %r3, %r1;
-    @%p1 bra tern_true_9;
-    bra tern_false_10;
+    @%p1 mov.s32 %r7, %r4;
+    @!%p1 mov.s32 %r7, %r5;
+    add.s32 %r8, %r0, %r7;
+    mov.s32 %r0, %r8;
+    bra for_inc_7;
 for_inc_7:
     add.s32 %r6, %r3, 1;
     mov.s32 %r3, %r6;
@@ -259,16 +248,6 @@ for_exit_8:
     add.u64 %rd1, %rd0, %rd4;
     st.global.s32 [%rd1], %r0;
     bra if_merge_4;
-tern_true_9:
-    mov.s32 %r7, %r4;
-    bra tern_merge_11;
-tern_false_10:
-    mov.s32 %r7, %r5;
-    bra tern_merge_11;
-tern_merge_11:
-    add.s32 %r8, %r0, %r7;
-    mov.s32 %r0, %r8;
-    bra for_inc_7;
 }
 
 .visible .entry multi_assign_same_var(

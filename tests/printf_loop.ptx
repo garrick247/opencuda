@@ -12,14 +12,15 @@
 .visible .entry printf_loop(
     .param .s32 n)
 {
-    .reg .b32 %r<6>;
+    .reg .b32 %r<7>;
     .reg .b64 %rd<24>;
     .reg .pred %p<1>;
 
 entry_1:
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
-    setp.eq.u32 %p0, %r1, 0;
+    cvt.s32.u32 %r2, %r1;
+    setp.eq.s32 %p0, %r2, 0;
     @%p0 bra for_cond_5;
     bra if_merge_4;
 if_merge_4:
@@ -41,7 +42,7 @@ for_cond_5:
     st.param.b64 [_p0_0], %rd0;
     st.param.b64 [_p1_0], %rd5;
     call.uni (_rv_0), vprintf, (_p0_0, _p1_0);
-    ld.param.b32 %r2, [_rv_0];
+    ld.param.b32 %r3, [_rv_0];
     }
     mov.u64 %rd6, _fmt_printf_loop_1;
     .local .align 8 .b8 _valist_1[16];
@@ -59,7 +60,7 @@ for_cond_5:
     st.param.b64 [_p0_1], %rd6;
     st.param.b64 [_p1_1], %rd11;
     call.uni (_rv_1), vprintf, (_p0_1, _p1_1);
-    ld.param.b32 %r3, [_rv_1];
+    ld.param.b32 %r4, [_rv_1];
     }
     mov.u64 %rd12, _fmt_printf_loop_2;
     .local .align 8 .b8 _valist_2[16];
@@ -77,7 +78,7 @@ for_cond_5:
     st.param.b64 [_p0_2], %rd12;
     st.param.b64 [_p1_2], %rd17;
     call.uni (_rv_2), vprintf, (_p0_2, _p1_2);
-    ld.param.b32 %r4, [_rv_2];
+    ld.param.b32 %r5, [_rv_2];
     }
     mov.u64 %rd18, _fmt_printf_loop_3;
     .local .align 8 .b8 _valist_3[16];
@@ -95,7 +96,7 @@ for_cond_5:
     st.param.b64 [_p0_3], %rd18;
     st.param.b64 [_p1_3], %rd23;
     call.uni (_rv_3), vprintf, (_p0_3, _p1_3);
-    ld.param.b32 %r5, [_rv_3];
+    ld.param.b32 %r6, [_rv_3];
     }
     bra if_merge_4;
 }

@@ -1,8 +1,9 @@
-[opencuda] Parsing tests/probe_ln.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_ln.ptx (5 kernels)
-[opencuda] Done.
-2 scale)
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry licm_correct(
+    .param .u64 out, .param .u64 in, .param .s32 n, .param .s32 scale)
 {
     .reg .b32 %r<6>;
     .reg .b64 %rd<4>;

@@ -5,15 +5,15 @@
 .visible .entry local_array2_test(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .local .align 4 .b8 buf_local[16];
+    .local .align 4 .b8 _local_6[16];
     .reg .f32 %f<3>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, buf_local;
+    mov.u64 %rd0, _local_6;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [out];
     ld.param.u64 %rd2, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -23,24 +23,24 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd2, %rd4;
-    ld.global.f32 %f0, [%rd3];
-    st.local.f32 [%rd1], %f0;
-    add.u64 %rd2, %rd1, 4;
-    ld.local.f32 %f0, [%rd1];
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.f32 %f0, [%rd2];
+    st.local.f32 [%rd0], %f0;
+    add.u64 %rd2, %rd0, 4;
+    ld.local.f32 %f0, [%rd0];
     mul.f32 %f1, %f0, 0f40000000;
     st.local.f32 [%rd2], %f1;
-    add.u64 %rd3, %rd1, 8;
-    ld.local.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd0, 8;
+    ld.local.f32 %f0, [%rd0];
     ld.local.f32 %f1, [%rd2];
     add.f32 %f2, %f0, %f1;
-    st.local.f32 [%rd3], %f2;
-    add.u64 %rd2, %rd1, 12;
-    ld.local.f32 %f0, [%rd3];
+    st.local.f32 [%rd2], %f2;
+    add.u64 %rd2, %rd0, 12;
+    ld.local.f32 %f0, [%rd2];
     div.approx.f32 %f1, %f0, 0f40400000;
     st.local.f32 [%rd2], %f1;
-    add.u64 %rd1, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd3;
     ld.local.f32 %f2, [%rd2];
     st.global.f32 [%rd1], %f2;
     bra if_merge_4;
@@ -51,14 +51,14 @@ if_merge_4:
 .visible .entry local_int_array_test(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .local .align 4 .b8 scratch_local[32];
+    .local .align 4 .b8 _local_6[32];
     .reg .b32 %r<5>;
     .reg .b64 %rd<7>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, scratch_local;
+    mov.u64 %rd0, _local_6;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [out];
     ld.param.u64 %rd2, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -73,32 +73,32 @@ for_cond_5:
     cvt.s64.s32 %rd5, %r0;
     add.u64 %rd3, %rd2, %rd5;
     ld.global.s32 %r1, [%rd3];
-    st.local.s32 [%rd1], %r1;
-    add.u64 %rd4, %rd1, 4;
+    st.local.s32 [%rd0], %r1;
+    add.u64 %rd4, %rd0, 4;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 1;
     st.local.s32 [%rd4], %r1;
-    add.u64 %rd4, %rd1, 8;
+    add.u64 %rd4, %rd0, 8;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 2;
     st.local.s32 [%rd4], %r1;
-    add.u64 %rd4, %rd1, 12;
+    add.u64 %rd4, %rd0, 12;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 3;
     st.local.s32 [%rd4], %r1;
-    add.u64 %rd4, %rd1, 16;
+    add.u64 %rd4, %rd0, 16;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 4;
     st.local.s32 [%rd4], %r1;
-    add.u64 %rd4, %rd1, 20;
+    add.u64 %rd4, %rd0, 20;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 5;
     st.local.s32 [%rd4], %r1;
-    add.u64 %rd4, %rd1, 24;
+    add.u64 %rd4, %rd0, 24;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 6;
     st.local.s32 [%rd4], %r1;
-    add.u64 %rd4, %rd1, 28;
+    add.u64 %rd4, %rd0, 28;
     ld.global.s32 %r0, [%rd3];
     add.s32 %r1, %r0, 7;
     st.local.s32 [%rd4], %r1;
@@ -107,27 +107,27 @@ for_exit_8:
     mov.s32 %r0, 0;
     bra for_cond_9;
 for_cond_9:
-    ld.local.s32 %r1, [%rd1];
+    ld.local.s32 %r1, [%rd0];
     add.s32 %r3, %r0, %r1;
-    add.u64 %rd3, %rd1, 4;
+    add.u64 %rd3, %rd0, 4;
     ld.local.s32 %r1, [%rd3];
     add.s32 %r4, %r3, %r1;
-    add.u64 %rd4, %rd1, 8;
+    add.u64 %rd4, %rd0, 8;
     ld.local.s32 %r3, [%rd4];
     add.s32 %r1, %r4, %r3;
-    add.u64 %rd3, %rd1, 12;
+    add.u64 %rd3, %rd0, 12;
     ld.local.s32 %r4, [%rd3];
     add.s32 %r3, %r1, %r4;
-    add.u64 %rd4, %rd1, 16;
+    add.u64 %rd4, %rd0, 16;
     ld.local.s32 %r1, [%rd4];
     add.s32 %r4, %r3, %r1;
-    add.u64 %rd3, %rd1, 20;
+    add.u64 %rd3, %rd0, 20;
     ld.local.s32 %r3, [%rd3];
     add.s32 %r1, %r4, %r3;
-    add.u64 %rd4, %rd1, 24;
+    add.u64 %rd4, %rd0, 24;
     ld.local.s32 %r4, [%rd4];
     add.s32 %r3, %r1, %r4;
-    add.u64 %rd3, %rd1, 28;
+    add.u64 %rd3, %rd0, 28;
     ld.local.s32 %r1, [%rd3];
     add.s32 %r4, %r3, %r1;
     mov.s32 %r0, %r4;
@@ -135,7 +135,7 @@ for_cond_9:
 for_exit_12:
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd6, %r3;
-    add.u64 %rd4, %rd0, %rd6;
+    add.u64 %rd4, %rd1, %rd6;
     st.global.s32 [%rd4], %r0;
     bra if_merge_4;
 }

@@ -153,11 +153,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 3;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s64 %rd1, [%rd0];
-    div.s64 %rd0, %rd1, 1000000007;
-    st.global.s64 [%rd2], %rd0;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s64 %rd1, [%rd1];
+    div.s64 %rd1, %rd1, 1000000007;
+    st.global.s64 [%rd2], %rd1;
     bra if_merge_4;
 if_merge_4:
     ret;

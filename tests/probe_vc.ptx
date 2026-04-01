@@ -22,11 +22,11 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.s32 %r2, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.s32 %r2, [%rd2];
     sub.s32 %r0, %r1, %r2;
     mov.s32 %r1, %r0;
     setp.lt.s32 %p0, %r1, 0;
@@ -209,39 +209,25 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     setp.gt.f32 %p0, %f0, 0f00000000;
-    @%p0 bra tern_true_7;
-    bra tern_false_8;
+    @%p0 mov.f32 %f4, %f0;
+    @!%p0 mov.f32 %f4, 0f00000000;
+    setp.gt.f32 %p0, %f0, 0f00000000;
+    mul.f32 %f3, %f1, %f0;
+    @%p0 mov.f32 %f5, %f0;
+    @!%p0 mov.f32 %f5, %f3;
+    add.f32 %f2, %f4, %f5;
+    bra inline_prelu_merge_5;
 if_merge_4:
     ret;
 inline_prelu_merge_5:
     st.global.f32 [%rd3], %f2;
     bra if_merge_4;
-inline_relu_merge_6:
-    setp.gt.f32 %p0, %f0, 0f00000000;
-    mul.f32 %f3, %f1, %f0;
-    @%p0 bra tern_true_12;
-    bra tern_false_13;
-tern_true_7:
-    mov.f32 %f4, %f0;
-    bra inline_relu_merge_6;
-tern_false_8:
-    mov.f32 %f4, 0f00000000;
-    bra inline_relu_merge_6;
-inline_leaky_relu_merge_11:
-    add.f32 %f2, %f4, %f5;
-    bra inline_prelu_merge_5;
-tern_true_12:
-    mov.f32 %f5, %f0;
-    bra inline_leaky_relu_merge_11;
-tern_false_13:
-    mov.f32 %f5, %f3;
-    bra inline_leaky_relu_merge_11;
 }
 
 .visible .entry use_first_bit(
@@ -275,8 +261,10 @@ inline_first_bit_set_merge_5:
     add.u64 %rd1, %rd0, %rd4;
     setp.ge.s32 %p0, %r4, 0;
     shl.b32 %r5, 1, %r4;
-    @%p0 bra tern_true_15;
-    bra tern_false_16;
+    @%p0 mov.s32 %r7, %r5;
+    @!%p0 mov.s32 %r7, 0;
+    st.global.s32 [%rd1], %r7;
+    bra if_merge_4;
 for_cond_6:
     setp.lt.s32 %p0, %r0, 32;
     @%p0 bra for_body_7;
@@ -297,15 +285,6 @@ for_exit_9:
 if_true_10:
     mov.s32 %r4, %r0;
     bra inline_first_bit_set_merge_5;
-tern_true_15:
-    mov.s32 %r7, %r5;
-    bra tern_merge_17;
-tern_false_16:
-    mov.s32 %r7, 0;
-    bra tern_merge_17;
-tern_merge_17:
-    st.global.s32 [%rd1], %r7;
-    bra if_merge_4;
 }
 
 .visible .entry multi_clamp(
@@ -344,14 +323,12 @@ if_true_6:
     bra inline_clamp_range_merge_5;
 if_merge_8:
     setp.gt.s32 %p0, %r1, 255;
-    @%p0 bra if_true_10;
-    bra if_merge_12;
-if_true_10:
-    mov.s32 %r3, 255;
-    bra inline_clamp_range_merge_5;
-if_merge_12:
-    mov.s32 %r3, %r1;
-    bra inline_clamp_range_merge_5;
+    @%p0 mov.s32 %r3, 255;
+    @!%p0 mov.s32 %r3, %r1;
+    sub.s32 %r0, %r1, 10;
+    setp.lt.s32 %p0, %r0, 0;
+    @%p0 bra if_true_16;
+    bra if_merge_18;
 inline_clamp_range_merge_15:
     add.s32 %r4, %r1, 10;
     setp.lt.s32 %p0, %r4, 50;
@@ -362,33 +339,31 @@ if_true_16:
     bra inline_clamp_range_merge_15;
 if_merge_18:
     setp.gt.s32 %p0, %r0, 100;
-    @%p0 bra if_true_20;
-    bra if_merge_22;
-if_true_20:
-    mov.s32 %r5, 100;
-    bra inline_clamp_range_merge_15;
-if_merge_22:
-    mov.s32 %r5, %r0;
-    bra inline_clamp_range_merge_15;
+    @%p0 mov.s32 %r5, 100;
+    @!%p0 mov.s32 %r5, %r0;
+    add.s32 %r4, %r1, 10;
+    setp.lt.s32 %p0, %r4, 50;
+    @%p0 bra if_true_26;
+    bra if_merge_28;
 inline_clamp_range_merge_25:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd1, %rd0, %rd4;
+    add.u64 %rd0, %rd0, %rd4;
     add.s32 %r6, %r3, %r5;
     add.s32 %r7, %r6, %r8;
-    st.global.s32 [%rd1], %r7;
+    st.global.s32 [%rd0], %r7;
     bra if_merge_4;
 if_true_26:
     mov.s32 %r8, 50;
     bra inline_clamp_range_merge_25;
 if_merge_28:
     setp.gt.s32 %p0, %r4, 200;
-    @%p0 bra if_true_30;
-    bra if_merge_32;
-if_true_30:
-    mov.s32 %r8, 200;
-    bra inline_clamp_range_merge_25;
-if_merge_32:
-    mov.s32 %r8, %r4;
-    bra inline_clamp_range_merge_25;
+    @%p0 mov.s32 %r8, 200;
+    @!%p0 mov.s32 %r8, %r4;
+    shl.b32 %r0, %r2, 2;
+    add.u64 %rd0, %rd0, %rd4;
+    add.s32 %r6, %r3, %r5;
+    add.s32 %r7, %r6, %r8;
+    st.global.s32 [%rd0], %r7;
+    bra if_merge_4;
 }

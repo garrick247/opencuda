@@ -5,9 +5,9 @@
 .visible .entry half_edges(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .f32 %f<1>;
+    .reg .f32 %f<2>;
     .reg .f16 %h<1>;
-    .reg .b32 %r<2>;
+    .reg .b32 %r<3>;
     .reg .b64 %rd<5>;
     .reg .pred %p<1>;
 
@@ -16,34 +16,36 @@ entry_1:
     ld.param.u64 %rd1, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
-    setp.lt.u32 %p0, %r1, %r0;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r0, %r1, 1;
-    cvt.u64.u32 %rd3, %r0;
+    shl.b32 %r0, %r2, 1;
+    cvt.s64.s32 %rd3, %r0;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.b16 %h0, [%rd2];
     cvt.f32.f16 %f0, %h0;
-    setp.gt.f32 %p0, %f0, 0f477FE000;
+    mov.f32 %f1, %f0;
+    setp.gt.f32 %p0, %f1, 0f477FE000;
     @%p0 bra if_true_5;
     bra if_merge_7;
 if_merge_4:
     ret;
 if_true_5:
-    mov.f32 %f0, 0f477FE000;
+    mov.f32 %f1, 0f477FE000;
     bra if_merge_7;
 if_merge_7:
-    setp.lt.f32 %p0, %f0, 0fC77FE000;
+    setp.lt.f32 %p0, %f1, 0fC77FE000;
     @%p0 bra if_true_8;
     bra if_merge_10;
 if_true_8:
-    mov.f32 %f0, 0fC77FE000;
+    mov.f32 %f1, 0fC77FE000;
     bra if_merge_10;
 if_merge_10:
-    shl.b32 %r0, %r1, 2;
-    cvt.u64.u32 %rd4, %r0;
+    shl.b32 %r1, %r2, 2;
+    cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
-    st.global.f32 [%rd1], %f0;
+    st.global.f32 [%rd1], %f1;
     bra if_merge_4;
 }

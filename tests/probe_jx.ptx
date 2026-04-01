@@ -242,12 +242,11 @@ for_body_6:
     cvt.s64.s32 %rd3, %r10;
     add.u64 %rd2, %rd1, %rd3;
     ld.global.s32 %r10, [%rd2];
-    shr.s32 %r11, %r10, 0;
-    and.b32 %r12, %r11, 1;
-    add.s32 %r11, %r1, %r12;
-    shr.s32 %r12, %r10, 1;
-    and.b32 %r13, %r12, 1;
-    add.s32 %r12, %r2, %r13;
+    and.b32 %r11, %r10, 1;
+    add.s32 %r12, %r1, %r11;
+    shr.s32 %r11, %r10, 1;
+    and.b32 %r13, %r11, 1;
+    add.s32 %r11, %r2, %r13;
     shr.s32 %r13, %r10, 2;
     and.b32 %r14, %r13, 1;
     add.s32 %r13, %r3, %r14;
@@ -266,8 +265,8 @@ for_body_6:
     shr.s32 %r18, %r10, 7;
     and.b32 %r10, %r18, 1;
     add.s32 %r18, %r8, %r10;
-    mov.s32 %r1, %r11;
-    mov.s32 %r2, %r12;
+    mov.s32 %r1, %r12;
+    mov.s32 %r2, %r11;
     mov.s32 %r3, %r13;
     mov.s32 %r4, %r14;
     mov.s32 %r5, %r15;
@@ -276,8 +275,8 @@ for_body_6:
     mov.s32 %r8, %r18;
     bra for_inc_7;
 for_inc_7:
-    add.s32 %r11, %r9, 1;
-    mov.s32 %r9, %r11;
+    add.s32 %r12, %r9, 1;
+    mov.s32 %r9, %r12;
     bra for_cond_5;
 for_exit_8:
     st.global.s32 [%rd0], %r1;

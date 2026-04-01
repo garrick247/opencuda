@@ -90,8 +90,14 @@ if_true_2:
     st.local.s32 [%rd0], 0;
     st.local.s32 [%rd1], 0;
     setp.lt.s32 %p0, %r1, 0;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
+    @%p0 mov.s32 %r3, %r1;
+    @!%p0 mov.s32 %r3, 0;
+    st.local.s32 [%rd0], %r3;
+    setp.gt.s32 %p0, %r1, 0;
+    @%p0 mov.s32 %r4, %r1;
+    @!%p0 mov.s32 %r4, 0;
+    st.local.s32 [%rd1], %r4;
+    bra inline_compute_pair_merge_5;
 if_merge_4:
     ret;
 inline_compute_pair_merge_5:
@@ -99,31 +105,11 @@ inline_compute_pair_merge_5:
     ld.local.s32 %r3, [%rd1];
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd7, %r4;
-    add.u64 %rd4, %rd2, %rd7;
-    st.global.s32 [%rd4], %r0;
-    add.u64 %rd5, %rd3, %rd7;
-    st.global.s32 [%rd5], %r3;
+    add.u64 %rd2, %rd2, %rd7;
+    st.global.s32 [%rd2], %r0;
+    add.u64 %rd3, %rd3, %rd7;
+    st.global.s32 [%rd3], %r3;
     bra if_merge_4;
-tern_true_6:
-    mov.s32 %r3, %r1;
-    bra tern_merge_8;
-tern_false_7:
-    mov.s32 %r3, 0;
-    bra tern_merge_8;
-tern_merge_8:
-    st.local.s32 [%rd0], %r3;
-    setp.gt.s32 %p0, %r1, 0;
-    @%p0 bra tern_true_9;
-    bra tern_false_10;
-tern_true_9:
-    mov.s32 %r4, %r1;
-    bra tern_merge_11;
-tern_false_10:
-    mov.s32 %r4, 0;
-    bra tern_merge_11;
-tern_merge_11:
-    st.local.s32 [%rd1], %r4;
-    bra inline_compute_pair_merge_5;
 }
 
 .visible .entry ptr_advance(
@@ -311,24 +297,17 @@ if_true_2:
     cvt.s64.u64 %rd2, %rd3;
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
+    add.u64 %rd0, %rd0, %rd4;
     cvt.s32.s64 %r1, %rd2;
     setp.lt.s32 %p0, %r2, %r1;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.s32 %r2, [%rd0];
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.s32 %r0, %r2;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r0, -1;
-    bra tern_merge_7;
-tern_merge_7:
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.s32 %r2, [%rd1];
+    @%p0 mov.s32 %r0, %r2;
+    @!%p0 mov.s32 %r0, -1;
     st.global.s32 [%rd3], %r0;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry arr_of_ptrs(

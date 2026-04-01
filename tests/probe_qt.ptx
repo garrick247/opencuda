@@ -153,19 +153,8 @@ for_body_6:
     add.u64 %rd1, %rd0, %rd3;
     ld.global.s32 %r2, [%rd1];
     setp.gt.s32 %p1, %r2, 0;
-    @%p1 bra tern_true_9;
-    bra tern_false_10;
-for_inc_7:
-    add.s32 %r2, %r1, 1;
-    mov.s32 %r1, %r2;
-    bra for_cond_5;
-tern_true_9:
-    mov.s32 %r3, 1;
-    bra tern_merge_11;
-tern_false_10:
-    mov.s32 %r3, 0;
-    bra tern_merge_11;
-tern_merge_11:
+    @%p1 mov.s32 %r3, 1;
+    @!%p1 mov.s32 %r3, 0;
     mov.u64 %rd1, g_tc;
     cvta.to.global.u64 %rd1, %rd1;
     ld.global.s32 %r4, [%rd1];
@@ -179,6 +168,10 @@ tern_merge_11:
     add.s32 %r3, %r5, %r4;
     st.global.s32 [%rd2], %r3;
     bra for_inc_7;
+for_inc_7:
+    add.s32 %r2, %r1, 1;
+    mov.s32 %r1, %r2;
+    bra for_cond_5;
 }
 
 .visible .entry update_cells(

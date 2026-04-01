@@ -94,7 +94,7 @@ inline_add_offset_merge_9:
     .param .u64 out, .param .u64 data, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -110,10 +110,10 @@ if_merge_4:
     ret;
 inline_triple2_merge_5:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd2, %rd0, %rd4;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.s32 %r1, [%rd3];
+    cvt.s64.s32 %rd3, %r0;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     add.s32 %r0, %r1, 12;
     st.global.s32 [%rd2], %r0;
     bra if_merge_4;
@@ -138,9 +138,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     shl.b32 %r2, %r1, 1;
     add.s32 %r0, %r2, 1;
     bra inline_inner_fn_merge_6;
@@ -178,9 +178,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     setp.lt.s32 %p0, %r1, -100;
     @%p0 bra if_true_6;
     bra if_merge_8;
@@ -194,14 +194,10 @@ if_true_6:
     bra inline_clamped_merge_5;
 if_merge_8:
     setp.gt.s32 %p0, %r1, 100;
-    @%p0 bra if_true_10;
-    bra if_merge_12;
-if_true_10:
-    mov.s32 %r2, 100;
-    bra inline_clamped_merge_5;
-if_merge_12:
-    mov.s32 %r2, %r1;
-    bra inline_clamped_merge_5;
+    @%p0 mov.s32 %r2, 100;
+    @!%p0 mov.s32 %r2, %r1;
+    st.global.s32 [%rd2], %r2;
+    bra if_merge_4;
 }
 
 .visible .entry loop_invariant_call(
@@ -319,12 +315,9 @@ land_skip_11:
     bra land_merge_12;
 land_merge_12:
     setp.ne.s32 %p2, %r9, 0;
-    @%p2 bra tern_true_13;
-    bra tern_false_14;
-tern_true_13:
-    mov.s32 %r8, 1;
-    bra inline_in_range_merge_9;
-tern_false_14:
-    mov.s32 %r8, 0;
-    bra inline_in_range_merge_9;
+    @%p2 mov.s32 %r8, 1;
+    @!%p2 mov.s32 %r8, 0;
+    add.s32 %r7, %r3, %r8;
+    mov.s32 %r3, %r7;
+    bra for_inc_7;
 }

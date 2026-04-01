@@ -26,8 +26,8 @@ if_true_2:
     add.u64 %rd3, %rd0, %rd4;
     mul.lo.s32 %r1, %r2, 24;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd0, %rd1, %rd5;
-    add.u64 %rd1, %rd2, %rd5;
+    add.u64 %rd1, %rd1, %rd5;
+    add.u64 %rd2, %rd2, %rd5;
     ld.global.f32 %f0, [%rd0];
     add.u64 %rd2, %rd0, 4;
     ld.global.f32 %f1, [%rd2];
@@ -39,16 +39,16 @@ if_true_2:
     ld.global.f32 %f4, [%rd2];
     add.u64 %rd2, %rd0, 20;
     ld.global.f32 %f5, [%rd2];
-    ld.global.f32 %f6, [%rd1];
-    add.u64 %rd0, %rd1, 4;
+    ld.global.f32 %f6, [%rd2];
+    add.u64 %rd0, %rd2, 4;
     ld.global.f32 %f7, [%rd0];
-    add.u64 %rd2, %rd1, 8;
+    add.u64 %rd2, %rd2, 8;
     ld.global.f32 %f8, [%rd2];
-    add.u64 %rd0, %rd1, 12;
+    add.u64 %rd0, %rd2, 12;
     ld.global.f32 %f9, [%rd0];
-    add.u64 %rd2, %rd1, 16;
+    add.u64 %rd2, %rd2, 16;
     ld.global.f32 %f10, [%rd2];
-    add.u64 %rd0, %rd1, 20;
+    add.u64 %rd0, %rd2, 20;
     ld.global.f32 %f11, [%rd0];
     sub.f32 %f12, %f0, %f6;
     div.approx.f32 %f0, %f12, %f9;
@@ -73,19 +73,12 @@ if_true_2:
     max.f32 %f7, %f6, %f0;
     min.f32 %f2, %f10, %f7;
     setp.ge.f32 %p0, %f2, %f9;
-    @%p0 bra tern_true_6;
-    bra tern_false_7;
-if_merge_4:
-    ret;
-inline_aabb_intersect_merge_5:
+    @%p0 mov.f32 %f3, %f9;
+    @!%p0 mov.f32 %f3, 0fBF800000;
     st.global.f32 [%rd3], %f3;
     bra if_merge_4;
-tern_true_6:
-    mov.f32 %f3, %f9;
-    bra inline_aabb_intersect_merge_5;
-tern_false_7:
-    mov.f32 %f3, 0fBF800000;
-    bra inline_aabb_intersect_merge_5;
+if_merge_4:
+    ret;
 }
 
 .visible .entry stats_kernel(
@@ -171,9 +164,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     setp.le.f32 %p0, %f0, 0f00000000;
     @%p0 bra if_true_6;
     bra if_merge_8;
@@ -220,15 +213,14 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd0];
-    mul.f32 %f1, 0f3F800000, %f0;
-    add.f32 %f2, %f1, 0fC0400000;
-    mul.f32 %f1, %f2, %f0;
-    add.f32 %f2, %f1, 0f40400000;
-    mul.f32 %f1, %f2, %f0;
-    add.f32 %f0, %f1, 0fBF800000;
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
+    add.f32 %f1, %f0, 0fC0400000;
+    mul.f32 %f2, %f1, %f0;
+    add.f32 %f1, %f2, 0f40400000;
+    mul.f32 %f2, %f1, %f0;
+    add.f32 %f0, %f2, 0fBF800000;
     bra inline_horner4_merge_5;
 if_merge_4:
     ret;

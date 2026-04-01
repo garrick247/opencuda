@@ -5,20 +5,20 @@
 .visible .entry mandelbrot(
     .param .u64 out, .param .f32 x0, .param .f32 y0, .param .f32 dx, .param .f32 dy, .param .s32 W, .param .s32 H, .param .s32 max_iter)
 {
-    .reg .f32 %f<1>;
-    .reg .b32 %r<8>;
+    .reg .f32 %f<12>;
+    .reg .b32 %r<10>;
     .reg .b64 %rd<3>;
-    .reg .pred %p<4>;
+    .reg .pred %p<3>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
     ld.param.f32 %f0, [x0];
-    ld.param.f32 %f0, [y0];
-    ld.param.f32 %f0, [dx];
-    ld.param.f32 %f0, [dy];
-    ld.param.s32 %r1, [W];
-    ld.param.s32 %r2, [H];
-    ld.param.s32 %r3, [max_iter];
+    ld.param.f32 %f1, [y0];
+    ld.param.f32 %f2, [dx];
+    ld.param.f32 %f3, [dy];
+    ld.param.s32 %r0, [W];
+    ld.param.s32 %r1, [H];
+    ld.param.s32 %r2, [max_iter];
     mov.u32 %r3, %tid.x;
     mov.u32 %r4, %ctaid.x;
     mov.u32 %r5, %ntid.x;
@@ -31,31 +31,77 @@ entry_1:
     mul.lo.u32 %r7, %r6, %r4;
     add.u32 %r6, %r3, %r7;
     cvt.s32.u32 %r4, %r6;
-    setp.ge.s32 %p0, %r5, %r1;
-    setp.ge.s32 %p1, %r4, %r2;
-    or.pred %p2, %p0, %p1;
-    @%p2 bra if_true_2;
-    bra if_merge_4;
-if_true_2:
+    setp.ge.s32 %p0, %r5, %r0;
+    @%p0 bra lor_skip_3;
+    bra lor_rhs_2;
+lor_rhs_2:
+    setp.ge.s32 %p0, %r4, %r1;
+    selp.s32 %r8, 1, 0, %p0;
+    mov.s32 %r3, %r8;
+    bra lor_merge_4;
+lor_skip_3:
+    mov.s32 %r3, 1;
+    bra lor_merge_4;
+lor_merge_4:
+    setp.ne.s32 %p1, %r3, 0;
+    @%p1 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
     ret;
-if_merge_4:
-    mov.s32 %r3, 0;
-    bra while_cond_5;
-while_cond_5:
-    sqrt.approx.f32 %f0, 0f00000000;
-    setp.ne.s32 %p3, %r0, 0;
-    @%p3 bra inline_complex_mul_merge_10;
-    bra while_exit_7;
-while_exit_7:
-    mul.lo.s32 %r7, %r4, %r1;
-    add.s32 %r2, %r7, %r5;
-    shl.b32 %r6, %r2, 2;
-    cvt.s64.s32 %rd2, %r6;
+if_merge_7:
+    cvt.rn.f32.s32 %f10, %r5;
+    mul.f32 %f4, %f10, %f2;
+    add.f32 %f2, %f0, %f4;
+    cvt.rn.f32.s32 %f11, %r4;
+    mul.f32 %f0, %f11, %f3;
+    add.f32 %f4, %f1, %f0;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f1, 0f00000000;
+    mov.s32 %r7, 0;
+    bra while_cond_8;
+while_cond_8:
+    setp.lt.s32 %p0, %r7, %r2;
+    @%p0 bra land_rhs_11;
+    bra land_skip_12;
+while_body_9:
+    mul.f32 %f0, %f3, %f3;
+    mul.f32 %f5, %f1, %f1;
+    sub.f32 %f6, %f0, %f5;
+    mul.f32 %f5, %f3, %f1;
+    add.f32 %f7, %f5, %f5;
+    bra inline_complex_mul_merge_16;
+while_exit_10:
+    mul.lo.s32 %r1, %r4, %r0;
+    add.s32 %r6, %r1, %r5;
+    shl.b32 %r3, %r6, 2;
+    cvt.s64.s32 %rd2, %r3;
     add.u64 %rd1, %rd0, %rd2;
-    st.global.s32 [%rd1], %r3;
+    st.global.s32 [%rd1], %r7;
     ret;
-inline_complex_mul_merge_10:
-    add.s32 %r7, %r3, 1;
-    mov.s32 %r3, %r7;
-    bra while_cond_5;
+land_rhs_11:
+    mul.f32 %f5, %f3, %f3;
+    mul.f32 %f8, %f1, %f1;
+    add.f32 %f9, %f5, %f8;
+    sqrt.approx.f32 %f5, %f9;
+    bra inline_complex_abs_merge_14;
+land_skip_12:
+    mov.s32 %r6, 0;
+    bra land_merge_13;
+land_merge_13:
+    setp.ne.s32 %p2, %r6, 0;
+    @%p2 bra while_body_9;
+    bra while_exit_10;
+inline_complex_abs_merge_14:
+    setp.lt.f32 %p1, %f5, 0f40000000;
+    selp.s32 %r9, 1, 0, %p1;
+    mov.s32 %r6, %r9;
+    bra land_merge_13;
+inline_complex_mul_merge_16:
+    add.f32 %f8, %f6, %f2;
+    add.f32 %f0, %f7, %f4;
+    add.s32 %r3, %r7, 1;
+    mov.f32 %f3, %f8;
+    mov.f32 %f1, %f0;
+    mov.s32 %r7, %r3;
+    bra while_cond_8;
 }

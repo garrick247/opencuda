@@ -5,10 +5,10 @@
 .visible .entry compute_iou(
     .param .u64 out, .param .u64 boxes, .param .s32 n)
 {
-    .reg .f32 %f<13>;
-    .reg .b32 %r<6>;
+    .reg .f32 %f<16>;
+    .reg .b32 %r<12>;
     .reg .b64 %rd<12>;
-    .reg .pred %p<4>;
+    .reg .pred %p<6>;
 
 entry_1:
     ld.param.u64 %rd0, [out];
@@ -19,13 +19,33 @@ entry_1:
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r3, %r1;
     setp.lt.s32 %p0, %r2, %r0;
-    setp.lt.s32 %p1, %r3, %r0;
-    and.pred %p2, %p0, %p1;
+    @%p0 bra land_rhs_2;
+    bra land_skip_3;
+land_rhs_2:
+    setp.lt.s32 %p0, %r3, %r0;
+    selp.s32 %r6, 1, 0, %p0;
+    mov.s32 %r1, %r6;
+    bra land_merge_4;
+land_skip_3:
+    mov.s32 %r1, 0;
+    bra land_merge_4;
+land_merge_4:
+    setp.ne.s32 %p1, %r1, 0;
+    @%p1 bra land_rhs_5;
+    bra land_skip_6;
+land_rhs_5:
     setp.ne.s32 %p0, %r2, %r3;
-    and.pred %p1, %p2, %p0;
-    @%p1 bra if_true_2;
-    bra if_merge_4;
-if_true_2:
+    selp.s32 %r7, 1, 0, %p0;
+    mov.s32 %r1, %r7;
+    bra land_merge_7;
+land_skip_6:
+    mov.s32 %r1, 0;
+    bra land_merge_7;
+land_merge_7:
+    setp.ne.s32 %p2, %r1, 0;
+    @%p2 bra if_true_8;
+    bra if_merge_10;
+if_true_8:
     shl.b32 %r1, %r2, 2;
     shl.b32 %r4, %r1, 2;
     cvt.s64.s32 %rd3, %r4;
@@ -75,90 +95,99 @@ if_true_2:
     add.f32 %f9, %f1, %f3;
     add.f32 %f10, %f4, %f6;
     add.f32 %f11, %f5, %f7;
-    setp.lt.f32 %p2, %f0, %f10;
-    setp.gt.f32 %p0, %f8, %f4;
-    and.pred %p1, %p2, %p0;
-    setp.lt.f32 %p2, %f1, %f11;
-    and.pred %p0, %p1, %p2;
-    setp.gt.f32 %p1, %f9, %f5;
-    and.pred %p2, %p0, %p1;
-    bra inline_boxes_overlap_merge_6;
-if_merge_4:
-    ret;
-inline_iou_merge_5:
-    st.global.f32 [%rd1], %f8;
-    bra if_merge_4;
-inline_boxes_overlap_merge_6:
-    not.pred %p0, %p2;
-    @%p0 bra if_true_8;
-    bra if_merge_10;
-if_true_8:
-    mov.f32 %f8, 0f00000000;
-    bra inline_iou_merge_5;
+    setp.lt.f32 %p0, %f0, %f10;
+    @%p0 bra land_rhs_13;
+    bra land_skip_14;
 if_merge_10:
-    add.f32 %f9, %f0, %f2;
-    add.f32 %f10, %f4, %f6;
-    setp.lt.f32 %p1, %f9, %f10;
-    @%p1 bra tern_true_12;
-    bra tern_false_13;
-tern_true_12:
-    mov.f32 %f11, %f9;
-    bra tern_merge_14;
-tern_false_13:
-    mov.f32 %f11, %f10;
-    bra tern_merge_14;
-tern_merge_14:
-    setp.gt.f32 %p0, %f0, %f4;
-    @%p0 bra tern_true_15;
-    bra tern_false_16;
-tern_true_15:
-    mov.f32 %f9, %f0;
-    bra tern_merge_17;
-tern_false_16:
-    mov.f32 %f9, %f4;
-    bra tern_merge_17;
-tern_merge_17:
-    sub.f32 %f10, %f11, %f9;
-    add.f32 %f11, %f1, %f3;
-    add.f32 %f9, %f5, %f7;
-    setp.lt.f32 %p1, %f11, %f9;
-    @%p1 bra tern_true_18;
-    bra tern_false_19;
-tern_true_18:
-    mov.f32 %f12, %f11;
-    bra tern_merge_20;
-tern_false_19:
-    mov.f32 %f12, %f9;
-    bra tern_merge_20;
-tern_merge_20:
-    setp.gt.f32 %p0, %f1, %f5;
-    @%p0 bra tern_true_21;
-    bra tern_false_22;
-tern_true_21:
-    mov.f32 %f11, %f1;
-    bra tern_merge_23;
-tern_false_22:
-    mov.f32 %f11, %f5;
-    bra tern_merge_23;
-tern_merge_23:
-    sub.f32 %f9, %f12, %f11;
-    setp.le.f32 %p1, %f10, 0f00000000;
-    setp.le.f32 %p0, %f9, 0f00000000;
-    or.pred %p3, %p1, %p0;
-    @%p3 bra if_true_24;
-    bra if_merge_26;
-if_true_24:
-    mov.f32 %f8, 0f00000000;
-    bra inline_iou_merge_5;
-if_merge_26:
-    mul.f32 %f12, %f10, %f9;
-    mul.f32 %f11, %f2, %f3;
-    mul.f32 %f10, %f6, %f7;
-    add.f32 %f9, %f11, %f10;
-    sub.f32 %f11, %f9, %f12;
-    div.approx.f32 %f10, %f12, %f11;
-    mov.f32 %f8, %f10;
-    bra inline_iou_merge_5;
+    ret;
+inline_iou_merge_11:
+    st.global.f32 [%rd1], %f10;
+    bra if_merge_10;
+inline_boxes_overlap_merge_12:
+    setp.eq.s32 %p0, %r0, 0;
+    @%p0 bra if_true_23;
+    bra if_merge_25;
+land_rhs_13:
+    setp.gt.f32 %p1, %f8, %f4;
+    selp.s32 %r8, 1, 0, %p1;
+    mov.s32 %r2, %r8;
+    bra land_merge_15;
+land_skip_14:
+    mov.s32 %r2, 0;
+    bra land_merge_15;
+land_merge_15:
+    setp.ne.s32 %p3, %r2, 0;
+    @%p3 bra land_rhs_16;
+    bra land_skip_17;
+land_rhs_16:
+    setp.lt.f32 %p1, %f1, %f11;
+    selp.s32 %r9, 1, 0, %p1;
+    mov.s32 %r3, %r9;
+    bra land_merge_18;
+land_skip_17:
+    mov.s32 %r3, 0;
+    bra land_merge_18;
+land_merge_18:
+    setp.ne.s32 %p4, %r3, 0;
+    @%p4 bra land_rhs_19;
+    bra land_skip_20;
+land_rhs_19:
+    setp.gt.f32 %p1, %f9, %f5;
+    selp.s32 %r10, 1, 0, %p1;
+    mov.s32 %r0, %r10;
+    bra inline_boxes_overlap_merge_12;
+land_skip_20:
+    mov.s32 %r0, 0;
+    bra inline_boxes_overlap_merge_12;
+if_true_23:
+    mov.f32 %f10, 0f00000000;
+    bra inline_iou_merge_11;
+if_merge_25:
+    add.f32 %f12, %f0, %f2;
+    add.f32 %f13, %f4, %f6;
+    setp.lt.f32 %p0, %f12, %f13;
+    @%p0 mov.f32 %f14, %f12;
+    @!%p0 mov.f32 %f14, %f13;
+    setp.gt.f32 %p1, %f0, %f4;
+    @%p1 mov.f32 %f12, %f0;
+    @!%p1 mov.f32 %f12, %f4;
+    sub.f32 %f13, %f14, %f12;
+    add.f32 %f14, %f1, %f3;
+    add.f32 %f12, %f5, %f7;
+    setp.lt.f32 %p0, %f14, %f12;
+    @%p0 mov.f32 %f15, %f14;
+    @!%p0 mov.f32 %f15, %f12;
+    setp.gt.f32 %p1, %f1, %f5;
+    @%p1 mov.f32 %f14, %f1;
+    @!%p1 mov.f32 %f14, %f5;
+    sub.f32 %f12, %f15, %f14;
+    setp.le.f32 %p0, %f13, 0f00000000;
+    @%p0 bra lor_skip_40;
+    bra lor_rhs_39;
+lor_rhs_39:
+    setp.le.f32 %p1, %f12, 0f00000000;
+    selp.s32 %r11, 1, 0, %p1;
+    mov.s32 %r1, %r11;
+    bra lor_merge_41;
+lor_skip_40:
+    mov.s32 %r1, 1;
+    bra lor_merge_41;
+lor_merge_41:
+    setp.ne.s32 %p5, %r1, 0;
+    @%p5 bra if_true_42;
+    bra if_merge_44;
+if_true_42:
+    mov.f32 %f10, 0f00000000;
+    bra inline_iou_merge_11;
+if_merge_44:
+    mul.f32 %f15, %f13, %f12;
+    mul.f32 %f14, %f2, %f3;
+    mul.f32 %f13, %f6, %f7;
+    add.f32 %f12, %f14, %f13;
+    sub.f32 %f14, %f12, %f15;
+    div.approx.f32 %f13, %f15, %f14;
+    mov.f32 %f10, %f13;
+    bra inline_iou_merge_11;
 }
 
 .visible .entry clamp_intervals(
@@ -220,25 +249,11 @@ if_true_10:
     bra inline_clamp_interval_merge_5;
 if_merge_12:
     setp.lt.f32 %p0, %f0, 0f00000000;
-    @%p0 bra tern_true_14;
-    bra tern_false_15;
-tern_true_14:
-    mov.f32 %f4, 0f00000000;
-    bra tern_merge_16;
-tern_false_15:
-    mov.f32 %f4, %f0;
-    bra tern_merge_16;
-tern_merge_16:
+    @%p0 mov.f32 %f4, 0f00000000;
+    @!%p0 mov.f32 %f4, %f0;
     setp.gt.f32 %p0, %f1, 0f3F800000;
-    @%p0 bra tern_true_17;
-    bra tern_false_18;
-tern_true_17:
-    mov.f32 %f5, 0f3F800000;
-    bra tern_merge_19;
-tern_false_18:
-    mov.f32 %f5, %f1;
-    bra tern_merge_19;
-tern_merge_19:
+    @%p0 mov.f32 %f5, 0f3F800000;
+    @!%p0 mov.f32 %f5, %f1;
     mov.f32 %f2, %f4;
     mov.f32 %f3, %f5;
     bra inline_clamp_interval_merge_5;
@@ -249,15 +264,15 @@ tern_merge_19:
 {
     .local .align 4 .b8 _local_7[16];
     .reg .f32 %f<2>;
-    .reg .b32 %r<5>;
+    .reg .b32 %r<9>;
     .reg .b64 %rd<8>;
-    .reg .pred %p<5>;
+    .reg .pred %p<7>;
 
-    mov.u64 %rd3, _local_7;
+    mov.u64 %rd0, _local_7;
 entry_1:
-    ld.param.u64 %rd0, [hist];
-    ld.param.u64 %rd1, [xs];
-    ld.param.u64 %rd2, [ys];
+    ld.param.u64 %rd1, [hist];
+    ld.param.u64 %rd2, [xs];
+    ld.param.u64 %rd3, [ys];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r2, %r1;
@@ -265,12 +280,12 @@ entry_1:
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    st.local.s32 [%rd3], 0;
-    add.u64 %rd4, %rd3, 4;
+    st.local.s32 [%rd0], 0;
+    add.u64 %rd4, %rd0, 4;
     st.local.s32 [%rd4], 0;
-    add.u64 %rd4, %rd3, 8;
+    add.u64 %rd4, %rd0, 8;
     st.local.s32 [%rd4], 0;
-    add.u64 %rd4, %rd3, 12;
+    add.u64 %rd4, %rd0, 12;
     st.local.s32 [%rd4], 0;
     mov.s32 %r1, 0;
     bra for_cond_5;
@@ -283,69 +298,106 @@ for_cond_5:
 for_body_6:
     shl.b32 %r2, %r1, 2;
     cvt.s64.s32 %rd6, %r2;
-    add.u64 %rd4, %rd1, %rd6;
-    ld.global.f32 %f0, [%rd4];
     add.u64 %rd4, %rd2, %rd6;
+    ld.global.f32 %f0, [%rd4];
+    add.u64 %rd4, %rd3, %rd6;
     ld.global.f32 %f1, [%rd4];
     setp.ge.f32 %p1, %f0, 0f00000000;
-    setp.ge.f32 %p2, %f1, 0f00000000;
-    and.pred %p3, %p1, %p2;
-    @%p3 bra if_true_10;
-    bra if_merge_12;
+    @%p1 bra land_rhs_10;
+    bra land_skip_11;
 for_inc_7:
     add.s32 %r2, %r1, 1;
     mov.s32 %r1, %r2;
     bra for_cond_5;
 for_exit_8:
-    ld.local.s32 %r3, [%rd3];
-    st.global.s32 [%rd0], %r3;
-    add.u64 %rd4, %rd0, 4;
-    add.u64 %rd5, %rd3, 4;
+    ld.local.s32 %r3, [%rd0];
+    st.global.s32 [%rd1], %r3;
+    add.u64 %rd4, %rd1, 4;
+    add.u64 %rd5, %rd0, 4;
     ld.local.s32 %r3, [%rd5];
     st.global.s32 [%rd4], %r3;
-    add.u64 %rd4, %rd0, 8;
-    add.u64 %rd5, %rd3, 8;
+    add.u64 %rd4, %rd1, 8;
+    add.u64 %rd5, %rd0, 8;
     ld.local.s32 %r3, [%rd5];
     st.global.s32 [%rd4], %r3;
-    add.u64 %rd4, %rd0, 12;
-    add.u64 %rd5, %rd3, 12;
+    add.u64 %rd4, %rd1, 12;
+    add.u64 %rd5, %rd0, 12;
     ld.local.s32 %r3, [%rd5];
     st.global.s32 [%rd4], %r3;
     bra if_merge_4;
 inline_classify_point_merge_9:
     setp.ge.s32 %p1, %r3, 0;
-    setp.lt.s32 %p2, %r3, 4;
-    and.pred %p3, %p1, %p2;
-    @%p3 bra if_true_23;
-    bra for_inc_7;
-if_true_10:
+    @%p1 bra land_rhs_32;
+    bra land_skip_33;
+land_rhs_10:
+    setp.ge.f32 %p2, %f1, 0f00000000;
+    selp.s32 %r5, 1, 0, %p2;
+    mov.s32 %r4, %r5;
+    bra land_merge_12;
+land_skip_11:
+    mov.s32 %r4, 0;
+    bra land_merge_12;
+land_merge_12:
+    setp.ne.s32 %p3, %r4, 0;
+    @%p3 bra if_true_13;
+    bra if_merge_15;
+if_true_13:
     mov.s32 %r3, 0;
     bra inline_classify_point_merge_9;
-if_merge_12:
+if_merge_15:
     setp.lt.f32 %p2, %f0, 0f00000000;
-    setp.ge.f32 %p3, %f1, 0f00000000;
-    and.pred %p4, %p2, %p3;
-    @%p4 bra if_true_14;
-    bra if_merge_16;
-if_true_14:
+    @%p2 bra land_rhs_17;
+    bra land_skip_18;
+land_rhs_17:
+    setp.ge.f32 %p2, %f1, 0f00000000;
+    selp.s32 %r6, 1, 0, %p2;
+    mov.s32 %r4, %r6;
+    bra land_merge_19;
+land_skip_18:
+    mov.s32 %r4, 0;
+    bra land_merge_19;
+land_merge_19:
+    setp.ne.s32 %p4, %r4, 0;
+    @%p4 bra if_true_20;
+    bra if_merge_22;
+if_true_20:
     mov.s32 %r3, 1;
     bra inline_classify_point_merge_9;
-if_merge_16:
+if_merge_22:
     setp.lt.f32 %p2, %f0, 0f00000000;
-    setp.lt.f32 %p3, %f1, 0f00000000;
-    and.pred %p4, %p2, %p3;
-    @%p4 bra if_true_18;
-    bra if_merge_20;
-if_true_18:
-    mov.s32 %r3, 2;
-    bra inline_classify_point_merge_9;
-if_merge_20:
-    mov.s32 %r3, 3;
-    bra inline_classify_point_merge_9;
-if_true_23:
+    @%p2 bra land_rhs_24;
+    bra land_skip_25;
+land_rhs_24:
+    setp.lt.f32 %p2, %f1, 0f00000000;
+    selp.s32 %r7, 1, 0, %p2;
+    mov.s32 %r4, %r7;
+    bra land_merge_26;
+land_skip_25:
+    mov.s32 %r4, 0;
+    bra land_merge_26;
+land_merge_26:
+    setp.ne.s32 %p5, %r4, 0;
+    @%p5 mov.s32 %r3, 2;
+    @!%p5 mov.s32 %r3, 3;
+    setp.ge.s32 %p1, %r3, 0;
+    @%p1 bra land_rhs_32;
+    bra land_skip_33;
+land_rhs_32:
+    setp.lt.s32 %p1, %r3, 4;
+    selp.s32 %r8, 1, 0, %p1;
+    mov.s32 %r4, %r8;
+    bra land_merge_34;
+land_skip_33:
+    mov.s32 %r4, 0;
+    bra land_merge_34;
+land_merge_34:
+    setp.ne.s32 %p6, %r4, 0;
+    @%p6 bra if_true_35;
+    bra for_inc_7;
+if_true_35:
     shl.b32 %r4, %r3, 2;
     cvt.s64.s32 %rd7, %r4;
-    add.u64 %rd4, %rd3, %rd7;
+    add.u64 %rd4, %rd0, %rd7;
     ld.local.s32 %r3, [%rd4];
     add.s32 %r4, %r3, 1;
     st.local.s32 [%rd4], %r4;

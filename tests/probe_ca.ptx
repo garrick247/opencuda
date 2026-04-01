@@ -29,20 +29,13 @@ if_true_2:
     ld.global.f32 %f1, [%rd1];
     setp.neu.f32 %p0, %f1, 0f00000000;
     ld.global.f32 %f1, [%rd1];
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f2, %f1;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f2, 0f3F800000;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.f32 %f2, %f1;
+    @!%p0 mov.f32 %f2, 0f3F800000;
     setp.gt.f32 %p0, %f2, 0f358637BD;
     @%p0 bra if_true_10;
     bra if_false_11;
+if_merge_4:
+    ret;
 inline_safe_div_merge_8:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd5, %r1;

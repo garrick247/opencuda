@@ -7,7 +7,7 @@
 {
     .reg .f32 %f<4>;
     .reg .b32 %r<5>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -27,17 +27,16 @@ if_true_2:
     ret;
 if_merge_4:
     shl.b32 %r1, %r3, 2;
-    cvt.s64.s32 %rd3, %r1;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r4, [%rd2];
+    cvt.s64.s32 %rd2, %r1;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r4, [%rd1];
     cvt.rn.f32.s32 %f0, %r4;
-    mul.f32 %f1, %f0, 0f3F800000;
-    mul.f32 %f2, %f0, 0f40000000;
-    mul.f32 %f3, %f0, 0f40400000;
-    add.u64 %rd1, %rd0, %rd3;
-    add.f32 %f0, %f1, %f2;
-    add.f32 %f1, %f0, %f3;
-    st.global.f32 [%rd1], %f1;
+    mul.f32 %f1, %f0, 0f40000000;
+    mul.f32 %f2, %f0, 0f40400000;
+    add.u64 %rd0, %rd0, %rd2;
+    add.f32 %f3, %f0, %f1;
+    add.f32 %f0, %f3, %f2;
+    st.global.f32 [%rd0], %f0;
     ret;
 }
 

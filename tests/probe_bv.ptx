@@ -21,9 +21,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.u32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.u32 %r1, [%rd1];
     mov.s32 %r2, 0;
     bra while_cond_6;
 if_merge_4:
@@ -48,7 +48,7 @@ while_body_7:
 .visible .entry two_var_loop(
     .param .u64 out, .param .s32 n)
 {
-    .reg .b32 %r<6>;
+    .reg .b32 %r<7>;
     .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
@@ -63,25 +63,28 @@ entry_1:
 if_true_2:
     mov.s32 %r1, 0;
     sub.s32 %r3, %r0, 1;
-    mov.s32 %r0, 0;
+    mov.s32 %r0, %r3;
+    mov.s32 %r3, 0;
     bra while_cond_5;
 if_merge_4:
     ret;
 while_cond_5:
-    setp.lt.s32 %p0, %r1, %r3;
+    setp.lt.s32 %p0, %r1, %r0;
     @%p0 bra while_body_6;
     bra while_exit_7;
 while_body_6:
     add.s32 %r4, %r1, 1;
-    add.s32 %r5, %r0, 1;
+    sub.s32 %r5, %r0, 1;
+    add.s32 %r6, %r3, 1;
     mov.s32 %r1, %r4;
     mov.s32 %r0, %r5;
+    mov.s32 %r3, %r6;
     bra while_cond_5;
 while_exit_7:
     shl.b32 %r4, %r2, 2;
     cvt.s64.s32 %rd2, %r4;
     add.u64 %rd1, %rd0, %rd2;
-    st.global.s32 [%rd1], %r0;
+    st.global.s32 [%rd1], %r3;
     bra if_merge_4;
 }
 

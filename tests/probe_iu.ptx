@@ -170,13 +170,12 @@ if_true_9:
     mov.s32 %r2, %r5;
     bra for_inc_7;
 for_cond_13:
-    shl.b32 %r5, %r3, 0;
-    add.s32 %r6, %r1, %r5;
-    shl.b32 %r5, %r3, 1;
-    add.s32 %r7, %r6, %r5;
-    mul.lo.s32 %r6, %r3, 3;
-    add.s32 %r5, %r7, %r6;
-    mov.s32 %r1, %r5;
+    add.s32 %r5, %r1, %r3;
+    shl.b32 %r6, %r3, 1;
+    add.s32 %r7, %r5, %r6;
+    mul.lo.s32 %r5, %r3, 3;
+    add.s32 %r6, %r7, %r5;
+    mov.s32 %r1, %r6;
     bra for_inc_7;
 }
 

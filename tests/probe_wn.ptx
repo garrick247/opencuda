@@ -156,9 +156,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.s32 %r1, [%rd1];
     rem.s32 %r2, %r1, 4;
     bra switch_dispatch_15;
 if_merge_4:
@@ -188,8 +188,10 @@ switch_next_16:
     bra switch_next_17;
 switch_next_17:
     setp.eq.s32 %p0, %r2, 2;
-    @%p0 bra case_11;
-    bra default_13;
+    @%p0 mov.s32 %r0, 300;
+    @!%p0 mov.s32 %r0, -1;
+    st.global.s32 [%rd2], %r0;
+    bra if_merge_4;
 }
 
 .visible .entry nested_switch_for(

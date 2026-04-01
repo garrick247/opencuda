@@ -57,7 +57,6 @@ for_cond_5:
     ld.global.f32 %f2, [%rd2];
     add.f32 %f3, %f2, %f1;
     st.global.f32 [%rd2], %f3;
-    mov.f32 %f0, %f1;
     bra for_exit_8;
 for_exit_8:
     shl.b32 %r1, %r2, 2;
@@ -70,7 +69,7 @@ for_exit_8:
 .visible .entry loop_shadow(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .b32 %r<5>;
+    .reg .b32 %r<6>;
     .reg .b64 %rd<11>;
     .reg .pred %p<1>;
 
@@ -92,50 +91,51 @@ if_true_2:
 if_merge_4:
     ret;
 for_cond_5:
-    shl.b32 %r1, %r2, 2;
-    cvt.s64.s32 %rd5, %r1;
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd5, %r3;
     add.u64 %rd2, %rd0, %rd5;
-    rem.s32 %r1, %r2, %r0;
-    shl.b32 %r3, %r1, 2;
-    cvt.s64.s32 %rd6, %r3;
+    rem.s32 %r3, %r2, %r0;
+    shl.b32 %r4, %r3, 2;
+    cvt.s64.s32 %rd6, %r4;
     add.u64 %rd3, %rd1, %rd6;
-    ld.global.s32 %r1, [%rd3];
-    ld.global.s32 %r3, [%rd2];
-    add.s32 %r4, %r3, %r1;
-    st.global.s32 [%rd2], %r4;
-    add.s32 %r1, %r2, 1;
-    rem.s32 %r3, %r1, %r0;
-    shl.b32 %r4, %r3, 2;
-    cvt.s64.s32 %rd7, %r4;
+    ld.global.s32 %r3, [%rd3];
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r4, %r3;
+    st.global.s32 [%rd2], %r5;
+    add.s32 %r3, %r2, 1;
+    rem.s32 %r4, %r3, %r0;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd7, %r5;
     add.u64 %rd3, %rd1, %rd7;
-    ld.global.s32 %r1, [%rd3];
-    ld.global.s32 %r3, [%rd2];
-    add.s32 %r4, %r3, %r1;
-    st.global.s32 [%rd2], %r4;
-    add.s32 %r1, %r2, 2;
-    rem.s32 %r3, %r1, %r0;
-    shl.b32 %r4, %r3, 2;
-    cvt.s64.s32 %rd8, %r4;
+    ld.global.s32 %r3, [%rd3];
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r4, %r3;
+    st.global.s32 [%rd2], %r5;
+    add.s32 %r3, %r2, 2;
+    rem.s32 %r4, %r3, %r0;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd8, %r5;
     add.u64 %rd3, %rd1, %rd8;
-    ld.global.s32 %r1, [%rd3];
-    ld.global.s32 %r3, [%rd2];
-    add.s32 %r4, %r3, %r1;
-    st.global.s32 [%rd2], %r4;
-    add.s32 %r1, %r2, 3;
-    rem.s32 %r3, %r1, %r0;
-    shl.b32 %r4, %r3, 2;
-    cvt.s64.s32 %rd9, %r4;
+    ld.global.s32 %r3, [%rd3];
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r4, %r3;
+    st.global.s32 [%rd2], %r5;
+    add.s32 %r3, %r2, 3;
+    rem.s32 %r4, %r3, %r0;
+    shl.b32 %r5, %r4, 2;
+    cvt.s64.s32 %rd9, %r5;
     add.u64 %rd3, %rd1, %rd9;
-    ld.global.s32 %r1, [%rd3];
-    ld.global.s32 %r3, [%rd2];
-    add.s32 %r4, %r3, %r1;
-    st.global.s32 [%rd2], %r4;
+    ld.global.s32 %r3, [%rd3];
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r4, %r3;
+    st.global.s32 [%rd2], %r5;
     bra for_exit_8;
 for_exit_8:
-    shl.b32 %r1, %r2, 2;
-    cvt.s64.s32 %rd10, %r1;
+    shl.b32 %r3, %r2, 2;
+    cvt.s64.s32 %rd10, %r3;
     add.u64 %rd2, %rd0, %rd10;
-    ld.global.s32 %r3, [%rd2];
-    st.global.s32 [%rd2], %r3;
+    ld.global.s32 %r4, [%rd2];
+    add.s32 %r5, %r4, %r1;
+    st.global.s32 [%rd2], %r5;
     bra if_merge_4;
 }

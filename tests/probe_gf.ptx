@@ -100,13 +100,13 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd4, %r0;
-    add.u64 %rd3, %rd0, %rd4;
-    add.u64 %rd0, %rd1, %rd4;
-    ld.global.f32 %f0, [%rd0];
-    add.u64 %rd1, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd0, %rd0, %rd4;
+    add.u64 %rd1, %rd1, %rd4;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd2];
     mul.f32 %f2, %f0, 0f3F000000;
-    mul.f32 %f0, %f1, 0f3F800000;
+    mul.f32 %f0, %f1, 0f3F000000;
     add.f32 %f1, %f2, %f0;
     bra inline_weighted_add_merge_5;
 if_merge_4:

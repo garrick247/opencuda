@@ -204,21 +204,14 @@ inline_update_sumf_merge_9:
     ld.global.f32 %f4, [%rd2];
     add.s32 %r5, %r1, 1;
     setp.ge.f32 %p1, %f4, 0f00000000;
-    @%p1 bra tern_true_12;
-    bra tern_false_13;
+    @%p1 mov.s32 %r7, 1;
+    @!%p1 mov.s32 %r7, 0;
+    add.s32 %r6, %r2, %r7;
+    bra inline_update_sumi_merge_11;
 inline_update_sumi_merge_11:
     mov.f32 %f0, %f3;
     mov.f32 %f1, %f2;
     mov.s32 %r1, %r5;
     mov.s32 %r2, %r6;
     bra for_inc_7;
-tern_true_12:
-    mov.s32 %r7, 1;
-    bra tern_merge_14;
-tern_false_13:
-    mov.s32 %r7, 0;
-    bra tern_merge_14;
-tern_merge_14:
-    add.s32 %r6, %r2, %r7;
-    bra inline_update_sumi_merge_11;
 }

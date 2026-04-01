@@ -178,8 +178,8 @@ if_false_10:
 if_merge_11:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd13, %r0;
-    add.u64 %rd3, %rd0, %rd13;
-    st.global.f32 [%rd3], %f1;
+    add.u64 %rd0, %rd0, %rd13;
+    st.global.f32 [%rd0], %f1;
     bra if_merge_4;
 if_true_12:
     mov.f32 %f1, 0f00000000;
@@ -214,14 +214,12 @@ if_true_24:
     bra if_merge_11;
 if_false_25:
     setp.eq.s32 %p0, %r3, 6;
-    @%p0 bra if_true_27;
-    bra if_false_28;
-if_true_27:
-    mov.f32 %f1, 0f00000000;
-    bra if_merge_11;
-if_false_28:
-    mov.f32 %f1, 0f00000000;
-    bra if_merge_11;
+    @%p0 mov.f32 %f1, 0f00000000;
+    @!%p0 mov.f32 %f1, 0f00000000;
+    shl.b32 %r0, %r2, 2;
+    add.u64 %rd0, %rd0, %rd13;
+    st.global.f32 [%rd0], %f1;
+    bra if_merge_4;
 }
 
 .visible .entry debug_print(

@@ -31,19 +31,12 @@ if_true_2:
     cvt.s64.s32 %rd5, %r2;
     add.u64 %rd3, %rd1, %rd5;
     ld.global.s32 %r0, [%rd3];
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.s32 %r1, %r0;
-    bra tern_merge_7;
-tern_false_6:
-    mov.s32 %r1, 0;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.s32 %r1, %r0;
+    @!%p0 mov.s32 %r1, 0;
     st.global.s32 [%rd2], %r1;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }
 
 .visible .entry multi_array(

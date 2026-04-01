@@ -71,7 +71,7 @@ if_true_15:
 {
     .reg .f32 %f<5>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -98,11 +98,11 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     shl.b32 %r2, %r1, 2;
-    cvt.s64.s32 %rd4, %r2;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f1, [%rd3];
-    add.u64 %rd3, %rd2, %rd4;
-    ld.global.f32 %f3, [%rd3];
+    cvt.s64.s32 %rd3, %r2;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f1, [%rd1];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.f32 %f3, [%rd2];
     add.f32 %f4, %f0, %f1;
     bra inline_update_thresh_merge_9;
 for_inc_7:
@@ -111,8 +111,8 @@ for_inc_7:
     bra for_cond_5;
 for_exit_8:
     st.global.f32 [%rd0], %f0;
-    add.u64 %rd3, %rd0, 4;
-    st.global.f32 [%rd3], %f2;
+    add.u64 %rd2, %rd0, 4;
+    st.global.f32 [%rd2], %f2;
     bra if_merge_4;
 inline_update_thresh_merge_9:
     mov.f32 %f0, %f4;
@@ -125,7 +125,7 @@ inline_update_thresh_merge_9:
 {
     .reg .f32 %f<6>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<5>;
+    .reg .b64 %rd<4>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -151,11 +151,11 @@ for_cond_5:
     bra for_exit_8;
 for_body_6:
     shl.b32 %r2, %r1, 2;
-    cvt.s64.s32 %rd4, %r2;
-    add.u64 %rd3, %rd1, %rd4;
-    ld.global.f32 %f2, [%rd3];
-    add.u64 %rd3, %rd2, %rd4;
-    ld.global.f32 %f3, [%rd3];
+    cvt.s64.s32 %rd3, %r2;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f2, [%rd1];
+    add.u64 %rd2, %rd2, %rd3;
+    ld.global.f32 %f3, [%rd2];
     add.f32 %f4, %f0, %f2;
     mul.f32 %f5, %f2, %f3;
     add.f32 %f2, %f1, %f5;
@@ -166,8 +166,8 @@ for_inc_7:
     bra for_cond_5;
 for_exit_8:
     st.global.f32 [%rd0], %f0;
-    add.u64 %rd3, %rd0, 4;
-    st.global.f32 [%rd3], %f1;
+    add.u64 %rd2, %rd0, 4;
+    st.global.f32 [%rd2], %f1;
     bra if_merge_4;
 inline_add_weighted_merge_9:
     mov.f32 %f0, %f4;

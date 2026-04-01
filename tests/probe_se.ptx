@@ -237,8 +237,8 @@ if_merge_4:
 .visible .entry const_chain(
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
-    .reg .b32 %r<4>;
-    .reg .b64 %rd<4>;
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -252,15 +252,12 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.s32 %r1, [%rd2];
-    mov.s32 %r2, 95;
-    add.s32 %r3, %r2, 5;
-    div.s32 %r2, %r3, 2;
-    add.u64 %rd1, %rd0, %rd3;
-    mul.lo.s32 %r0, %r1, %r2;
-    st.global.s32 [%rd1], %r0;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r1, [%rd1];
+    add.u64 %rd0, %rd0, %rd2;
+    mul.lo.s32 %r2, %r1, 50;
+    st.global.s32 [%rd0], %r2;
     bra if_merge_4;
 if_merge_4:
     ret;

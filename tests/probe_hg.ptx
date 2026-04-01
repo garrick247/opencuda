@@ -12,10 +12,10 @@
     .reg .b64 %rd<7>;
     .reg .pred %p<1>;
 
-    mov.u64 %rd1, _local_11;
-    mov.u64 %rd2, _local_18;
+    mov.u64 %rd0, _local_11;
+    mov.u64 %rd1, _local_18;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd2, [out];
     ld.param.u64 %rd3, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -28,8 +28,8 @@ if_true_2:
     cvt.s64.s32 %rd5, %r0;
     add.u64 %rd4, %rd3, %rd5;
     ld.global.f32 %f0, [%rd4];
-    st.local.f32 [%rd1], %f0;
-    cvt.u64.u64 %rd3, %rd1;
+    st.local.f32 [%rd0], %f0;
+    cvt.u64.u64 %rd3, %rd0;
     ld.local.u32 %r1, [%rd3];
     bra inline_float_to_bits_merge_5;
 if_merge_4:
@@ -38,10 +38,10 @@ inline_float_to_bits_merge_5:
     xor.b32 %r0, %r1, 2147483648;
     shl.b32 %r3, %r2, 2;
     cvt.s64.s32 %rd6, %r3;
-    add.u64 %rd4, %rd0, %rd6;
-    st.local.u32 [%rd2], %r0;
-    cvt.u64.u64 %rd1, %rd2;
-    ld.local.f32 %f0, [%rd1];
+    add.u64 %rd4, %rd2, %rd6;
+    st.local.u32 [%rd1], %r0;
+    cvt.u64.u64 %rd0, %rd1;
+    ld.local.f32 %f0, [%rd0];
     bra inline_bits_to_float_merge_7;
 inline_bits_to_float_merge_7:
     st.global.f32 [%rd4], %f0;
@@ -103,9 +103,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd0, %rd2, %rd3;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd2];
+    add.u64 %rd2, %rd2, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd1];
     mul.f32 %f1, %f0, 0f40000000;
     st.global.f32 [%rd0], %f1;
     bra if_merge_4;

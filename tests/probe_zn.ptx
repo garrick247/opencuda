@@ -111,7 +111,7 @@ inline_sha_maj_merge_23:
 {
     .reg .f32 %f<6>;
     .reg .b32 %r<4>;
-    .reg .b64 %rd<8>;
+    .reg .b64 %rd<7>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -135,36 +135,36 @@ if_true_2:
     ret;
 if_merge_4:
     shl.b32 %r1, %r3, 2;
-    cvt.s64.s32 %rd7, %r1;
-    add.u64 %rd6, %rd3, %rd7;
-    ld.global.f32 %f0, [%rd6];
-    add.u64 %rd3, %rd4, %rd7;
-    ld.global.f32 %f1, [%rd3];
-    add.u64 %rd6, %rd5, %rd7;
-    ld.global.f32 %f2, [%rd6];
-    add.u64 %rd4, %rd0, %rd7;
+    cvt.s64.s32 %rd6, %r1;
+    add.u64 %rd3, %rd3, %rd6;
+    ld.global.f32 %f0, [%rd3];
+    add.u64 %rd4, %rd4, %rd6;
+    ld.global.f32 %f1, [%rd4];
+    add.u64 %rd5, %rd5, %rd6;
+    ld.global.f32 %f2, [%rd5];
+    add.u64 %rd0, %rd0, %rd6;
     mul.f32 %f3, 0f3E991687, %f0;
     mul.f32 %f4, 0f3F1645A2, %f1;
     add.f32 %f5, %f3, %f4;
     mul.f32 %f3, 0f3DE978D5, %f2;
     add.f32 %f4, %f5, %f3;
-    st.global.f32 [%rd4], %f4;
-    add.u64 %rd3, %rd1, %rd7;
+    st.global.f32 [%rd0], %f4;
+    add.u64 %rd1, %rd1, %rd6;
     mul.f32 %f5, 0fBE2D0E56, %f0;
     mul.f32 %f3, 0f3EA978D5, %f1;
     sub.f32 %f4, %f5, %f3;
     mul.f32 %f5, 0f3F000000, %f2;
     add.f32 %f3, %f4, %f5;
     add.f32 %f4, %f3, 0f43000000;
-    st.global.f32 [%rd3], %f4;
-    add.u64 %rd5, %rd2, %rd7;
+    st.global.f32 [%rd1], %f4;
+    add.u64 %rd2, %rd2, %rd6;
     mul.f32 %f5, 0f3F000000, %f0;
     mul.f32 %f3, 0f3ED6872B, %f1;
     sub.f32 %f4, %f5, %f3;
     mul.f32 %f0, 0f3DA5E354, %f2;
     sub.f32 %f1, %f4, %f0;
     add.f32 %f5, %f1, 0f43000000;
-    st.global.f32 [%rd5], %f5;
+    st.global.f32 [%rd2], %f5;
     ret;
 }
 
@@ -315,7 +315,7 @@ switch_next_27:
 {
     .reg .f32 %f<10>;
     .reg .b32 %r<4>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -343,9 +343,9 @@ if_true_2:
     ret;
 if_merge_4:
     shl.b32 %r1, %r3, 2;
-    cvt.s64.s32 %rd3, %r1;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.f32 %f8, [%rd2];
+    cvt.s64.s32 %rd2, %r1;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.f32 %f8, [%rd1];
     mul.f32 %f9, %f7, %f8;
     add.f32 %f7, %f9, %f6;
     mul.f32 %f6, %f7, %f8;
@@ -360,8 +360,8 @@ if_merge_4:
     add.f32 %f3, %f5, %f1;
     mul.f32 %f6, %f3, %f8;
     add.f32 %f9, %f6, %f0;
-    add.u64 %rd1, %rd0, %rd3;
-    st.global.f32 [%rd1], %f9;
+    add.u64 %rd0, %rd0, %rd2;
+    st.global.f32 [%rd0], %f9;
     ret;
 }
 

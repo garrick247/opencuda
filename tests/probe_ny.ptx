@@ -4,6 +4,8 @@
 
 .visible .entry arrow_access(
     .param .u64 out, .param .f32 dx, .param .f32 dy)
+.maxntid 256, 1, 1
+.minnctapersm 4
 {
     .local .align 8 .b8 _local_11[8];
     .reg .f32 %f<4>;
@@ -102,9 +104,9 @@ entry_1:
 if_true_2:
     shl.b32 %r0, %r2, 2;
     cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd0, %rd3;
-    add.u64 %rd0, %rd1, %rd3;
-    ld.global.nc.f32 %f0, [%rd0];
+    add.u64 %rd0, %rd0, %rd3;
+    add.u64 %rd1, %rd1, %rd3;
+    ld.global.nc.f32 %f0, [%rd1];
     mul.f32 %f1, %f0, 0f40000000;
     st.global.f32 [%rd2], %f1;
     bra if_merge_4;
@@ -135,20 +137,13 @@ if_true_2:
     add.u64 %rd2, %rd1, %rd3;
     ld.global.f32 %f0, [%rd2];
     setp.gt.f32 %p0, %f0, 0f00000000;
-    @%p0 bra tern_true_5;
-    bra tern_false_6;
-if_merge_4:
-    ret;
-tern_true_5:
-    mov.f32 %f0, 0f3F800000;
-    bra tern_merge_7;
-tern_false_6:
-    mov.f32 %f0, 0fBF800000;
-    bra tern_merge_7;
-tern_merge_7:
+    @%p0 mov.f32 %f0, 0f3F800000;
+    @!%p0 mov.f32 %f0, 0fBF800000;
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd4, %r1;
     add.u64 %rd1, %rd0, %rd4;
     st.global.f32 [%rd1], %f0;
     bra if_merge_4;
+if_merge_4:
+    ret;
 }

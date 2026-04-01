@@ -18,19 +18,20 @@ entry_1:
     ld.param.u64 %rd3, [c];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
-    setp.lt.u32 %p0, %r1, %r0;
+    cvt.s32.u32 %r2, %r1;
+    setp.lt.s32 %p0, %r2, %r0;
     @%p0 bra if_true_2;
     bra if_merge_4;
 if_true_2:
-    shl.b32 %r0, %r1, 2;
-    cvt.u64.u32 %rd5, %r0;
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd5, %r0;
     add.u64 %rd4, %rd1, %rd5;
-    ld.global.s32 %r2, [%rd4];
-    cvt.rn.f32.s32 %f0, %r2;
+    ld.global.s32 %r1, [%rd4];
+    cvt.rn.f32.s32 %f0, %r1;
     add.u64 %rd1, %rd2, %rd5;
     ld.global.f32 %f1, [%rd1];
-    shl.b32 %r2, %r1, 1;
-    cvt.u64.u32 %rd6, %r2;
+    shl.b32 %r1, %r2, 1;
+    cvt.s64.s32 %rd6, %r1;
     add.u64 %rd4, %rd3, %rd6;
     ld.global.b16 %h0, [%rd4];
     cvt.f32.f16 %f2, %h0;

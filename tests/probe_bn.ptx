@@ -15,30 +15,33 @@ entry_1:
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r2, %r1;
     setp.lt.s32 %p0, %r2, %r0;
-    @%p0 bra while_cond_5;
+    @%p0 bra if_true_2;
     bra if_merge_4;
+if_true_2:
+    mov.s32 %r1, %r0;
+    bra while_cond_5;
 if_merge_4:
     ret;
 while_cond_5:
-    setp.gt.s32 %p0, %r0, 0;
+    setp.gt.s32 %p0, %r1, 0;
     @%p0 bra while_body_6;
     bra while_exit_7;
 while_body_6:
-    sub.s32 %r1, %r0, 1;
-    mov.s32 %r0, %r1;
+    sub.s32 %r0, %r1, 1;
+    mov.s32 %r1, %r0;
     bra while_cond_5;
 while_exit_7:
-    shl.b32 %r1, %r2, 2;
-    cvt.s64.s32 %rd2, %r1;
+    shl.b32 %r0, %r2, 2;
+    cvt.s64.s32 %rd2, %r0;
     add.u64 %rd1, %rd0, %rd2;
-    st.global.s32 [%rd1], %r0;
+    st.global.s32 [%rd1], %r1;
     bra if_merge_4;
 }
 
 .visible .entry loop_var_after(
     .param .u64 out, .param .s32 n)
 {
-    .reg .b32 %r<3>;
+    .reg .b32 %r<7>;
     .reg .b64 %rd<3>;
     .reg .pred %p<3>;
 
@@ -48,28 +51,45 @@ entry_1:
     mov.u32 %r1, %tid.x;
     cvt.s32.u32 %r2, %r1;
     setp.lt.s32 %p0, %r2, %r0;
-    @%p0 bra for_cond_5;
+    @%p0 bra if_true_2;
     bra if_merge_4;
+if_true_2:
+    mov.s32 %r1, 0;
+    bra for_cond_5;
 if_merge_4:
     ret;
 for_cond_5:
-    setp.lt.s32 %p0, 0, %r0;
-    setp.lt.s32 %p1, 0, 16;
-    and.pred %p2, %p0, %p1;
-    @%p2 bra for_cond_5;
-    bra for_exit_8;
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra land_rhs_9;
+    bra land_skip_10;
+for_inc_7:
+    add.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
+    bra for_cond_5;
 for_exit_8:
-    shl.b32 %r1, %r2, 2;
-    cvt.s64.s32 %rd2, %r1;
+    shl.b32 %r4, %r2, 2;
+    cvt.s64.s32 %rd2, %r4;
     add.u64 %rd1, %rd0, %rd2;
-    st.global.s32 [%rd1], 0;
+    st.global.s32 [%rd1], %r1;
     bra if_merge_4;
+land_rhs_9:
+    setp.lt.s32 %p1, %r1, 16;
+    selp.s32 %r6, 1, 0, %p1;
+    mov.s32 %r5, %r6;
+    bra land_merge_11;
+land_skip_10:
+    mov.s32 %r5, 0;
+    bra land_merge_11;
+land_merge_11:
+    setp.ne.s32 %p2, %r5, 0;
+    @%p2 bra for_inc_7;
+    bra for_exit_8;
 }
 
 .visible .entry nested_while_math(
     .param .u64 out, .param .s32 n)
 {
-    .reg .b32 %r<6>;
+    .reg .b32 %r<10>;
     .reg .b64 %rd<3>;
     .reg .pred %p<4>;
 
@@ -89,30 +109,43 @@ if_merge_4:
     ret;
 while_cond_5:
     setp.lt.s32 %p0, %r1, %r0;
-    @%p0 bra while_cond_8;
+    @%p0 bra while_body_6;
     bra while_exit_7;
+while_body_6:
+    mov.s32 %r4, %r1;
+    add.s32 %r5, %r1, 4;
+    bra while_cond_8;
 while_exit_7:
-    shl.b32 %r4, %r2, 2;
-    cvt.s64.s32 %rd2, %r4;
+    shl.b32 %r6, %r2, 2;
+    cvt.s64.s32 %rd2, %r6;
     add.u64 %rd1, %rd0, %rd2;
-    add.s32 %r4, %r3, %r2;
-    st.global.s32 [%rd1], %r4;
+    add.s32 %r6, %r3, %r2;
+    st.global.s32 [%rd1], %r6;
     bra if_merge_4;
 while_cond_8:
-    setp.lt.s32 %p1, %r1, %r0;
-    add.s32 %r4, %r1, 4;
-    setp.lt.s32 %p2, %r1, %r4;
-    and.pred %p3, %p1, %p2;
-    @%p3 bra while_body_9;
-    bra while_exit_10;
+    setp.lt.s32 %p1, %r4, %r0;
+    @%p1 bra land_rhs_11;
+    bra land_skip_12;
 while_body_9:
-    add.s32 %r4, %r3, %r1;
-    add.s32 %r5, %r1, 1;
-    mov.s32 %r1, %r5;
-    mov.s32 %r3, %r4;
+    add.s32 %r6, %r3, %r4;
+    add.s32 %r7, %r4, 1;
+    mov.s32 %r4, %r7;
+    mov.s32 %r3, %r6;
     bra while_cond_8;
 while_exit_10:
-    add.s32 %r4, %r1, 4;
-    mov.s32 %r1, %r4;
+    add.s32 %r7, %r1, 4;
+    mov.s32 %r1, %r7;
     bra while_cond_5;
+land_rhs_11:
+    setp.lt.s32 %p2, %r4, %r5;
+    selp.s32 %r9, 1, 0, %p2;
+    mov.s32 %r8, %r9;
+    bra land_merge_13;
+land_skip_12:
+    mov.s32 %r8, 0;
+    bra land_merge_13;
+land_merge_13:
+    setp.ne.s32 %p3, %r8, 0;
+    @%p3 bra while_body_9;
+    bra while_exit_10;
 }

@@ -7,7 +7,7 @@
 {
     .reg .f32 %f<5>;
     .reg .b32 %r<3>;
-    .reg .b64 %rd<7>;
+    .reg .b64 %rd<6>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -24,16 +24,16 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 2;
-    cvt.s64.s32 %rd6, %r0;
-    add.u64 %rd5, %rd1, %rd6;
-    ld.global.f32 %f0, [%rd5];
-    add.u64 %rd1, %rd2, %rd6;
-    ld.global.f32 %f1, [%rd1];
-    add.u64 %rd5, %rd3, %rd6;
-    ld.global.f32 %f2, [%rd5];
-    add.u64 %rd2, %rd4, %rd6;
-    ld.global.f32 %f3, [%rd2];
-    add.u64 %rd1, %rd0, %rd6;
+    cvt.s64.s32 %rd5, %r0;
+    add.u64 %rd1, %rd1, %rd5;
+    ld.global.f32 %f0, [%rd1];
+    add.u64 %rd2, %rd2, %rd5;
+    ld.global.f32 %f1, [%rd2];
+    add.u64 %rd3, %rd3, %rd5;
+    ld.global.f32 %f2, [%rd3];
+    add.u64 %rd4, %rd4, %rd5;
+    ld.global.f32 %f3, [%rd4];
+    add.u64 %rd0, %rd0, %rd5;
     mul.f32 %f4, %f0, %f2;
     mul.f32 %f0, %f1, %f3;
     add.f32 %f2, %f4, %f0;
@@ -41,7 +41,7 @@ if_true_2:
 if_merge_4:
     ret;
 inline_dot2_merge_5:
-    st.global.f32 [%rd1], %f2;
+    st.global.f32 [%rd0], %f2;
     bra if_merge_4;
 }
 

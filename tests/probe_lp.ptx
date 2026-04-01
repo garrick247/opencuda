@@ -1,8 +1,11 @@
-[opencuda] Parsing tests/probe_lp.cu...
-[opencuda] 5 kernel(s) found
-[opencuda] Wrote PTX: tests\probe_lp.ptx (5 kernels)
-[opencuda] Done.
-.b32 %r<3>;
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry int64_ops(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<3>;
     .reg .b64 %rd<10>;
     .reg .pred %p<1>;
 
@@ -53,7 +56,7 @@ if_merge_4:
     .param .u64 out, .param .u64 in, .param .s32 n)
 {
     .reg .b32 %r<3>;
-    .reg .b64 %rd<4>;
+    .reg .b64 %rd<3>;
     .reg .pred %p<1>;
 
 entry_1:
@@ -67,13 +70,13 @@ entry_1:
     bra if_merge_4;
 if_true_2:
     shl.b32 %r0, %r2, 3;
-    cvt.s64.s32 %rd3, %r0;
-    add.u64 %rd2, %rd1, %rd3;
-    ld.global.u64 %rd1, [%rd2];
-    add.u64 %rd2, %rd0, %rd3;
+    cvt.s64.s32 %rd2, %r0;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.u64 %rd1, [%rd1];
+    add.u64 %rd0, %rd0, %rd2;
     shl.b64 %rd0, %rd1, 1;
     add.u64 %rd1, %rd0, 1;
-    st.global.u64 [%rd2], %rd1;
+    st.global.u64 [%rd0], %rd1;
     bra if_merge_4;
 if_merge_4:
     ret;

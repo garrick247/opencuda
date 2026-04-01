@@ -11,9 +11,9 @@
     .reg .b64 %rd<10>;
     .reg .pred %p<2>;
 
-    mov.u64 %rd1, smem;
+    mov.u64 %rd0, smem;
 entry_1:
-    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [out];
     ld.param.u64 %rd2, [in];
     ld.param.s32 %r0, [n];
     mov.u32 %r1, %tid.x;
@@ -29,7 +29,7 @@ entry_1:
 if_true_2:
     shl.b32 %r1, %r2, 2;
     cvt.s64.s32 %rd5, %r1;
-    add.u64 %rd3, %rd1, %rd5;
+    add.u64 %rd3, %rd0, %rd5;
     shl.b32 %r5, %r4, 2;
     cvt.s64.s32 %rd6, %r5;
     add.u64 %rd4, %rd2, %rd6;
@@ -55,11 +55,11 @@ while_exit_7:
     bra if_merge_13;
 if_true_8:
     cvt.s64.s32 %rd7, %r3;
-    add.u64 %rd2, %rd1, %rd7;
+    add.u64 %rd2, %rd0, %rd7;
     add.s32 %r1, %r2, %r0;
     shl.b32 %r4, %r1, 2;
     cvt.s64.s32 %rd8, %r4;
-    add.u64 %rd3, %rd1, %rd8;
+    add.u64 %rd3, %rd0, %rd8;
     ld.shared.f32 %f0, [%rd3];
     ld.shared.f32 %f1, [%rd2];
     add.f32 %f2, %f1, %f0;
@@ -74,8 +74,8 @@ if_true_11:
     mov.u32 %r1, %ctaid.x;
     shl.b32 %r4, %r1, 2;
     cvt.u64.u32 %rd9, %r4;
-    add.u64 %rd4, %rd0, %rd9;
-    ld.shared.f32 %f0, [%rd1];
+    add.u64 %rd4, %rd1, %rd9;
+    ld.shared.f32 %f0, [%rd0];
     st.global.f32 [%rd4], %f0;
     bra if_merge_13;
 if_merge_13:
