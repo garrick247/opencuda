@@ -21,24 +21,28 @@ from ..ir.nodes import (Kernel, BasicBlock, Value, Const, Operand,
 def _resolve_const_value(val: Value, kernel: Kernel) -> int | None:
     """Try to resolve a Value to an integer constant by tracing its definition.
 
-    Handles the common pattern where a local variable is initialized to a
-    constant literal before constant folding has run:
+    Handles the common patterns before constant folding has run:
         BinInst(dest=val, ADD, Const(N), Const(0))  →  N
+        CvtInst(dest=val, src=Const(N))             →  N  (e.g. sizeof cast)
 
     Returns the integer value if resolvable, None otherwise.
     """
     for bb in kernel.blocks:
         for inst in bb.instructions:
-            if not (isinstance(inst, BinInst) and inst.op == BinOp.ADD):
+            dest = getattr(inst, 'dest', None)
+            if dest is None or dest.id != val.id:
                 continue
-            if inst.dest.id != val.id:
-                continue
-            if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
-                if isinstance(inst.lhs, Const):
-                    return int(inst.lhs.value)
-            elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
-                if isinstance(inst.rhs, Const):
-                    return int(inst.rhs.value)
+            # CvtInst: (type)const — e.g. (int)sizeof(float)
+            if isinstance(inst, CvtInst) and isinstance(inst.src, Const):
+                return int(inst.src.value)
+            # BinInst ADD with one zero operand: val = N + 0 or 0 + N
+            if isinstance(inst, BinInst) and inst.op == BinOp.ADD:
+                if isinstance(inst.rhs, Const) and inst.rhs.value == 0:
+                    if isinstance(inst.lhs, Const):
+                        return int(inst.lhs.value)
+                elif isinstance(inst.lhs, Const) and inst.lhs.value == 0:
+                    if isinstance(inst.rhs, Const):
+                        return int(inst.rhs.value)
     return None
 
 

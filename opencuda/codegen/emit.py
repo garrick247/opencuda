@@ -35,6 +35,21 @@ def _ptx_type(ty: Type) -> str:
     return 'u32'
 
 
+def _ptx_mov_type(ty: Type) -> str:
+    """PTX type for mov instructions.
+    Sub-32-bit integer types (s8, u8, s16, u16) are stored in 32-bit general-
+    purpose registers (%r).  PTX does not have mov.s8/u8/s16/u16 for %r
+    registers — the correct encoding is mov.b32.
+    f16 (%h) registers use mov.b16 (PTX has no mov.f16).
+    """
+    t = _ptx_type(ty)
+    if t in ('s8', 'u8', 's16', 'u16'):
+        return 'b32'
+    if t == 'f16':
+        return 'b16'
+    return t
+
+
 def _ptx_reg_prefix(ty: Type) -> str:
     """Get PTX register prefix for a type."""
     if isinstance(ty, PtrTy):
@@ -578,6 +593,7 @@ class PTXEmitter:
         self._printf_call_count = 0
         self._fallback_alloc = {}
         self._fallback_count = {}
+        self._skip_blocks = set()  # reset per-kernel (block labels are not globally unique)
 
         # Run linear scan allocation
         self._alloc, self._val_type_map, self._pred_ids, self._alloc_max = _build_alloc_map(kernel)
@@ -632,19 +648,35 @@ class PTXEmitter:
                 body_lines[i] = f'    cvt.u64.u32 {rd_dest}, {r_src};'
                 body_lines[i+1] = f'    shl.b64 {rd_dest}, {rd_dest}, {shift};'
 
-        # Peephole: eliminate mov.bNN %rX, %rY by replacing all uses of %rX with %rY
+        # Peephole: eliminate mov.bNN %rX, %rY by replacing all uses of %rX with %rY.
+        # Rules:
+        #  1. ONLY fire for same register-class moves (e.g. %r→%r, %f→%f).
+        #     Cross-class moves (mov.b32 %r, %f) are bit-reinterpret operations;
+        #     propagating them would move values across register files illegally.
+        #  2. Stop propagation when a line REDEFINES %rX (i.e., %rX appears as
+        #     the destination operand).  This avoids corrupting code where the
+        #     same physical slot is reused for a different live range after the mov.
         import re as _mov_re
+        _dest_def_re = _mov_re.compile(r'\s+\S+\s+(%\w+),')
+        def _reg_class(reg: str) -> str:
+            m2 = _mov_re.match(r'%([a-zA-Z]+)\d', reg)
+            return m2.group(1) if m2 else ''
         i = 0
         while i < len(body_lines):
             m = _mov_re.match(r'\s+mov\.b\d+\s+(%\w+),\s*(%\w+);', body_lines[i])
             if m:
                 dest, src = m.group(1), m.group(2)
-                # Replace all subsequent uses of dest with src
-                body_lines.pop(i)
-                for j in range(i, len(body_lines)):
-                    body_lines[j] = body_lines[j].replace(dest, src)
-            else:
-                i += 1
+                if _reg_class(dest) == _reg_class(src):
+                    # Same register class: copy-propagate, but stop if dest is
+                    # redefined (appears as first operand) in a subsequent line.
+                    body_lines.pop(i)
+                    for j in range(i, len(body_lines)):
+                        dm = _dest_def_re.match(body_lines[j])
+                        if dm and dm.group(1) == dest:
+                            break  # dest redefined: stop propagation
+                        body_lines[j] = body_lines[j].replace(dest, src)
+                    continue  # re-check at same index after pop
+            i += 1
 
         # Peephole: reduce rd register count by rewriting address computation
         # to use in-place adds.  For ptr[i] patterns the codegen emits:
@@ -782,11 +814,16 @@ class PTXEmitter:
                 sym = f'_local_{lval.id}'
                 ptx.append(f'    .local .align {align} .b8 {sym}[{total_bytes}];')
 
-        # Re-scan body_lines for actual register usage after peepholes
+        # Re-scan body_lines for actual register usage after peepholes.
+        # Only match ALLOCATED register prefixes (r, rd, f, fd, h, p).
+        # The generic %(\w+)(\d+) pattern would match PTX special registers
+        # like %clock64 → prefix='clock', creating an erroneous declaration.
         import re as _reg_re
+        _known_prefixes = ('rd', 'fd', 'r', 'f', 'h', 'p')  # longest first
+        _alloc_re = _reg_re.compile(r'%(' + '|'.join(_known_prefixes) + r')(\d+)')
         actual_reg_counts = {}
         for line in body_lines:
-            for m in _reg_re.finditer(r'%(\w+?)(\d+)', line):
+            for m in _alloc_re.finditer(line):
                 pfx, idx = m.group(1), int(m.group(2))
                 actual_reg_counts[pfx] = max(actual_reg_counts.get(pfx, 0), idx + 1)
         # Use actual counts (post-peephole) for declarations
@@ -1253,10 +1290,12 @@ class PTXEmitter:
             src_ptx = _ptx_type(src_ty)
             # Eliminate no-op same-width signed↔unsigned conversions (e.g., cvt.s32.u32).
             # These waste a register slot in PTX. Emit mov instead.
-            src_width = src_ty.size if isinstance(src_ty, ScalarTy) else 4
-            dst_width = dst_ty.size if isinstance(dst_ty, ScalarTy) else 4
+            # PtrTy is always 64-bit: use 8 so we don't accidentally match a 32-bit dst.
+            src_width = src_ty.size if isinstance(src_ty, ScalarTy) else 8
+            dst_width = dst_ty.size if isinstance(dst_ty, ScalarTy) else 8
             if (src_width == dst_width and src_width <= 4
-                    and not (isinstance(src_ty, ScalarTy) and src_ty.is_float)
+                    and isinstance(src_ty, ScalarTy)
+                    and not src_ty.is_float
                     and not (isinstance(dst_ty, ScalarTy) and dst_ty.is_float)):
                 # Same-width integer conversion — just copy
                 src_op = self._operand(inst.src, src_ptx, kernel)
@@ -2522,6 +2561,15 @@ class PTXEmitter:
                 bb_map = {b.label: b for b in self._kernel.blocks}
                 t_bb = bb_map.get(term.true_bb)
                 f_bb = bb_map.get(term.false_bb)
+                # Compute predecessor counts for the candidate diamond blocks.
+                _pred_count: dict[str, int] = {}
+                for _blk in self._kernel.blocks:
+                    _t = _blk.terminator
+                    if isinstance(_t, BrTerm):
+                        _pred_count[_t.target] = _pred_count.get(_t.target, 0) + 1
+                    elif isinstance(_t, CondBrTerm):
+                        for _tgt in (_t.true_bb, _t.false_bb):
+                            _pred_count[_tgt] = _pred_count.get(_tgt, 0) + 1
                 if (t_bb and f_bb
                         and len(t_bb.instructions) == 1 and len(f_bb.instructions) == 1
                         and isinstance(t_bb.terminator, BrTerm)
@@ -2529,13 +2577,18 @@ class PTXEmitter:
                         and t_bb.terminator.target == f_bb.terminator.target
                         and isinstance(t_bb.instructions[0], BinInst)
                         and isinstance(f_bb.instructions[0], BinInst)
-                        and t_bb.instructions[0].dest.id == f_bb.instructions[0].dest.id):
+                        and t_bb.instructions[0].dest.id == f_bb.instructions[0].dest.id
+                        # Only inline diamond arms when they have exactly one
+                        # predecessor (this CondBrTerm block).  Multiple preds
+                        # would leave other branches pointing to a skipped label.
+                        and _pred_count.get(term.true_bb, 0) == 1
+                        and _pred_count.get(term.false_bb, 0) == 1):
                     # This is a ternary diamond! Emit predicated mov inline.
                     t_inst = t_bb.instructions[0]
                     f_inst = f_bb.instructions[0]
                     merge_label = t_bb.terminator.target
                     dest = self._reg(t_inst.dest)
-                    ptx_ty = _ptx_type(t_inst.dest.ty)
+                    ptx_ty = _ptx_mov_type(t_inst.dest.ty)
 
                     # Get predicate
                     if term.cond.id in self._pred_ids:
@@ -2561,9 +2614,18 @@ class PTXEmitter:
                     self._skip_blocks.add(term.false_bb)
 
                     # Inline the merge block's instructions (st.global etc.)
-                    # instead of emitting bra to a separate block
+                    # instead of emitting bra to a separate block.
+                    # ONLY inline if the merge block's sole predecessors are the
+                    # two diamond arms (true_bb and false_bb).  If other blocks
+                    # also branch to the merge block, inlining would skip the
+                    # block label while leaving those branches dangling.
                     merge_bb = bb_map.get(merge_label)
-                    if merge_bb:
+                    merge_pred_count = sum(
+                        1 for b in self._kernel.blocks
+                        if (isinstance(b.terminator, BrTerm) and b.terminator.target == merge_label)
+                        or (isinstance(b.terminator, CondBrTerm) and merge_label in (b.terminator.true_bb, b.terminator.false_bb))
+                    ) if merge_bb else 0
+                    if merge_bb and merge_pred_count == 2:
                         self._skip_blocks.add(merge_label)
                         for merge_inst in merge_bb.instructions:
                             self._emit_inst(merge_inst, self._kernel)

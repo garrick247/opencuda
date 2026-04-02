@@ -925,6 +925,64 @@ def licm(kernel: Kernel) -> int:
     return total_hoisted
 
 
+def merge_linear_chains(kernel: Kernel) -> int:
+    """Merge linear block chains: if A ends with BrTerm→B and B has only one
+    predecessor (A), merge B's instructions into A and set A's terminator to B's.
+    Remove B from the block list.
+
+    Run inside the unroll fixpoint loop so that after an inner loop is unrolled,
+    the outer loop body's successor chain collapses, making the outer loop
+    recognizable to the unroller on the next round.
+
+    Only merges when the predecessor ends with BrTerm (unconditional).  Never
+    merges when the predecessor ends with CondBrTerm — that preserves the branch
+    structure that `_find_unrollable_loops` relies on.
+
+    Returns the number of blocks merged.
+    """
+    if not kernel.blocks:
+        return 0
+
+    merged = 0
+    changed = True
+    while changed:
+        changed = False
+        # Rebuild predecessor count from scratch each round
+        pred_count: dict[str, int] = {bb.label: 0 for bb in kernel.blocks}
+        for bb in kernel.blocks:
+            t = bb.terminator
+            if isinstance(t, BrTerm):
+                if t.target in pred_count:
+                    pred_count[t.target] += 1
+            elif isinstance(t, CondBrTerm):
+                for tgt in (t.true_bb, t.false_bb):
+                    if tgt in pred_count:
+                        pred_count[tgt] += 1
+
+        label_to_bb = {bb.label: bb for bb in kernel.blocks}
+
+        for bb in list(kernel.blocks):
+            t = bb.terminator
+            if not isinstance(t, BrTerm):
+                continue
+            target_lbl = t.target
+            target_bb = label_to_bb.get(target_lbl)
+            if target_bb is None:
+                continue
+            # Only merge if target has exactly one predecessor (bb)
+            if pred_count.get(target_lbl, 0) != 1:
+                continue
+            # Merge: append target's instructions into bb, adopt target's terminator
+            bb.instructions.extend(target_bb.instructions)
+            bb.terminator = target_bb.terminator
+            kernel.blocks = [b for b in kernel.blocks if b.label != target_lbl]
+            merged += 1
+            changed = True
+            break  # restart: label_to_bb is stale
+
+    return merged
+
+
 def thread_empty_blocks(kernel: Kernel) -> int:
     """Branch threading: forward unconditional branches through empty blocks.
 
@@ -1083,8 +1141,21 @@ def optimize(module: Module, verbose: bool = False,
             pass
 
     for kernel in module.kernels:
-        n_unroll = unroll_loops(kernel, max_unroll=16)
-        _gate(kernel, 'unroll_loops')
+        # Unroll loops to fixpoint: nested loops require multiple rounds because
+        # the outer loop can only be recognized as unrollable after the inner loop
+        # has already been unrolled.  merge_linear_chains collapses the chains of
+        # blocks left by inner loop unrolling so the outer loop structure is
+        # visible.  Cap at 8 to bound compile time.
+        n_unroll = 0
+        for _unroll_round in range(8):
+            n_this = unroll_loops(kernel, max_unroll=16)
+            n_unroll += n_this
+            _gate(kernel, f'unroll_loops[{_unroll_round}]')
+            if n_this == 0:
+                break
+            constant_fold(kernel)  # expose new constants for next unroll round
+            merge_linear_chains(kernel)  # collapse chain blocks so outer loops become detectable
+            _gate(kernel, f'merge_linear_chains[{_unroll_round}]')
         n_fold = constant_fold(kernel)
         _gate(kernel, 'constant_fold')
         n_cse = cse(kernel)
