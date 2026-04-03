@@ -2312,6 +2312,16 @@ class Parser:
                 while self._match(TokKind.STAR):
                     decl_ty = PtrTy(decl_ty, AddrSpace.GLOBAL)
                 name = self._expect_ident().value
+                # Skip __attribute__((unused)) or similar GCC qualifiers on local vars
+                while self._at(TokKind.IDENT) and self._peek().value == '__attribute__':
+                    self._advance()
+                    if self._at(TokKind.LPAREN):
+                        depth = 1
+                        self._advance()
+                        while depth > 0 and not self._at(TokKind.EOF):
+                            if self._peek().kind == TokKind.LPAREN: depth += 1
+                            elif self._peek().kind == TokKind.RPAREN: depth -= 1
+                            self._advance()
 
                 # Struct / vector type variable (e.g. float3 v;).
                 # Decompose into per-field scalar variables: v_x, v_y, v_z.
@@ -3586,6 +3596,16 @@ class Parser:
                     self._advance()  # consume ']'
                     if not isinstance(pty, PtrTy):
                         pty = PtrTy(pty, 0)
+                # Skip trailing __attribute__((unused)) and similar GCC qualifiers
+                while self._at(TokKind.IDENT) and self._peek().value == '__attribute__':
+                    self._advance()
+                    if self._at(TokKind.LPAREN):
+                        depth = 1
+                        self._advance()
+                        while depth > 0 and not self._at(TokKind.EOF):
+                            if self._peek().kind == TokKind.LPAREN: depth += 1
+                            elif self._peek().kind == TokKind.RPAREN: depth -= 1
+                            self._advance()
                 params.append(KernelParam(pname, pty))
                 if not self._match(TokKind.COMMA):
                     break
@@ -4005,18 +4025,37 @@ class Parser:
                     # (already consumed; just continue to parse the following function)
                 continue
             if self._at(TokKind.KW_GLOBAL):
-                # Defer kernel parsing — record position, skip body
-                _deferred_kernel_positions.append(self._pos)
-                # Skip past kernel: consume qualifiers, name, params, body
-                while not self._at(TokKind.LBRACE) and not self._at(TokKind.EOF):
-                    self._advance()
-                if self._at(TokKind.LBRACE):
-                    depth = 1
-                    self._advance()
-                    while depth > 0 and not self._at(TokKind.EOF):
-                        if self._peek().kind == TokKind.LBRACE: depth += 1
-                        elif self._peek().kind == TokKind.RBRACE: depth -= 1
+                # Peek ahead to distinguish forward declaration (__global__ foo(...);)
+                # from full definition (__global__ foo(...) { ... }).
+                # Forward decls hit SEMI before LBRACE; skip them without recording.
+                _lookahead = self._pos + 1
+                _is_fwd_decl = False
+                while _lookahead < len(self._toks):
+                    _lk = self._toks[_lookahead].kind
+                    if _lk == TokKind.LBRACE:
+                        break
+                    if _lk == TokKind.SEMI:
+                        _is_fwd_decl = True
+                        break
+                    _lookahead += 1
+                if _is_fwd_decl:
+                    # Forward declaration — skip to SEMI and discard
+                    while not self._at(TokKind.SEMI) and not self._at(TokKind.EOF):
                         self._advance()
+                    if self._at(TokKind.SEMI):
+                        self._advance()
+                else:
+                    # Full definition — defer kernel parsing, record position, skip body
+                    _deferred_kernel_positions.append(self._pos)
+                    while not self._at(TokKind.LBRACE) and not self._at(TokKind.EOF):
+                        self._advance()
+                    if self._at(TokKind.LBRACE):
+                        depth = 1
+                        self._advance()
+                        while depth > 0 and not self._at(TokKind.EOF):
+                            if self._peek().kind == TokKind.LBRACE: depth += 1
+                            elif self._peek().kind == TokKind.RBRACE: depth -= 1
+                            self._advance()
             elif self._at(TokKind.KW_DEVICE):
                 # Peek ahead: if '(' appears before ';' it's a function; otherwise
                 # it's a global device variable (__device__ int counter;).
