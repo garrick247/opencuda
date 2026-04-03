@@ -2604,8 +2604,23 @@ class PTXEmitter:
                     # Emit predicated moves
                     true_op = self._operand(t_inst.lhs)
                     false_op = self._operand(f_inst.lhs)
-                    self._lines.append(f'    @{pred} mov.{ptx_ty} {dest}, {true_op};')
-                    self._lines.append(f'    @!{pred} mov.{ptx_ty} {dest}, {false_op};')
+                    # If a value operand is a predicate register and the
+                    # destination is a non-pred type, a plain mov would be
+                    # invalid PTX ("Arguments mismatch").  Use selp instead:
+                    # `@pred selp.type dest, 1, 0, pred_src` converts the
+                    # predicate to an integer 0/1 value.
+                    def _pred_op(v_inst_lhs, op_str: str) -> bool:
+                        return (isinstance(v_inst_lhs, Value)
+                                and v_inst_lhs.id in self._pred_ids
+                                and ptx_ty not in ('pred',))
+                    if _pred_op(t_inst.lhs, true_op):
+                        self._lines.append(f'    @{pred} selp.{ptx_ty} {dest}, 1, 0, {true_op};')
+                    else:
+                        self._lines.append(f'    @{pred} mov.{ptx_ty} {dest}, {true_op};')
+                    if _pred_op(f_inst.lhs, false_op):
+                        self._lines.append(f'    @!{pred} selp.{ptx_ty} {dest}, 1, 0, {false_op};')
+                    else:
+                        self._lines.append(f'    @!{pred} mov.{ptx_ty} {dest}, {false_op};')
 
                     # Mark true/false blocks as handled; also inline merge block
                     if not hasattr(self, '_skip_blocks'):

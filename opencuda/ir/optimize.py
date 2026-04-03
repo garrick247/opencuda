@@ -311,8 +311,35 @@ def cse(kernel: Kernel) -> int:
     eliminated = 0
     global_replacements: dict[int, Value] = {}
 
+    # Build predecessor map so we can propagate `seen` into single-predecessor
+    # successors.  This enables cross-block CSE for short-circuit && / || patterns
+    # (e.g. `a < b && b > a` — the two comparisons land in consecutive blocks
+    # that have a single-predecessor relationship).
+    _pred_count: dict[str, int] = {bb.label: 0 for bb in kernel.blocks}
+    _pred_of: dict[str, list] = {bb.label: [] for bb in kernel.blocks}
+    for _bb in kernel.blocks:
+        _t = _bb.terminator
+        if isinstance(_t, BrTerm):
+            if _t.target in _pred_count:
+                _pred_count[_t.target] += 1
+                _pred_of[_t.target].append(_bb.label)
+        elif isinstance(_t, CondBrTerm):
+            for _tgt in (_t.true_bb, _t.false_bb):
+                if _tgt in _pred_count:
+                    _pred_count[_tgt] += 1
+                    _pred_of[_tgt].append(_bb.label)
+    # Per-block final `seen` dicts (stored after processing each block)
+    _block_final_seen: dict[str, dict] = {}
+
     for bb in kernel.blocks:
-        seen: dict[tuple, Value] = {}
+        # For single-predecessor blocks that have already been processed,
+        # seed `seen` with the predecessor's final seen dict.  This allows
+        # cross-block CSE to catch && / || short-circuit duplicates.
+        _preds = _pred_of.get(bb.label, [])
+        if len(_preds) == 1 and _preds[0] in _block_final_seen:
+            seen: dict[tuple, Value] = dict(_block_final_seen[_preds[0]])
+        else:
+            seen: dict[tuple, Value] = {}
         replacements: dict[int, Value] = {}
         written_ids: set[int] = set()
         new_insts = []
@@ -438,12 +465,13 @@ def cse(kernel: Kernel) -> int:
                     if isinstance(inst.value, Value) and inst.value.id in replacements:
                         inst.value = replacements[inst.value.id]
                 elif isinstance(inst, (PrintfInst, CallInst)):
-                    inst.args = [replacements[a] if isinstance(a, Value) and a.id in replacements else a
+                    inst.args = [replacements[a.id] if isinstance(a, Value) and a.id in replacements else a
                                  for a in inst.args]
 
             new_insts.append(inst)
         bb.instructions = new_insts
         global_replacements.update(replacements)
+        _block_final_seen[bb.label] = seen
 
     # Second pass: propagate replacements to any cross-block uses that the
     # per-block loop could not reach (e.g. block A eliminates def X → Y, but
@@ -1154,6 +1182,8 @@ def optimize(module: Module, verbose: bool = False,
             if n_this == 0:
                 break
             constant_fold(kernel)  # expose new constants for next unroll round
+            dead_block_elim(kernel)  # remove dead branches revealed by constant folding
+            dead_inst_elim(kernel)  # remove dead instructions revealed by loop unrolling
             merge_linear_chains(kernel)  # collapse chain blocks so outer loops become detectable
             _gate(kernel, f'merge_linear_chains[{_unroll_round}]')
         n_fold = constant_fold(kernel)
@@ -1184,6 +1214,41 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'dead_inst_elim-2')
         n_teb = thread_empty_blocks(kernel)
         _gate(kernel, 'thread_empty_blocks')
+        # Pass 12: thread + dead-cleanup to fixpoint.
+        # Rationale: dead_inst_elim may reveal new transparent blocks (e.g.
+        # lor_rhs/lor_skip blocks whose instructions become dead after the
+        # branch was folded away).  A second thread_empty_blocks pass then
+        # folds those into their ultimate target, exposing more dead insts.
+        # Repeat until stable (typically 2–3 rounds for goto/ternary code).
+        _fp_round = 0
+        while True:
+            _fp_round += 1
+            _n_dbe3 = dead_block_elim(kernel)
+            _n_die3 = dead_inst_elim(kernel)
+            _n_teb3 = thread_empty_blocks(kernel)
+            if _n_dbe3 == 0 and _n_die3 == 0 and _n_teb3 == 0:
+                break
+            if _fp_round >= 8:
+                break  # safety cap
+        _gate(kernel, 'dead_inst_elim-3')
+        # Pass 13: post-thread optimization to fixpoint.
+        # After threading and dead cleanup, the IR is structurally clean.
+        # Some patterns only become visible now (loops unrollable after goto
+        # threading, CSE/fold opportunities exposed by prior simplifications).
+        # Run all key passes until nothing changes.
+        for _post_round in range(8):
+            _n_post = 0
+            _n_post += unroll_loops(kernel, max_unroll=16)
+            _n_post += constant_fold(kernel)
+            _n_post += cse(kernel)
+            _n_post += identity_fold(kernel)
+            _n_post += dead_inst_elim(kernel)
+            _n_post += dead_block_elim(kernel)
+            _n_post += thread_empty_blocks(kernel)
+            if _n_post == 0:
+                break
+            merge_linear_chains(kernel)
+        _gate(kernel, 'post-thread-opt')
         if verbose:
             total = (n_unroll + n_fold + n_fold2 + n_fold3 + n_cse + n_dbe
                      + n_idf + n_die + n_licm + n_cse2 + n_idf2 + n_die2 + n_teb)
@@ -1218,5 +1283,8 @@ def optimize(module: Module, verbose: bool = False,
         constant_fold(func)
         dead_inst_elim(func)
         thread_empty_blocks(func)
+        for _ in range(8):
+            if dead_block_elim(func) == 0 and dead_inst_elim(func) == 0 and thread_empty_blocks(func) == 0:
+                break
 
     return module
