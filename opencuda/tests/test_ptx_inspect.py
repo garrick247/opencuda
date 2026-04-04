@@ -472,3 +472,63 @@ __global__ void vadd(float *a, float *b, float *c, int n) {
     assert 'mov' in last_inst, (
         f"Loop-init instruction before bra for_cond must be a mov. Got:\n  {last_inst}\nFull PTX:\n{ptx}"
     )
+
+
+def test_fma_fusion_f32():
+    """FMA fusion pass must emit fma.rn.f32 for a*b + c patterns.
+
+    The optimizer's fma_fuse pass detects float mul+add pairs where the mul
+    result is used exactly once and fuses them into a single fma.rn.f32
+    instruction (single rounding, more accurate than separate mul+add).
+    """
+    ptx = _ptx("""
+__global__ void saxpy(float *y, const float *x, float a, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+""")
+    assert 'fma.rn.f32' in ptx, (
+        f"Expected fma.rn.f32 in PTX for a*x+y pattern, got:\n{ptx}"
+    )
+    # The separate mul.f32 for the a*x[i] computation should be gone.
+    assert 'mul.f32' not in ptx, (
+        f"Expected no separate mul.f32 after FMA fusion, got:\n{ptx}"
+    )
+
+
+def test_fma_fusion_loop():
+    """FMA fusion must fire inside a grid-stride loop body."""
+    ptx = _ptx("""
+__global__ void dot_add(float *out, const float *a, const float *b, float bias, int n) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = gridDim.x * blockDim.x;
+    float acc = 0.0f;
+    for (int i = tid; i < n; i += stride) {
+        acc += a[i] * b[i];
+    }
+    if (tid < n) out[tid] = acc + bias;
+}
+""")
+    assert 'fma.rn.f32' in ptx, (
+        f"Expected fma.rn.f32 in PTX for a[i]*b[i]+acc pattern, got:\n{ptx}"
+    )
+
+
+def test_fma_fusion_does_not_fire_for_integer():
+    """FMA fusion must NOT fire for integer mul+add (no fma.s32 in PTX)."""
+    ptx = _ptx("""
+__global__ void int_muladd(int *out, const int *a, const int *b, int c, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        out[i] = a[i] * b[i] + c;
+    }
+}
+""")
+    assert 'fma' not in ptx, (
+        f"fma must not appear in integer mul+add PTX, got:\n{ptx}"
+    )
+    assert 'mul.lo.s32' in ptx or 'mul.lo.u32' in ptx or 'mul' in ptx, (
+        f"Expected integer mul in PTX, got:\n{ptx}"
+    )

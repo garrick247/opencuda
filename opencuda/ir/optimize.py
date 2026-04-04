@@ -18,6 +18,9 @@ Pass 7: LICM — Loop-Invariant Code Motion (v0.8). Conservative:
         outside the loop, with def_count==1 (not a writeback target).
         Never hoists memory ops, calls, side-effecting instructions, or
         loop-condition comparisons.
+Pass 7b: FMA fusion — fuse float mul+add pairs within a basic block into
+        fma.rn.f32/f64 when the mul result is consumed exactly once by the
+        add.  Runs after LICM so loop-invariant muls are already hoisted.
 
 SAFETY RULE for passes 1–2: Replacements never cross basic block boundaries.
 This prevents the loop writeback bug where a variable initialized
@@ -38,7 +41,7 @@ from ..ir.nodes import (Module, Kernel, DeviceFunction, BasicBlock, Value, Const
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst, BinOp, CmpOp,
                          BrTerm, CondBrTerm, RetTerm)
-from ..ir.types import INT32, UINT32, UINT64, FLOAT, ScalarTy
+from ..ir.types import INT32, UINT32, UINT64, FLOAT, ScalarTy, ScalarType
 
 
 def _const_val(op: Operand):
@@ -1235,6 +1238,152 @@ def thread_empty_blocks(kernel: Kernel) -> int:
     return removed
 
 
+def fma_fuse(kernel: Kernel) -> int:
+    """Fuse adjacent float mul + add → fma.rn.fNN within a single basic block.
+
+    Fires when:
+      - dest of MUL is float (f32 or f64)
+      - dest of MUL has exactly one global definition (def_count == 1) and
+        exactly one global use (use_count == 1)
+      - that single use is an ADD in the same basic block
+      - the ADD produces the same float type
+
+    Replaces both instructions with ``CallInst('fmaf'/'fma', [a, b, c])``,
+    which the PTX emitter lowers to ``fma.rn.f32`` / ``fma.rn.f64``.
+
+    Run AFTER licm so that loop-invariant muls are already hoisted to
+    preheaders (computing them once rather than fusing them back into the
+    loop body and computing them each iteration).
+
+    Safety:
+      - def_count == 1 guards against loop-writeback aliases.
+      - use_count == 1 ensures no other instruction consumes the intermediate
+        mul result that would be lost after fusion.
+      - Within-block scope avoids cross-block dominance issues.
+    """
+    # Build global def_count and use_count for every Value.
+    def_count: dict[int, int] = {}
+    use_count: dict[int, int] = {}
+
+    def _tally_use(op: Operand) -> None:
+        if isinstance(op, Value):
+            use_count[op.id] = use_count.get(op.id, 0) + 1
+
+    for bb in kernel.blocks:
+        for inst in bb.instructions:
+            if hasattr(inst, 'dest') and inst.dest is not None:
+                did = inst.dest.id
+                def_count[did] = def_count.get(did, 0) + 1
+            if isinstance(inst, BinInst):
+                _tally_use(inst.lhs); _tally_use(inst.rhs)
+            elif isinstance(inst, CmpInst):
+                _tally_use(inst.lhs); _tally_use(inst.rhs)
+            elif isinstance(inst, CvtInst):
+                _tally_use(inst.src)
+            elif isinstance(inst, LoadInst):
+                _tally_use(inst.addr)
+            elif isinstance(inst, StoreInst):
+                _tally_use(inst.addr); _tally_use(inst.value)
+            elif isinstance(inst, CallInst):
+                for a in inst.args:
+                    _tally_use(a)
+        if isinstance(bb.terminator, CondBrTerm):
+            _tally_use(bb.terminator.cond)
+
+    def _operand_ty_matches(op: Operand, target_ty) -> bool:
+        """True iff op's type equals target_ty.
+
+        Both operands of the MUL must have exactly the same type as the MUL
+        result before we fuse into a CallInst.  The BinInst emitter handles
+        implicit promotions (e.g. float lhs * double rhs → double result) via
+        _coerce_to_float, but the CallInst emitter for fmaf/fma determines the
+        instruction type from args[0].ty — so a mismatched first operand would
+        emit the wrong fma.rn.fXX opcode.
+        """
+        if isinstance(op, (Value, Const)):
+            return op.ty == target_ty
+        return False
+
+    # Identify mul results that are candidates for FMA fusion.
+    fusible: set[int] = set()
+    for bb in kernel.blocks:
+        for inst in bb.instructions:
+            if (isinstance(inst, BinInst)
+                    and inst.op == BinOp.MUL
+                    and isinstance(inst.dest.ty, ScalarTy)
+                    and inst.dest.ty.is_float
+                    # Both operands must match the result type — mixed-type muls
+                    # (e.g. float * double → double) need the BinInst emitter's
+                    # _coerce_to_float path, which CallInst('fmaf') doesn't use.
+                    and _operand_ty_matches(inst.lhs, inst.dest.ty)
+                    and _operand_ty_matches(inst.rhs, inst.dest.ty)
+                    and def_count.get(inst.dest.id, 0) == 1
+                    and use_count.get(inst.dest.id, 0) == 1):
+                fusible.add(inst.dest.id)
+
+    if not fusible:
+        return 0
+
+    fused = 0
+    for bb in kernel.blocks:
+        # Collect fusible muls defined in this block.
+        local_muls: dict[int, BinInst] = {}
+        for inst in bb.instructions:
+            if (isinstance(inst, BinInst)
+                    and inst.op == BinOp.MUL
+                    and inst.dest.id in fusible):
+                local_muls[inst.dest.id] = inst
+
+        if not local_muls:
+            continue
+
+        # Find ADD instructions in this block that consume a local fusible mul.
+        # Key: Python object id of the ADD BinInst → (mul_inst, addend, is_double)
+        fuse_map: dict[int, tuple] = {}
+        for inst in bb.instructions:
+            if (isinstance(inst, BinInst)
+                    and inst.op == BinOp.ADD
+                    and isinstance(inst.dest.ty, ScalarTy)
+                    and inst.dest.ty.is_float):
+                mul_inst = None
+                addend = None
+                if isinstance(inst.lhs, Value) and inst.lhs.id in local_muls:
+                    mul_inst = local_muls[inst.lhs.id]
+                    addend = inst.rhs
+                elif isinstance(inst.rhs, Value) and inst.rhs.id in local_muls:
+                    mul_inst = local_muls[inst.rhs.id]
+                    addend = inst.lhs
+                if mul_inst is not None:
+                    is_double = inst.dest.ty.scalar == ScalarType.DOUBLE
+                    fuse_map[id(inst)] = (mul_inst, addend, is_double)
+
+        if not fuse_map:
+            continue
+
+        fused_mul_ids = {info[0].dest.id for info in fuse_map.values()}
+
+        new_insts = []
+        for inst in bb.instructions:
+            # Skip the MUL that is being absorbed into FMA.
+            if (isinstance(inst, BinInst)
+                    and inst.op == BinOp.MUL
+                    and inst.dest.id in fused_mul_ids):
+                continue
+            # Replace the ADD with a fma CallInst.
+            if id(inst) in fuse_map:
+                mul_inst, addend, is_double = fuse_map[id(inst)]
+                func_name = 'fma' if is_double else 'fmaf'
+                new_insts.append(CallInst(inst.dest, func_name,
+                                          [mul_inst.lhs, mul_inst.rhs, addend]))
+                fused += 1
+                continue
+            new_insts.append(inst)
+
+        bb.instructions = new_insts
+
+    return fused
+
+
 def optimize(module: Module, verbose: bool = False,
              debug_verify: bool = False) -> Module:
     """Run all optimization passes on the module.
@@ -1319,6 +1468,10 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'dead_inst_elim')
         n_licm = licm(kernel)
         _gate(kernel, 'licm')
+        # FMA fusion: after LICM so invariant muls are already hoisted;
+        # only fuses mul+add pairs within the same basic block.
+        n_fma = fma_fuse(kernel)
+        _gate(kernel, 'fma_fuse')
         # Round 2: post-LICM CSE catches newly exposed duplicates
         n_cse2 = cse(kernel)
         _gate(kernel, 'cse-2')
@@ -1359,6 +1512,11 @@ def optimize(module: Module, verbose: bool = False,
             _n_post += constant_fold(kernel)
             _n_post += cse(kernel)
             _n_post += identity_fold(kernel)
+            # FMA fusion in the post-thread loop: runs after thread_empty_blocks
+            # has merged inline-return blocks (e.g. inline_vec2_scale_merge → for_body),
+            # making mul+add pairs visible in the same block.  Running it here
+            # ensures idempotency: fused muls are gone on the second pass.
+            _n_post += fma_fuse(kernel)
             _n_post += dead_inst_elim(kernel)
             _n_post += dead_block_elim(kernel)
             _n_post += thread_empty_blocks(kernel)
@@ -1368,7 +1526,7 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'post-thread-opt')
         if verbose:
             total = (n_unroll + n_fold + n_fold2 + n_fold3 + n_cse + n_dbe
-                     + n_idf + n_die + n_licm + n_cse2 + n_idf2 + n_die2 + n_teb)
+                     + n_idf + n_die + n_licm + n_fma + n_cse2 + n_idf2 + n_die2 + n_teb)
             if total > 0:
                 parts = []
                 if n_unroll:                 parts.append(f"{n_unroll} loops unrolled")
@@ -1379,6 +1537,7 @@ def optimize(module: Module, verbose: bool = False,
                 if n_idf:                    parts.append(f"{n_idf} copies propagated")
                 if n_die:                    parts.append(f"{n_die} dead insts removed")
                 if n_licm:                   parts.append(f"{n_licm} LICM hoisted")
+                if n_fma:                    parts.append(f"{n_fma} FMA fused")
                 if n_cse2:                   parts.append(f"{n_cse2} CSE-2 eliminated")
                 if n_idf2:                   parts.append(f"{n_idf2} copies-2 propagated")
                 if n_die2:                   parts.append(f"{n_die2} dead-2 insts removed")
@@ -1395,6 +1554,7 @@ def optimize(module: Module, verbose: bool = False,
         constant_fold(func)
         dead_inst_elim(func)
         licm(func)
+        fma_fuse(func)
         cse(func)
         identity_fold(func)
         constant_fold(func)
