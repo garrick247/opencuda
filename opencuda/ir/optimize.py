@@ -309,6 +309,25 @@ def constant_fold(kernel: Kernel) -> int:
                         inst.op = BinOp.ADD
                         folded += 1
 
+                # Self-annihilation: x - x → 0, x ^ x → 0
+                elif (not is_float
+                      and inst.op in (BinOp.SUB, BinOp.XOR)
+                      and isinstance(inst.lhs, Value) and isinstance(inst.rhs, Value)
+                      and inst.lhs.id == inst.rhs.id):
+                    inst.lhs = Const(inst.dest.ty, 0)
+                    inst.rhs = Const(inst.dest.ty, 0)
+                    inst.op = BinOp.ADD
+                    folded += 1
+
+                # Self-idempotence: x & x → x, x | x → x
+                elif (not is_float
+                      and inst.op in (BinOp.AND, BinOp.OR)
+                      and isinstance(inst.lhs, Value) and isinstance(inst.rhs, Value)
+                      and inst.lhs.id == inst.rhs.id):
+                    inst.op = BinOp.ADD
+                    inst.rhs = Const(inst.dest.ty, 0)
+                    folded += 1
+
             elif isinstance(inst, CmpInst):
                 inst.lhs = _resolve(inst.lhs)
                 inst.rhs = _resolve(inst.rhs)
