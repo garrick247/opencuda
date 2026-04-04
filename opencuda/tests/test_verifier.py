@@ -76,15 +76,8 @@ KNOWN_PARSER_BUGS = frozenset()
 # Parser bugs that are ONLY visible before the full optimization pipeline runs.
 # The optimizer (dead_block_elim, dead_inst_elim, loop unrolling) happens to
 # eliminate the bad IR.  Group 5 does NOT check these.
-KNOWN_PREOPT_ONLY_BUGS = frozenset({
-    'probe_di',     # missing terminator in dead inline-merge block (dead_block_elim fixes)
-    'probe_fi',     # multiple-return struct fn: dominance violation resolved by dead_block_elim
-    'probe_fu',     # multiple-return struct fn: unreachable after_inline_return blocks
-    'probe_gn',     # missing terminator in dead ternary-merge block (dead_block_elim fixes)
-    'probe_hs',     # struct return fields undefined — loop unrolling resolves them
-    'probe_mk',     # struct fn with internal if-branches: dominance viol resolved by dead_block_elim
-    'typedef_union', # union field aliasing: dead_inst_elim eliminates the bad use
-})
+# All 7 original entries fixed as of v0.52 (CondBrTerm constant fold + shared struct dot fix).
+KNOWN_PREOPT_ONLY_BUGS = frozenset()
 
 # Combined skip set for pass-by-pass tests (both categories need to be skipped)
 _SKIP_IN_PASSBYPASS = KNOWN_PARSER_BUGS | KNOWN_PREOPT_ONLY_BUGS
