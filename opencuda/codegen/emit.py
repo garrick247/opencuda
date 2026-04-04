@@ -656,6 +656,12 @@ class PTXEmitter:
         #  2. Stop propagation when a line REDEFINES %rX (i.e., %rX appears as
         #     the destination operand).  This avoids corrupting code where the
         #     same physical slot is reused for a different live range after the mov.
+        #  3. Also stop when %rY (the source) is redefined.  After a redefinition
+        #     of %rY, substituting subsequent uses of %rX with %rY would read the
+        #     NEW value of %rY, not the value that was originally copied from %rY
+        #     into %rX.  Classic example: global_tid → %r4, copied to %r3, then
+        #     %r4 overwritten with stride — the loop-init `mov %r1, %r3` must NOT
+        #     become `mov %r1, %r4` (stride), it must keep reading %r3 (global_tid).
         import re as _mov_re
         _dest_def_re = _mov_re.compile(r'\s+\S+\s+(%\w+),')
         def _reg_class(reg: str) -> str:
@@ -667,13 +673,44 @@ class PTXEmitter:
             if m:
                 dest, src = m.group(1), m.group(2)
                 if _reg_class(dest) == _reg_class(src):
-                    # Same register class: copy-propagate, but stop if dest is
-                    # redefined (appears as first operand) in a subsequent line.
+                    # Safe to eliminate only if dest has no uses after src is
+                    # redefined.  If src is overwritten later (new live range
+                    # sharing the same physical register), any dest use that
+                    # was substituted with src would silently read the wrong
+                    # value.  Example: global_tid → %r4, copied to %r3 via
+                    # mov.b32, then %r4 overwritten with stride; the loop-init
+                    # `mov %r1, %r3` must keep %r3 (= global_tid), NOT become
+                    # `mov %r1, %r4` (= stride).
+                    src_redef_j = None   # first line index where src is redefined
+                    for j in range(i + 1, len(body_lines)):
+                        dm = _dest_def_re.match(body_lines[j])
+                        if dm and dm.group(1) == dest:
+                            break  # dest redefined before src: safe, no issue
+                        if dm and dm.group(1) == src:
+                            src_redef_j = j
+                            break
+                    # If src is redefined, check whether dest is used after that point.
+                    unsafe = False
+                    if src_redef_j is not None:
+                        for j in range(src_redef_j + 1, len(body_lines)):
+                            dm = _dest_def_re.match(body_lines[j])
+                            if dm and dm.group(1) == dest:
+                                break  # dest redefined: no further uses matter
+                            if dest in body_lines[j]:
+                                unsafe = True
+                                break
+                    if unsafe:
+                        i += 1
+                        continue  # keep the mov; dest is needed after src changes
+                    # Safe to eliminate: copy-propagate dest → src up to the
+                    # first redefinition of dest or src.
                     body_lines.pop(i)
                     for j in range(i, len(body_lines)):
                         dm = _dest_def_re.match(body_lines[j])
                         if dm and dm.group(1) == dest:
                             break  # dest redefined: stop propagation
+                        if dm and dm.group(1) == src:
+                            break  # src redefined: further subs would read new value
                         body_lines[j] = body_lines[j].replace(dest, src)
                     continue  # re-check at same index after pop
             i += 1

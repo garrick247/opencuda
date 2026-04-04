@@ -435,3 +435,40 @@ def test_liveness_mixed_type_no_prefix_collision():
         f"Expected '.reg .b32' declaration in PTX, got:\n{ptx}"
     assert '.reg .f32' in ptx, \
         f"Expected '.reg .f32' declaration in PTX, got:\n{ptx}"
+
+
+def test_grid_stride_loop_init_uses_tid_not_stride():
+    """Grid-stride loop must initialize loop variable to global_tid, not stride.
+
+    Regression test for a peephole bug where mov.b32 %rX, %rY was eliminated
+    and %rY subsequently overwritten (new live range reusing the same physical
+    register).  The mov-elimination peephole propagated %rX → %rY past the
+    redefinition of %rY, causing the loop-init `mov %r1, %rX` to silently
+    become `mov %r1, %rY` and read stride instead of global_tid.
+    """
+    ptx = _ptx("""
+__global__ void vadd(float *a, float *b, float *c, int n) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = gridDim.x * blockDim.x;
+    for (int i = tid; i < n; i += stride) {
+        c[i] = a[i] + b[i];
+    }
+}
+""")
+    # The PTX must contain %tid.x to compute global_tid and %nctaid.x for stride
+    assert '%tid.x' in ptx, f"Expected %%tid.x in PTX, got:\n{ptx}"
+    assert '%nctaid.x' in ptx, f"Expected %%nctaid.x in PTX, got:\n{ptx}"
+    # The loop init register must be derived from the add (global_tid), not from
+    # the mul (stride).  Verify by checking that the instruction immediately
+    # before `bra for_cond` is NOT a mul — it must be a mov from global_tid.
+    import re as _re
+    # Find the loop-init mov: last instruction before the first `bra for_cond`
+    before_bra = _re.split(r'bra\s+for_cond', ptx)[0]
+    last_inst = [l.strip() for l in before_bra.splitlines() if l.strip() and not l.strip().endswith(':')][-1]
+    assert not last_inst.startswith('mul'), (
+        f"Loop-init instruction before bra for_cond must not be a mul "
+        f"(that would mean i=stride, not i=global_tid). Got:\n  {last_inst}\nFull PTX:\n{ptx}"
+    )
+    assert 'mov' in last_inst, (
+        f"Loop-init instruction before bra for_cond must be a mov. Got:\n  {last_inst}\nFull PTX:\n{ptx}"
+    )
