@@ -275,6 +275,40 @@ def constant_fold(kernel: Kernel) -> int:
                     inst.op = BinOp.ADD
                     folded += 1
 
+                # AND annihilator: x & 0 → 0, 0 & x → 0
+                elif (not is_float and inst.op == BinOp.AND
+                      and (rv == 0 or lv == 0)):
+                    inst.lhs = Const(inst.dest.ty, 0)
+                    inst.rhs = Const(inst.dest.ty, 0)
+                    inst.op = BinOp.ADD
+                    folded += 1
+
+                # AND with all-ones → identity: x & ~0 → x
+                elif (not is_float and inst.op == BinOp.AND
+                      and isinstance(inst.dest.ty, ScalarTy)):
+                    _bits = inst.dest.ty.size * 8
+                    _allones = _mask_int((1 << _bits) - 1, inst.dest.ty)
+                    if rv == _allones and isinstance(inst.lhs, Value):
+                        inst.op = BinOp.ADD
+                        inst.rhs = Const(inst.dest.ty, 0)
+                        folded += 1
+                    elif lv == _allones and isinstance(inst.rhs, Value):
+                        inst.op = BinOp.ADD
+                        inst.lhs = inst.rhs
+                        inst.rhs = Const(inst.dest.ty, 0)
+                        folded += 1
+
+                # OR annihilator: x | ~0 → ~0, ~0 | x → ~0
+                elif (not is_float and inst.op == BinOp.OR
+                      and isinstance(inst.dest.ty, ScalarTy)):
+                    _bits = inst.dest.ty.size * 8
+                    _allones = _mask_int((1 << _bits) - 1, inst.dest.ty)
+                    if rv == _allones or lv == _allones:
+                        inst.lhs = Const(inst.dest.ty, _allones)
+                        inst.rhs = Const(inst.dest.ty, 0)
+                        inst.op = BinOp.ADD
+                        folded += 1
+
             elif isinstance(inst, CmpInst):
                 inst.lhs = _resolve(inst.lhs)
                 inst.rhs = _resolve(inst.rhs)
