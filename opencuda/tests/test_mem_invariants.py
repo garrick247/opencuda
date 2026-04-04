@@ -156,7 +156,13 @@ def test_param_pointer_decl_uses_u64(cu_file):
     source = cu_file.read_text(encoding='utf-8')
     ptx = _ptx(source)
 
-    param_u64_count = len(re.findall(r'\.param \.u64 \w+', ptx))
+    # Exclude forward-declaration lines (single-line .func signatures ending in ';').
+    # Those have .param .u64 in the signature but no body and no ld.param instructions.
+    non_fwd_ptx = '\n'.join(
+        line for line in ptx.splitlines()
+        if not line.rstrip().endswith(';')
+    )
+    param_u64_count = len(re.findall(r'\.param \.u64 \w+', non_fwd_ptx))
     if param_u64_count == 0:
         pytest.skip(f"{cu_file.name}: no .param .u64 declarations, nothing to check")
 

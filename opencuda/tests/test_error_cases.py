@@ -32,13 +32,14 @@ def _compile(source: str) -> str:
 # Error cases
 # ---------------------------------------------------------------------------
 
-def test_prefix_increment_raises():
-    """prefix ++ (++i) must raise ParseError since only postfix is implemented."""
+def test_prefix_increment_compiles():
+    """prefix ++ (++i) is now supported and must compile to valid PTX."""
     src = """
 __global__ void f(int *out) { int i = 0; ++i; out[0] = i; }
 """
-    with pytest.raises(Exception):
-        _compile(src)
+    ptx = _compile(src)
+    assert '.entry f' in ptx
+    assert 'ret' in ptx
 
 
 def test_undefined_variable_raises():
@@ -74,9 +75,8 @@ __global__ void f(int *msg) { printf((char*)msg); }
         pass  # ParseError or any exception is acceptable
 
 
-def test_recursive_device_func_hits_limit():
-    """When n is a runtime parameter (not constant), inlining recurses infinitely.
-    Must raise RecursionError (Python stack overflow), NOT produce silently wrong PTX."""
+def test_recursive_device_func_compiles():
+    """Recursive device functions are now compiled as proper .func PTX with call.uni."""
     src = """
 __device__ int factorial(int n) {
     if (n <= 1) return 1;
@@ -86,8 +86,10 @@ __global__ void f(int *out, int n) {
     out[0] = factorial(n);
 }
 """
-    with pytest.raises((RecursionError, Exception), match=None):
-        _compile(src)
+    ptx = _compile(src)
+    assert '__devfn_factorial' in ptx
+    assert 'call.uni' in ptx
+    assert '.entry f' in ptx
 
 
 def test_empty_kernel_is_valid():

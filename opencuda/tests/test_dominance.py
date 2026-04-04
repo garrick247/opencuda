@@ -538,7 +538,7 @@ def test_stats_empty_kernel():
 # ---------------------------------------------------------------------------
 
 def _parse_opt(path: Path):
-    src = path.read_text()
+    src = path.read_text(encoding='utf-8')
     return optimize(parse(preprocess(src)))
 
 
