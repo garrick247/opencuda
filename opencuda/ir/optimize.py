@@ -38,7 +38,7 @@ from ..ir.nodes import (Module, Kernel, DeviceFunction, BasicBlock, Value, Const
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst, BinOp, CmpOp,
                          BrTerm, CondBrTerm, RetTerm)
-from ..ir.types import INT32, UINT32, FLOAT, ScalarTy
+from ..ir.types import INT32, UINT32, UINT64, FLOAT, ScalarTy
 
 
 def _const_val(op: Operand):
@@ -207,6 +207,29 @@ def constant_fold(kernel: Kernel) -> int:
                     shift = rv.bit_length() - 1
                     inst.op = BinOp.SHR
                     inst.rhs = Const(inst.dest.ty, shift)
+                    folded += 1
+
+                # Strength reduction: signed div by power of 2 → sign-corrected arithmetic shift
+                # n / 2^k == (n + bias) >> k  where bias = (n >>s 31) >>u (32-k)
+                # This is the standard GCC/LLVM lowering for sdiv-by-power-of-2.
+                elif (not is_float and inst.op == BinOp.DIV
+                      and rv is not None and isinstance(rv, int) and rv > 1
+                      and (rv & (rv-1)) == 0
+                      and isinstance(inst.dest.ty, ScalarTy) and inst.dest.ty.is_signed):
+                    k = rv.bit_length() - 1
+                    bits = inst.dest.ty.size * 8
+                    ty_s = inst.dest.ty
+                    ty_u = UINT32 if bits == 32 else UINT64
+                    n = inst.lhs
+                    t1 = kernel.new_value('_sdiv_sign', ty_s)
+                    t2 = kernel.new_value('_sdiv_bias', ty_u)
+                    t3 = kernel.new_value('_sdiv_adj', ty_s)
+                    new_insts.append(BinInst(t1, BinOp.SHR, n, Const(ty_s, bits - 1)))
+                    new_insts.append(BinInst(t2, BinOp.SHR, t1, Const(ty_u, bits - k)))
+                    new_insts.append(BinInst(t3, BinOp.ADD, n, t2))
+                    inst.op = BinOp.SHR
+                    inst.lhs = t3
+                    inst.rhs = Const(ty_s, k)
                     folded += 1
 
                 # Strength reduction: unsigned mod by power of 2 → bitwise AND mask
