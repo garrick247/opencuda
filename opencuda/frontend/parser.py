@@ -2046,10 +2046,13 @@ class Parser:
                 var = self._variables[name]
                 # Auto-dereference __shared__ scalar vars used as rvalues.
                 # total declared as __shared__ float total; has PtrTy(FLOAT, SHARED).
-                # When accessed without '[', emit a load to return the scalar value.
+                # When accessed without '[' or '.', emit a load to return the scalar value.
+                # DOT suppressed: stree.field must go through the ptr-to-struct path in
+                # _parse_postfix_expr so that field address computation is emitted correctly.
                 if (name in self._shared_scalars
                         and isinstance(var.ty, PtrTy)
-                        and not self._at(TokKind.LBRACKET)):
+                        and not self._at(TokKind.LBRACKET)
+                        and not self._at(TokKind.DOT)):
                     loaded = self._new_val(name, var.ty.pointee)
                     self._emit(LoadInst(loaded, var))
                     return loaded

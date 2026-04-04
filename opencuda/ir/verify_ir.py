@@ -43,7 +43,7 @@ from typing import Optional
 from ..ir.nodes import (Kernel, Module, BasicBlock, Value, Const,
                          BinInst, CmpInst, LoadInst, StoreInst, CvtInst,
                          CallInst, ParamInst, PrintfInst, PhiInst,
-                         BrTerm, CondBrTerm, RetTerm)
+                         AsmInst, BrTerm, CondBrTerm, RetTerm)
 from ..ir.types import PtrTy, AddrSpace
 from .dominator import compute_dominators, dominates
 
@@ -161,6 +161,14 @@ def verify_kernel(kernel: Kernel,
                 def_count[vid] = def_count.get(vid, 0) + 1
                 if vid not in def_block:
                     def_block[vid] = bb.label
+            # AsmInst: output operands [(constraint, Value), ...] are defined here
+            if isinstance(inst, AsmInst):
+                for _, out_val in inst.outputs:
+                    if isinstance(out_val, Value):
+                        vid = out_val.id
+                        def_count[vid] = def_count.get(vid, 0) + 1
+                        if vid not in def_block:
+                            def_block[vid] = bb.label
 
     # ------------------------------------------------------------------
     # Check 4: every use has a def

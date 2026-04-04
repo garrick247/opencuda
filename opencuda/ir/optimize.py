@@ -263,6 +263,20 @@ def constant_fold(kernel: Kernel) -> int:
             new_insts.append(inst)
         bb.instructions = new_insts
 
+        # Fold CondBrTerm with a constant condition.
+        # For-ever loops (for(;;)) emit CondBrTerm(Const(1), body, exit);
+        # folding to BrTerm(body) makes the exit block unreachable so that
+        # dead_block_elim can remove it and the dominator computation is correct.
+        t = bb.terminator
+        if isinstance(t, CondBrTerm):
+            cond = _resolve(t.cond) if isinstance(t.cond, Value) else t.cond
+            if isinstance(cond, Const):
+                if cond.value:
+                    bb.terminator = BrTerm(t.true_bb)
+                else:
+                    bb.terminator = BrTerm(t.false_bb)
+                folded += 1
+
     return folded
 
 
