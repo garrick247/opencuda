@@ -241,6 +241,33 @@ def constant_fold(kernel: Kernel) -> int:
                     inst.rhs = Const(inst.dest.ty, rv - 1)
                     folded += 1
 
+                # Strength reduction: signed mod by power of 2 → sign-corrected AND
+                # a % 2^k == ((a + bias) & (2^k-1)) - bias
+                # where bias = (a >>s (bits-1)) >>u (bits-k)  (0 or 2^k-1)
+                # This is the standard GCC/LLVM lowering for srem-by-power-of-2.
+                elif (not is_float and inst.op == BinOp.MOD
+                      and rv is not None and isinstance(rv, int) and rv > 0
+                      and (rv & (rv-1)) == 0
+                      and isinstance(inst.dest.ty, ScalarTy) and inst.dest.ty.is_signed):
+                    k = rv.bit_length() - 1
+                    bits = inst.dest.ty.size * 8
+                    ty_s = inst.dest.ty
+                    ty_u = UINT32 if bits == 32 else UINT64
+                    mask = rv - 1
+                    n = inst.lhs
+                    t1 = kernel.new_value('_smod_sign', ty_s)
+                    t2 = kernel.new_value('_smod_bias', ty_u)
+                    t3 = kernel.new_value('_smod_adj', ty_s)
+                    t4 = kernel.new_value('_smod_masked', ty_s)
+                    new_insts.append(BinInst(t1, BinOp.SHR, n, Const(ty_s, bits - 1)))
+                    new_insts.append(BinInst(t2, BinOp.SHR, t1, Const(ty_u, bits - k)))
+                    new_insts.append(BinInst(t3, BinOp.ADD, n, t2))
+                    new_insts.append(BinInst(t4, BinOp.AND, t3, Const(ty_s, mask)))
+                    inst.op = BinOp.SUB
+                    inst.lhs = t4
+                    inst.rhs = t2
+                    folded += 1
+
                 # Safe identity fold: x * 0 → replace instruction with "add dest, 0, 0"
                 elif inst.op == BinOp.MUL and (rv == 0 or lv == 0):
                     inst.lhs = Const(inst.dest.ty, 0)
