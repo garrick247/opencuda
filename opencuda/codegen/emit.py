@@ -2005,28 +2005,43 @@ class PTXEmitter:
                     self._lines.append(f'    {ptx_op} {self._reg(res32)}, {self._reg(tmp32)};')
                     self._lines.append(f'    cvt.f64.f32 {dest}, {self._reg(res32)};')
                 elif _first_arg_is_f64 and inst.func in _f64_via_f32_scaled:
-                    # Two-step via f32: downcast, scale, ex2/lg2 approx, upcast.
+                    # Two-step via f32: downcast, apply ex2/lg2 with correct ordering, upcast.
+                    # exp: x -> scale -> ex2;  log: x -> lg2 -> scale
                     ptx_op, scale_hex = _f64_via_f32_scaled[inst.func]
                     n = inst.dest.id if inst.dest else 0
                     src = self._operand(inst.args[0]) if inst.args else '0d0000000000000000'
                     tmp32 = kernel.new_value(f'_d2f_{n}', FLOAT)
-                    scaled = kernel.new_value(f'_scl_{n}', FLOAT)
-                    res32  = kernel.new_value(f'_f32r_{n}', FLOAT)
+                    res32 = kernel.new_value(f'_f32r_{n}', FLOAT)
                     self._lines.append(f'    cvt.rn.f32.f64 {self._reg(tmp32)}, {src};')
-                    self._lines.append(f'    mul.f32 {self._reg(scaled)}, {self._reg(tmp32)}, {scale_hex};')
-                    self._lines.append(f'    {ptx_op} {self._reg(res32)}, {self._reg(scaled)};')
+                    if ptx_op.startswith('lg2'):
+                        lg2_out = kernel.new_value(f'_lg2_{n}', FLOAT)
+                        self._lines.append(f'    {ptx_op} {self._reg(lg2_out)}, {self._reg(tmp32)};')
+                        self._lines.append(f'    mul.f32 {self._reg(res32)}, {self._reg(lg2_out)}, {scale_hex};')
+                    else:
+                        scaled = kernel.new_value(f'_scl_{n}', FLOAT)
+                        self._lines.append(f'    mul.f32 {self._reg(scaled)}, {self._reg(tmp32)}, {scale_hex};')
+                        self._lines.append(f'    {ptx_op} {self._reg(res32)}, {self._reg(scaled)};')
                     self._lines.append(f'    cvt.f64.f32 {dest}, {self._reg(res32)};')
                 elif inst.func in _f32_scaled_unary:
-                    # Two-instruction form: scale input then apply base-2 op.
-                    # e.g. expf(x): tmp = x * log2e; dest = ex2.approx(tmp)
+                    # Two-instruction form. Order differs by op:
+                    #   expf(x) = 2^(x * log2(e))  -> scale first, then ex2
+                    #   logf(x) = lg2(x) * ln(2)   -> lg2 first, then scale
                     ptx_op, scale_hex = _f32_scaled_unary[inst.func]
                     src = self._operand(inst.args[0]) if inst.args else '0f00000000'
                     tmp = kernel.new_value(f'_scale_{inst.dest.id if inst.dest else 0}',
                                           FLOAT)
-                    self._lines.append(
-                        f'    mul.f32 {self._reg(tmp)}, {src}, {scale_hex};')
-                    self._lines.append(
-                        f'    {ptx_op} {dest}, {self._reg(tmp)};')
+                    if ptx_op.startswith('lg2'):
+                        # lg2 first, then scale by ln(2) or log10(2)
+                        self._lines.append(
+                            f'    {ptx_op} {self._reg(tmp)}, {src};')
+                        self._lines.append(
+                            f'    mul.f32 {dest}, {self._reg(tmp)}, {scale_hex};')
+                    else:
+                        # ex2: scale first, then ex2
+                        self._lines.append(
+                            f'    mul.f32 {self._reg(tmp)}, {src}, {scale_hex};')
+                        self._lines.append(
+                            f'    {ptx_op} {dest}, {self._reg(tmp)};')
                 elif inst.func in _f32_approx_unary or inst.func in _f32_exact_unary:
                     ptx_op = (_f32_approx_unary.get(inst.func)
                               or _f32_exact_unary.get(inst.func))

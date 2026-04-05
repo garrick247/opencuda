@@ -955,7 +955,6 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
             assert abs(result[i] - expected[i]) < 1e-3
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(reason="OpenCUDA codegen: logf produces wrong result (appears to use log2 with constant offset) — see explog_test")
     def test_explog(self, cuda_ctx):
         N = 32
         inp = [0.5 + 0.1*i for i in range(N)]
