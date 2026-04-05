@@ -1574,6 +1574,41 @@ class Parser:
                 if name == '__syncthreads':
                     self._emit(CallInst(None, '__syncthreads', args))
                     return Const(VOID, 0)
+                elif name in ('tex1Dfetch', 'tex2D', 'tex3D'):
+                    # Texture fetch intrinsics — return float (x component of v4)
+                    dest = self._new_val(name, FLOAT)
+                    self._emit(CallInst(dest, name, args))
+                    return dest
+                elif name in ('surf1Dread',):
+                    # Surface read — returns int32
+                    dest = self._new_val(name, INT32)
+                    self._emit(CallInst(dest, name, args))
+                    return dest
+                elif name in ('surf1Dwrite',):
+                    # Surface write — void
+                    self._emit(CallInst(None, name, args))
+                    return Const(VOID, 0)
+                elif name in ('__cp_async_bulk_tensor_1d', '__cp_async_bulk_tensor_2d'):
+                    # TMA bulk tensor copy — void
+                    self._emit(CallInst(None, name, args))
+                    return Const(VOID, 0)
+                elif name in ('__cp_async_bulk_commit_group',):
+                    # TMA commit group — void, no args
+                    self._emit(CallInst(None, name, args))
+                    return Const(VOID, 0)
+                elif name in ('__cp_async_bulk_wait_group',):
+                    # TMA wait group — void, one int arg
+                    self._emit(CallInst(None, name, args))
+                    return Const(VOID, 0)
+                elif name in ('__mbarrier_init',):
+                    # mbarrier init — void
+                    self._emit(CallInst(None, name, args))
+                    return Const(VOID, 0)
+                elif name in ('__mbarrier_try_wait_parity',):
+                    # mbarrier try_wait_parity — returns int (0 or 1)
+                    dest = self._new_val(name, INT32)
+                    self._emit(CallInst(dest, name, args))
+                    return dest
                 elif name in ('__all_sync', '__any_sync'):
                     # __all_sync(mask, pred) → 1 if all lanes have pred set
                     # __any_sync(mask, pred) → 1 if any lane has pred set

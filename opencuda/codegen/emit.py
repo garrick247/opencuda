@@ -1705,6 +1705,87 @@ class PTXEmitter:
                     self._lines.append(
                         f'    vote.sync.any.pred {tmp_pred2}, {tmp_pred}, {mask};')
                     self._lines.append(f'    selp.s32 {dest}, 1, 0, {tmp_pred2};')
+            elif inst.func in ('tex1Dfetch', 'tex2D', 'tex3D'):
+                # Texture fetch intrinsics
+                dest = self._reg(inst.dest) if inst.dest else '%f0'
+                texobj = self._operand(inst.args[0]) if inst.args else '%rd0'
+                if inst.func == 'tex1Dfetch':
+                    coord = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                    # tex.1d.v4.f32.s32 {%f0,%f1,%f2,%f3}, [texObj, {coord}]
+                    # We only capture the first component in dest
+                    n = inst.dest.id if inst.dest else 0
+                    f1 = kernel.new_value(f'_tex_g_{n}', FLOAT)
+                    f2 = kernel.new_value(f'_tex_b_{n}', FLOAT)
+                    f3 = kernel.new_value(f'_tex_a_{n}', FLOAT)
+                    self._lines.append(
+                        f'    tex.1d.v4.f32.s32 {{{dest}, {self._reg(f1)}, {self._reg(f2)}, {self._reg(f3)}}}, [{texobj}, {{{coord}}}];')
+                elif inst.func == 'tex2D':
+                    x = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
+                    y = self._operand(inst.args[2]) if len(inst.args) > 2 else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    f1 = kernel.new_value(f'_tex_g_{n}', FLOAT)
+                    f2 = kernel.new_value(f'_tex_b_{n}', FLOAT)
+                    f3 = kernel.new_value(f'_tex_a_{n}', FLOAT)
+                    self._lines.append(
+                        f'    tex.2d.v4.f32.f32 {{{dest}, {self._reg(f1)}, {self._reg(f2)}, {self._reg(f3)}}}, [{texobj}, {{{x}, {y}}}];')
+                elif inst.func == 'tex3D':
+                    x = self._operand(inst.args[1]) if len(inst.args) > 1 else '0f00000000'
+                    y = self._operand(inst.args[2]) if len(inst.args) > 2 else '0f00000000'
+                    z = self._operand(inst.args[3]) if len(inst.args) > 3 else '0f00000000'
+                    n = inst.dest.id if inst.dest else 0
+                    f1 = kernel.new_value(f'_tex_g_{n}', FLOAT)
+                    f2 = kernel.new_value(f'_tex_b_{n}', FLOAT)
+                    f3 = kernel.new_value(f'_tex_a_{n}', FLOAT)
+                    # PTX tex.3d requires 4 coordinates; 4th is unused but must be present
+                    self._lines.append(
+                        f'    tex.3d.v4.f32.f32 {{{dest}, {self._reg(f1)}, {self._reg(f2)}, {self._reg(f3)}}}, [{texobj}, {{{x}, {y}, {z}, {z}}}];')
+            elif inst.func in ('surf1Dread',):
+                dest = self._reg(inst.dest) if inst.dest else '%r0'
+                surfobj = self._operand(inst.args[0]) if inst.args else '%rd0'
+                coord = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                self._lines.append(
+                    f'    suld.b.1d.b32.trap {{{dest}}}, [{surfobj}, {{{coord}}}];')
+            elif inst.func in ('surf1Dwrite',):
+                val = self._operand(inst.args[0]) if inst.args else '0'
+                surfobj = self._operand(inst.args[1]) if len(inst.args) > 1 else '%rd0'
+                coord = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                self._lines.append(
+                    f'    sust.b.1d.b32.trap [{surfobj}, {{{coord}}}], {{{val}}};')
+            elif inst.func in ('__cp_async_bulk_tensor_1d',):
+                smem = self._operand(inst.args[0]) if inst.args else '%rd0'
+                desc = self._operand(inst.args[1]) if len(inst.args) > 1 else '%rd1'
+                coord = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                mbar = self._operand(inst.args[3]) if len(inst.args) > 3 else '%rd2'
+                self._lines.append(
+                    f'    cp.async.bulk.tensor.1d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [{smem}], [{desc}, {{{coord}}}], [{mbar}];')
+            elif inst.func in ('__cp_async_bulk_tensor_2d',):
+                smem = self._operand(inst.args[0]) if inst.args else '%rd0'
+                desc = self._operand(inst.args[1]) if len(inst.args) > 1 else '%rd1'
+                x = self._operand(inst.args[2]) if len(inst.args) > 2 else '0'
+                y = self._operand(inst.args[3]) if len(inst.args) > 3 else '0'
+                mbar = self._operand(inst.args[4]) if len(inst.args) > 4 else '%rd2'
+                self._lines.append(
+                    f'    cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [{smem}], [{desc}, {{{x}, {y}}}], [{mbar}];')
+            elif inst.func in ('__cp_async_bulk_commit_group',):
+                self._lines.append('    cp.async.bulk.commit_group;')
+            elif inst.func in ('__cp_async_bulk_wait_group',):
+                n_arg = self._operand(inst.args[0]) if inst.args else '0'
+                self._lines.append(f'    cp.async.bulk.wait_group {n_arg};')
+            elif inst.func in ('__mbarrier_init',):
+                mbar = self._operand(inst.args[0]) if inst.args else '%rd0'
+                count = self._operand(inst.args[1]) if len(inst.args) > 1 else '1'
+                self._lines.append(
+                    f'    mbarrier.init.shared::cta.b64 [{mbar}], {count};')
+            elif inst.func in ('__mbarrier_try_wait_parity',):
+                dest = self._reg(inst.dest) if inst.dest else '%r0'
+                mbar = self._operand(inst.args[0]) if inst.args else '%rd0'
+                phase = self._operand(inst.args[1]) if len(inst.args) > 1 else '0'
+                n = inst.dest.id if inst.dest else 0
+                p_tmp = kernel.new_value(f'_mbar_p_{n}', ScalarTy(ScalarType.BOOL))
+                self._pred_ids.add(p_tmp.id)
+                self._lines.append(
+                    f'    mbarrier.try_wait.parity.shared::cta.b64 {self._reg(p_tmp)}, [{mbar}], {phase};')
+                self._lines.append(f'    selp.s32 {dest}, 1, 0, {self._reg(p_tmp)};')
             elif inst.func == '__syncthreads':
                 self._lines.append('    bar.sync 0;')
             elif inst.func in ('threadIdx.x', 'threadIdx.y', 'threadIdx.z'):
