@@ -867,3 +867,378 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         for i in range(N):
             assert abs(result[i] - expected[i]) < 1e-4
         cuda_ctx.free(d_out); cuda_ctx.free(d_a); cuda_ctx.free(d_b)
+
+    # ------------------------------------------------------------------
+    # Additional GPU E2E tests for remaining 18 kernels
+    # ------------------------------------------------------------------
+
+    @pytest.mark.xfail(run=False, reason="OpenPTXas/OpenCUDA: saxpy produces illegal instruction (715) — scalar*array*array+array lowering bug")
+    def test_saxpy(self, cuda_ctx):
+        """saxpy: out[i] = a*x[i] + y[i] where a is scales[0]."""
+        N = 128
+        a_scale = 2.5
+        x = [float(i) for i in range(N)]
+        y = [float(i)*0.25 for i in range(N)]
+        expected = [a_scale*x[i] + y[i] for i in range(N)]
+        cubins = compile_cuda_to_cubin(KERNEL_SAXPY)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('saxpy')
+        d_out = cuda_ctx.alloc(N*4)
+        d_scales = cuda_ctx.alloc(4)
+        d_x = cuda_ctx.alloc(N*4)
+        d_y = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_scales, pack_floats([a_scale]))
+        cuda_ctx.copy_to(d_x, pack_floats(x))
+        cuda_ctx.copy_to(d_y, pack_floats(y))
+        assert cuda_ctx.launch(func, (1,1,1), (128,1,1), [d_out, d_scales, d_x, d_y, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, N*4), N)
+        for i in range(N):
+            assert abs(result[i] - expected[i]) < 1e-3, f"i={i}: {result[i]} vs {expected[i]}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_scales); cuda_ctx.free(d_x); cuda_ctx.free(d_y)
+
+    @pytest.mark.xfail(run=False, reason="OpenPTXas: __shfl_xor_sync reduction produces illegal address (700) — known warp shuffle delta bug")
+    def test_dot(self, cuda_ctx):
+        """dot product via warp shuffle reduction (32 elements)."""
+        N = 32
+        a = [float(i+1) for i in range(N)]
+        b = [float(i+1)*0.5 for i in range(N)]
+        expected = sum(a[i]*b[i] for i in range(N))
+        cubins = compile_cuda_to_cubin(KERNEL_DOT)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('dot_product')
+        d_out = cuda_ctx.alloc(4)
+        d_a = cuda_ctx.alloc(N*4)
+        d_b = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_a, pack_floats(a))
+        cuda_ctx.copy_to(d_b, pack_floats(b))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_a, d_b, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, 4), 1)[0]
+        assert abs(result - expected) < 1e-2, f"dot: got {result}, expected {expected}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_a); cuda_ctx.free(d_b)
+
+    def test_sincos(self, cuda_ctx):
+        N = 32
+        inp = [0.1*i for i in range(N)]
+        exp_sin = [math.sin(v) for v in inp]
+        exp_cos = [math.cos(v) for v in inp]
+        cubins = compile_cuda_to_cubin(KERNEL_SINCOS)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('sincos_test')
+        d_sin = cuda_ctx.alloc(N*4)
+        d_cos = cuda_ctx.alloc(N*4)
+        d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_sin, d_cos, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        r_sin = unpack_floats(cuda_ctx.copy_from(d_sin, N*4), N)
+        r_cos = unpack_floats(cuda_ctx.copy_from(d_cos, N*4), N)
+        for i in range(N):
+            assert abs(r_sin[i] - exp_sin[i]) < 1e-3
+            assert abs(r_cos[i] - exp_cos[i]) < 1e-3
+        cuda_ctx.free(d_sin); cuda_ctx.free(d_cos); cuda_ctx.free(d_inp)
+
+    def test_sqrt(self, cuda_ctx):
+        N = 32
+        inp = [float(i+1) for i in range(N)]
+        expected = [math.sqrt(v) for v in inp]
+        cubins = compile_cuda_to_cubin(KERNEL_SQRT)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('sqrt_test')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, N*4), N)
+        for i in range(N):
+            assert abs(result[i] - expected[i]) < 1e-3
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(reason="OpenCUDA codegen: logf produces wrong result (appears to use log2 with constant offset) — see explog_test")
+    def test_explog(self, cuda_ctx):
+        N = 32
+        inp = [0.5 + 0.1*i for i in range(N)]
+        exp_e = [math.exp(v) for v in inp]
+        exp_l = [math.log(v) for v in inp]
+        cubins = compile_cuda_to_cubin(KERNEL_EXPLOG)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('explog_test')
+        d_e = cuda_ctx.alloc(N*4); d_l = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_e, d_l, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        r_e = unpack_floats(cuda_ctx.copy_from(d_e, N*4), N)
+        r_l = unpack_floats(cuda_ctx.copy_from(d_l, N*4), N)
+        for i in range(N):
+            # exp: relative tolerance since values grow rapidly
+            assert abs(r_e[i] - exp_e[i]) / max(abs(exp_e[i]), 1.0) < 1e-2
+            assert abs(r_l[i] - exp_l[i]) < 2e-3
+        cuda_ctx.free(d_e); cuda_ctx.free(d_l); cuda_ctx.free(d_inp)
+
+    def test_popc(self, cuda_ctx):
+        N = 32
+        inp = [i*0x10101 for i in range(N)]
+        expected = [bin(v & 0xFFFFFFFF).count('1') for v in inp]
+        cubins = compile_cuda_to_cubin(KERNEL_POPC)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('popc_test')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_ints(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        assert unpack_ints(cuda_ctx.copy_from(d_out, N*4), N) == expected
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    def test_clz(self, cuda_ctx):
+        N = 31  # avoid 1<<31 which overflows int32
+        inp_u = [1 << i for i in range(N)]  # 1, 2, 4, ..., 1<<30
+        # __clz on 32-bit int: count leading zeros
+        expected = [31 - i for i in range(N)]
+        cubins = compile_cuda_to_cubin(KERNEL_CLZ)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('clz_test')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_uints(inp_u))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        assert unpack_ints(cuda_ctx.copy_from(d_out, N*4), N) == expected
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    def test_brev(self, cuda_ctx):
+        N = 32
+        inp = [i+1 for i in range(N)]
+        def brev32(x):
+            x &= 0xFFFFFFFF
+            r = 0
+            for b in range(32):
+                if x & (1 << b):
+                    r |= 1 << (31 - b)
+            return r
+        expected = [brev32(v) for v in inp]
+        cubins = compile_cuda_to_cubin(KERNEL_BREV)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('brev_test')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_uints(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        assert unpack_uints(cuda_ctx.copy_from(d_out, N*4), N) == expected
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: if/else fall-through bug — if_false branch has no terminator before '}', causing illegal address (700)")
+    def test_cond(self, cuda_ctx):
+        N = 64
+        a = [float(i) - 32.0 for i in range(N)]  # mix of negatives and positives
+        threshold = 0.0
+        expected = [v*2.0 if v > threshold else v*0.5 for v in a]
+        cubins = compile_cuda_to_cubin(KERNEL_COND)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('cond_test')
+        d_out = cuda_ctx.alloc(N*4); d_a = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_a, pack_floats(a))
+        assert cuda_ctx.launch(func, (1,1,1), (64,1,1), [d_out, d_a, threshold, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, N*4), N)
+        for i in range(N):
+            assert abs(result[i] - expected[i]) < 1e-4
+        cuda_ctx.free(d_out); cuda_ctx.free(d_a)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared-memory reduction loop produces illegal address (700) — known shared mem coherency bug")
+    def test_maxreduce(self, cuda_ctx):
+        N = 256
+        import random
+        random.seed(42)
+        inp = [random.uniform(-100, 100) for _ in range(N)]
+        expected = max(inp)
+        cubins = compile_cuda_to_cubin(KERNEL_MAXREDUCE)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('max_reduce')
+        d_out = cuda_ctx.alloc(4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (256,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, 4), 1)[0]
+        assert abs(result - expected) < 1e-3, f"maxreduce: got {result}, expected {expected}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: atomicAdd inside if-nested conditional triggers fall-through bug (700)")
+    def test_histogram(self, cuda_ctx):
+        N = 256
+        nbins = 8
+        data = [i % nbins for i in range(N)]
+        expected = [0] * nbins
+        for v in data:
+            expected[v] += 1
+        cubins = compile_cuda_to_cubin(KERNEL_HISTOGRAM)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('histogram')
+        d_hist = cuda_ctx.alloc(nbins*4); d_data = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_hist, pack_ints([0]*nbins))
+        cuda_ctx.copy_to(d_data, pack_ints(data))
+        assert cuda_ctx.launch(func, (1,1,1), (256,1,1), [d_hist, d_data, N, nbins]) == 0
+        assert cuda_ctx.sync() == 0
+        assert unpack_ints(cuda_ctx.copy_from(d_hist, nbins*4), nbins) == expected
+        cuda_ctx.free(d_hist); cuda_ctx.free(d_data)
+
+    @pytest.mark.xfail(run=False, reason="OpenPTXas: __reduce_add_sync produces illegal instruction (715) on SM_120")
+    def test_redux(self, cuda_ctx):
+        """__reduce_add_sync — warp-level reduction intrinsic."""
+        N = 32
+        inp = list(range(1, N+1))  # 1..32
+        expected = sum(inp)
+        cubins = compile_cuda_to_cubin(KERNEL_REDUX)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('redux_add')
+        d_out = cuda_ctx.alloc(4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_ints(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_ints(cuda_ctx.copy_from(d_out, 4), 1)[0]
+        assert result == expected, f"redux: got {result}, expected {expected}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(run=False, reason="OpenPTXas: __ballot_sync produces illegal instruction (715) on SM_120")
+    def test_ballot(self, cuda_ctx):
+        """__ballot_sync: count lanes where val > threshold."""
+        N = 32
+        data = list(range(N))  # 0..31
+        threshold = 15
+        expected = sum(1 for v in data if v > threshold)  # 16 lanes (16..31)
+        cubins = compile_cuda_to_cubin(KERNEL_BALLOT)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('ballot_count')
+        d_out = cuda_ctx.alloc(4); d_data = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_data, pack_ints(data))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_data, threshold, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_ints(cuda_ctx.copy_from(d_out, 4), 1)[0]
+        assert result == expected, f"ballot: got {result}, expected {expected}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_data)
+
+    def test_atomic_counter(self, cuda_ctx):
+        N = 128
+        cubins = compile_cuda_to_cubin(KERNEL_ATOMIC_COUNTER)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('atomic_counter')
+        d_counter = cuda_ctx.alloc(4)
+        cuda_ctx.copy_to(d_counter, pack_ints([0]))
+        assert cuda_ctx.launch(func, (1,1,1), (128,1,1), [d_counter, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_ints(cuda_ctx.copy_from(d_counter, 4), 1)[0]
+        assert result == N, f"atomic_counter: got {result}, expected {N}"
+        cuda_ctx.free(d_counter)
+
+    @pytest.mark.xfail(run=False, reason="OpenPTXas: atomicMin/atomicMax produce illegal instruction (715) on SM_120")
+    def test_atomic_minmax(self, cuda_ctx):
+        N = 128
+        import random
+        random.seed(7)
+        data = [random.randint(-1000, 1000) for _ in range(N)]
+        exp_min = min(data)
+        exp_max = max(data)
+        cubins = compile_cuda_to_cubin(KERNEL_ATOMIC_MINMAX)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('atomic_minmax')
+        d_min = cuda_ctx.alloc(4); d_max = cuda_ctx.alloc(4); d_data = cuda_ctx.alloc(N*4)
+        # init min to large, max to small
+        cuda_ctx.copy_to(d_min, pack_ints([0x7FFFFFFF]))
+        cuda_ctx.copy_to(d_max, pack_ints([-0x80000000]))
+        cuda_ctx.copy_to(d_data, pack_ints(data))
+        assert cuda_ctx.launch(func, (1,1,1), (128,1,1), [d_min, d_max, d_data, N]) == 0
+        assert cuda_ctx.sync() == 0
+        r_min = unpack_ints(cuda_ctx.copy_from(d_min, 4), 1)[0]
+        r_max = unpack_ints(cuda_ctx.copy_from(d_max, 4), 1)[0]
+        assert r_min == exp_min, f"atomic_min: got {r_min}, expected {exp_min}"
+        assert r_max == exp_max, f"atomic_max: got {r_max}, expected {exp_max}"
+        cuda_ctx.free(d_min); cuda_ctx.free(d_max); cuda_ctx.free(d_data)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + __syncthreads produces illegal address (700) — known shared mem bug")
+    def test_shared_copy(self, cuda_ctx):
+        N = 128
+        inp = [float(i)*0.25 for i in range(N)]
+        expected = [v + 1.0 for v in inp]
+        cubins = compile_cuda_to_cubin(KERNEL_SHARED_COPY)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('shared_copy')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (128,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, N*4), N)
+        for i in range(N):
+            assert abs(result[i] - expected[i]) < 1e-4
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + while-loop scan produces illegal address (700)")
+    def test_scan(self, cuda_ctx):
+        """Sequential prefix sum across 64 elements."""
+        N = 64
+        inp = [float(i+1) for i in range(N)]
+        expected = []
+        acc = 0.0
+        for v in inp:
+            acc += v
+            expected.append(acc)
+        cubins = compile_cuda_to_cubin(KERNEL_SCAN)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('prefix_sum')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (64,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, N*4), N)
+        for i in range(N):
+            assert abs(result[i] - expected[i]) < 1e-2, f"i={i}: {result[i]} vs {expected[i]}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: else-if chain fall-through bug causes illegal address (700)")
+    def test_stencil(self, cuda_ctx):
+        N = 128
+        inp = [float(i) for i in range(N)]
+        expected = []
+        for i in range(N):
+            if i == 0 or i == N-1:
+                expected.append(inp[i])
+            else:
+                expected.append(0.25*inp[i-1] + 0.5*inp[i] + 0.25*inp[i+1])
+        cubins = compile_cuda_to_cubin(KERNEL_STENCIL)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('stencil_1d')
+        d_out = cuda_ctx.alloc(N*4); d_inp = cuda_ctx.alloc(N*4)
+        # Init output to input so boundary thread-indices beyond if/else don't expose uninit mem
+        cuda_ctx.copy_to(d_out, pack_floats([0.0]*N))
+        cuda_ctx.copy_to(d_inp, pack_floats(inp))
+        assert cuda_ctx.launch(func, (1,1,1), (128,1,1), [d_out, d_inp, N]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, N*4), N)
+        for i in range(N):
+            assert abs(result[i] - expected[i]) < 1e-3, f"i={i}: {result[i]} vs {expected[i]}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
+
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + while loop matvec produces illegal address (700)")
+    def test_matvec(self, cuda_ctx):
+        rows = 32
+        cols = 16
+        mat = [float((r*cols + c) % 7) for r in range(rows) for c in range(cols)]
+        vec = [float(i+1) * 0.1 for i in range(cols)]
+        expected = []
+        for r in range(rows):
+            s = 0.0
+            for c in range(cols):
+                s += mat[r*cols + c] * vec[c]
+            expected.append(s)
+        cubins = compile_cuda_to_cubin(KERNEL_MATVEC)
+        assert cuda_ctx.load(list(cubins.values())[0])
+        func = cuda_ctx.get_func('matvec')
+        d_out = cuda_ctx.alloc(rows*4)
+        d_mat = cuda_ctx.alloc(rows*cols*4)
+        d_vec = cuda_ctx.alloc(cols*4)
+        cuda_ctx.copy_to(d_mat, pack_floats(mat))
+        cuda_ctx.copy_to(d_vec, pack_floats(vec))
+        assert cuda_ctx.launch(func, (1,1,1), (32,1,1), [d_out, d_mat, d_vec, rows, cols]) == 0
+        assert cuda_ctx.sync() == 0
+        result = unpack_floats(cuda_ctx.copy_from(d_out, rows*4), rows)
+        for i in range(rows):
+            assert abs(result[i] - expected[i]) < 1e-2, f"row {i}: {result[i]} vs {expected[i]}"
+        cuda_ctx.free(d_out); cuda_ctx.free(d_mat); cuda_ctx.free(d_vec)
