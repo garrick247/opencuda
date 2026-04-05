@@ -648,6 +648,47 @@ class PTXEmitter:
                 body_lines[i] = f'    cvt.u64.u32 {rd_dest}, {r_src};'
                 body_lines[i+1] = f'    shl.b64 {rd_dest}, {rd_dest}, {shift};'
 
+        # Peephole: guard unsafe loads in ternary patterns.
+        # The ternary `(cond) ? load : const` emits an unconditional ld.global
+        # that faults when cond is false and the address is out-of-bounds.
+        #
+        # SM_120 does NOT support predicated ld.global — ptxas uses
+        # branch-guarded loads instead. So we emit:
+        #
+        # Before: ld.{space}.{ty} %rA, [%addr];
+        #         @%pN mov.{ty} %rB, %rA;
+        #         @!%pN mov.{ty} %rB, <const>;
+        #
+        # After:  @!%pN bra _ld_skip_K;
+        #         ld.{space}.{ty} %rA, [%addr];
+        #         _ld_skip_K:
+        #         @%pN mov.{ty} %rB, %rA;
+        #         @!%pN mov.{ty} %rB, <const>;
+        import re as _guard_re
+        _ld_pat = _guard_re.compile(r'^(\s+)(ld\.\S+)\s+(%\w+),\s*(\[.+\]);$')
+        _guard_mov_pat = _guard_re.compile(r'^\s+@(%\w+)\s+mov\.\w+\s+%\w+,\s*(%\w+);$')
+        _neg_mov_pat = _guard_re.compile(r'^\s+@!(%\w+)\s+mov\.\w+\s+(%\w+),\s*\S+;$')
+        _ld_skip_counter = [0]
+        insertions = []  # (index, lines_to_insert)
+        for i in range(len(body_lines) - 2):
+            ld_m = _ld_pat.match(body_lines[i])
+            if not ld_m:
+                continue
+            gm = _guard_mov_pat.match(body_lines[i+1])
+            nm = _neg_mov_pat.match(body_lines[i+2])
+            if gm and nm and gm.group(1) == nm.group(1):  # same pred
+                if gm.group(2) == ld_m.group(3):
+                    indent = ld_m.group(1)
+                    pred = gm.group(1)
+                    skip_lbl = f'_ld_skip_{_ld_skip_counter[0]}'
+                    _ld_skip_counter[0] += 1
+                    # Insert @!pred bra before load, label after load
+                    insertions.append((i, f'{indent}@!{pred} bra {skip_lbl};'))
+                    insertions.append((i+1, f'{skip_lbl}:'))
+        # Apply insertions in reverse order to preserve indices
+        for idx, line in reversed(insertions):
+            body_lines.insert(idx, line)
+
         # Peephole: eliminate mov.bNN %rX, %rY by replacing all uses of %rX with %rY.
         # Rules:
         #  1. ONLY fire for same register-class moves (e.g. %r→%r, %f→%f).
