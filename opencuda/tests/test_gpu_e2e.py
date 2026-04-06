@@ -872,7 +872,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
     # Additional GPU E2E tests for remaining 18 kernels
     # ------------------------------------------------------------------
 
-    @pytest.mark.xfail(run=False, reason="OpenPTXas/OpenCUDA: saxpy produces illegal instruction (715) — scalar*array*array+array lowering bug")
+    @pytest.mark.xfail(run=False, reason="OpenPTXas/OpenCUDA: saxpy still produces illegal instruction (715) — scalar param lowering bug")
     def test_saxpy(self, cuda_ctx):
         """saxpy: out[i] = a*x[i] + y[i] where a is scales[0]."""
         N = 128
@@ -897,7 +897,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
             assert abs(result[i] - expected[i]) < 1e-3, f"i={i}: {result[i]} vs {expected[i]}"
         cuda_ctx.free(d_out); cuda_ctx.free(d_scales); cuda_ctx.free(d_x); cuda_ctx.free(d_y)
 
-    @pytest.mark.xfail(run=False, reason="OpenPTXas: __shfl_xor_sync reduction produces illegal address (700) — known warp shuffle delta bug")
+    @pytest.mark.xfail(run=False, reason="OpenPTXas: __shfl_xor_sync reduction still produces illegal address (700)")
     def test_dot(self, cuda_ctx):
         """dot product via warp shuffle reduction (32 elements)."""
         N = 32
@@ -1025,7 +1025,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert unpack_uints(cuda_ctx.copy_from(d_out, N*4), N) == expected
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: if/else fall-through bug — if_false branch has no terminator before '}', causing illegal address (700)")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: if/else codegen still produces illegal address (700) after setp fix")
     def test_cond(self, cuda_ctx):
         N = 64
         a = [float(i) - 32.0 for i in range(N)]  # mix of negatives and positives
@@ -1043,7 +1043,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
             assert abs(result[i] - expected[i]) < 1e-4
         cuda_ctx.free(d_out); cuda_ctx.free(d_a)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared-memory reduction loop produces illegal address (700) — known shared mem coherency bug")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared-memory reduction loop still produces illegal address (700)")
     def test_maxreduce(self, cuda_ctx):
         N = 256
         import random
@@ -1061,7 +1061,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert abs(result - expected) < 1e-3, f"maxreduce: got {result}, expected {expected}"
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: atomicAdd inside if-nested conditional triggers fall-through bug (700)")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: atomicAdd inside if-nested conditional still produces illegal address (700)")
     def test_histogram(self, cuda_ctx):
         N = 256
         nbins = 8
@@ -1080,7 +1080,6 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert unpack_ints(cuda_ctx.copy_from(d_hist, nbins*4), nbins) == expected
         cuda_ctx.free(d_hist); cuda_ctx.free(d_data)
 
-    @pytest.mark.xfail(run=False, reason="OpenPTXas: __reduce_add_sync produces illegal instruction (715) on SM_120")
     def test_redux(self, cuda_ctx):
         """__reduce_add_sync — warp-level reduction intrinsic."""
         N = 32
@@ -1127,7 +1126,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert result == N, f"atomic_counter: got {result}, expected {N}"
         cuda_ctx.free(d_counter)
 
-    @pytest.mark.xfail(run=False, reason="OpenPTXas: atomicMin/atomicMax produce illegal instruction (715) on SM_120")
+    @pytest.mark.xfail(run=False, reason="OpenPTXas: atomicMin/atomicMax still produce illegal instruction (715) on SM_120")
     def test_atomic_minmax(self, cuda_ctx):
         N = 128
         import random
@@ -1151,7 +1150,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert r_max == exp_max, f"atomic_max: got {r_max}, expected {exp_max}"
         cuda_ctx.free(d_min); cuda_ctx.free(d_max); cuda_ctx.free(d_data)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + __syncthreads produces illegal address (700) — known shared mem bug")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + __syncthreads still produces illegal address (700)")
     def test_shared_copy(self, cuda_ctx):
         N = 128
         inp = [float(i)*0.25 for i in range(N)]
@@ -1168,7 +1167,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
             assert abs(result[i] - expected[i]) < 1e-4
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + while-loop scan produces illegal address (700)")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + while-loop scan still produces illegal address (700)")
     def test_scan(self, cuda_ctx):
         """Sequential prefix sum across 64 elements."""
         N = 64
@@ -1190,7 +1189,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
             assert abs(result[i] - expected[i]) < 1e-2, f"i={i}: {result[i]} vs {expected[i]}"
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: else-if chain fall-through bug causes illegal address (700)")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: else-if chain codegen still produces illegal address (700)")
     def test_stencil(self, cuda_ctx):
         N = 128
         inp = [float(i) for i in range(N)]
@@ -1214,7 +1213,7 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
             assert abs(result[i] - expected[i]) < 1e-3, f"i={i}: {result[i]} vs {expected[i]}"
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + while loop matvec produces illegal address (700)")
+    @pytest.mark.xfail(run=False, reason="OpenCUDA/OpenPTXas: shared memory + while loop matvec still produces illegal address (700)")
     def test_matvec(self, cuda_ctx):
         rows = 32
         cols = 16
