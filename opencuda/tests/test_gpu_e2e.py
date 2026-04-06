@@ -1097,7 +1097,6 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert result == expected, f"redux: got {result}, expected {expected}"
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(reason="ballot returns 15 instead of 16 — off-by-one in setp comparison mode (signed vs unsigned)")
     def test_ballot(self, cuda_ctx):
         """__ballot_sync: count lanes where val > threshold."""
         N = 32
