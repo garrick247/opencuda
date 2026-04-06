@@ -1025,7 +1025,6 @@ __global__ void atomic_exch_test(int *out, int *addr, int val) {
         assert unpack_uints(cuda_ctx.copy_from(d_out, N*4), N) == expected
         cuda_ctx.free(d_out); cuda_ctx.free(d_inp)
 
-    @pytest.mark.xfail(run=False, reason="OpenCUDA emit: if/else codegen still produces illegal address (700) after setp fix")
     def test_cond(self, cuda_ctx):
         N = 64
         a = [float(i) - 32.0 for i in range(N)]  # mix of negatives and positives

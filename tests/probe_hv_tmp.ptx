@@ -1,0 +1,113 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry clock_measure(
+    .param .u64 out, .param .s32 n)
+{
+    .reg .b32 %clock<65>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<7>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mov.u64 %rd1, %clock64;
+    cvt.s64.u64 %rd2, %rd1;
+    mov.s32 %r0, 0;
+    mov.s32 %r1, 0;
+    bra for_cond_5;
+if_merge_4:
+    ret;
+for_cond_5:
+    setp.lt.s32 %p0, %r1, 100;
+    @%p0 bra for_body_6;
+    bra for_exit_8;
+for_body_6:
+    add.s32 %r3, %r0, %r1;
+    mov.s32 %r0, %r3;
+    bra for_inc_7;
+for_inc_7:
+    add.s32 %r3, %r1, 1;
+    mov.s32 %r1, %r3;
+    bra for_cond_5;
+for_exit_8:
+    mov.u64 %rd1, %clock64;
+    cvt.s64.u64 %rd3, %rd1;
+    cvt.u64.u32 %rd5, %r1;
+    shl.b64 %rd5, %rd5, 3;
+    add.u64 %rd1, %rd0, %rd5;
+    sub.s64 %rd4, %rd3, %rd2;
+    cvt.s64.s32 %rd6, %r0;
+    add.s64 %rd3, %rd4, %rd6;
+    st.global.s64 [%rd1], %rd3;
+    bra if_merge_4;
+}
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry sleep_kernel(
+    .param .u64 out, .param .u64 in, .param .s32 ns, .param .s32 n)
+{
+    .reg .b32 %r<3>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [ns];
+    ld.param.s32 %r1, [n];
+    mov.u32 %r2, %tid.x;
+    setp.lt.s32 %p0, %r2, %r1;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    nanosleep.u32 %r0;
+    cvt.u64.u32 %rd2, %r2;
+    shl.b64 %rd2, %rd2, 2;
+    add.u64 %rd0, %rd0, %rd2;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.global.s32 %r1, [%rd1];
+    st.global.s32 [%rd0], %r1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry volatile_load(
+    .param .u64 out, .param .u64 in, .param .s32 n)
+{
+    .reg .b32 %r<2>;
+    .reg .b64 %rd<3>;
+    .reg .pred %p<1>;
+
+entry_1:
+    ld.param.u64 %rd0, [out];
+    ld.param.u64 %rd1, [in];
+    ld.param.s32 %r0, [n];
+    mov.u32 %r1, %tid.x;
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    cvt.u64.u32 %rd2, %r1;
+    shl.b64 %rd2, %rd2, 2;
+    add.u64 %rd0, %rd0, %rd2;
+    add.u64 %rd1, %rd1, %rd2;
+    ld.volatile.global.s32 %r1, [%rd1];
+    st.global.s32 [%rd0], %r1;
+    bra if_merge_4;
+if_merge_4:
+    ret;
+}
