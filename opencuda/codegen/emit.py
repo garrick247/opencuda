@@ -689,6 +689,33 @@ class PTXEmitter:
         for idx, line in reversed(insertions):
             body_lines.insert(idx, line)
 
+        # Peephole: @%p mov + @!%p mov → selp
+        # Pattern: @%pN mov.TY %rD, %rS; @!%pN mov.TY %rD, VAL → selp.TY %rD, %rS, VAL, %pN
+        import re as _selp_re
+        _pmov_pat = _selp_re.compile(r'^(\s+)@(%\w+)\s+mov\.(\w+)\s+(%\w+),\s*(%\w+);$')
+        _nmov_pat = _selp_re.compile(r'^(\s+)@!(%\w+)\s+mov\.(\w+)\s+(%\w+),\s*(\S+);$')
+        i = 0
+        while i < len(body_lines) - 1:
+            pm = _pmov_pat.match(body_lines[i])
+            nm = _nmov_pat.match(body_lines[i+1])
+            if pm and nm and pm.group(2) == nm.group(2) and pm.group(4) == nm.group(4):
+                indent = pm.group(1)
+                pred = pm.group(2)
+                ty = pm.group(3)
+                dest = pm.group(4)
+                true_val = pm.group(5)
+                false_val = nm.group(5)
+                body_lines[i] = f'{indent}selp.{ty} {dest}, {true_val}, {false_val}, {pred};'
+                body_lines.pop(i+1)
+                # Also remove the subsequent redundant mov: selp %rD, ...; mov %rX, %rD → selp %rX, ...
+                if i + 1 < len(body_lines):
+                    _fmov = _selp_re.match(r'^\s+mov\.\w+\s+(%\w+),\s*(%\w+);$', body_lines[i+1])
+                    if _fmov and _fmov.group(2) == dest:
+                        final_dest = _fmov.group(1)
+                        body_lines[i] = f'{indent}selp.{ty} {final_dest}, {true_val}, {false_val}, {pred};'
+                        body_lines.pop(i+1)
+            i += 1
+
         # Peephole: eliminate mov.bNN %rX, %rY by replacing all uses of %rX with %rY.
         # Rules:
         #  1. ONLY fire for same register-class moves (e.g. %r→%r, %f→%f).
@@ -740,6 +767,28 @@ class PTXEmitter:
                             if dest in body_lines[j]:
                                 unsafe = True
                                 break
+                    # Loop-safety: if there's a backward branch (bra to a label
+                    # defined earlier in the body), the src register may be
+                    # clobbered on subsequent loop iterations while dest is still
+                    # needed via the back edge.  Build a label→line_index map,
+                    # then check each bra: if target's definition is before the bra,
+                    # it's a back edge and propagation is unsafe.
+                    if not unsafe and src_redef_j is not None:
+                        _bra_re = _mov_re.compile(r'\s+(?:@!?\S+\s+)?bra(?:\.U)?\s+(\w+);')
+                        label_pos = {}
+                        for j in range(len(body_lines)):
+                            ln = body_lines[j].rstrip()
+                            if ln.endswith(':') and not ln.startswith(' '):
+                                label_pos[ln[:-1]] = j
+                        for j in range(i, len(body_lines)):
+                            bm = _bra_re.match(body_lines[j])
+                            if bm:
+                                tgt = bm.group(1)
+                                tgt_pos = label_pos.get(tgt)
+                                if tgt_pos is not None and tgt_pos <= j:
+                                    # Backward branch — this is a loop
+                                    unsafe = True
+                                    break
                     if unsafe:
                         i += 1
                         continue  # keep the mov; dest is needed after src changes
@@ -750,9 +799,14 @@ class PTXEmitter:
                         dm = _dest_def_re.match(body_lines[j])
                         if dm and dm.group(1) == dest:
                             break  # dest redefined: stop propagation
-                        if dm and dm.group(1) == src:
-                            break  # src redefined: further subs would read new value
+                        # When src is redefined, still replace source operands
+                        # on this line: PTX reads sources before writing dest,
+                        # so `add %r1, %r2, %r3` with %r2→%r1 propagation
+                        # correctly becomes `add %r1, %r1, %r3`.
+                        redef_src = dm and dm.group(1) == src
                         body_lines[j] = body_lines[j].replace(dest, src)
+                        if redef_src:
+                            break  # src redefined: further subs would read new value
                     continue  # re-check at same index after pop
             i += 1
 
@@ -2848,10 +2902,7 @@ class PTXEmitter:
                         and isinstance(f_bb.terminator, RetTerm)):
                     false_is_ret = True
                 if false_is_ret:
-                    # Emit normal branch pair — OpenPTXas if-converter handles
-                    # the diamond pattern correctly on both SM_120 and SM_89.
-                    # Previously used @!pred single branch but that conflicts
-                    # with SM_89 predicated execution + IADD3.cb carry.
+                    # Emit normal branch pair — OpenPTXas handles this correctly.
                     self._lines.append(f'    @{pred} bra {term.true_bb};')
                     self._lines.append(f'    bra {term.false_bb};')
                 else:
@@ -2894,6 +2945,11 @@ def ir_to_ptx(module: Module) -> dict[str, str]:
     for func in module.device_functions:
         ptx_text = emitter.emit_device_function(func)
         emitter._module_preamble.append(ptx_text)
+
+    # Run if-conversion optimizer on each kernel before PTX emission
+    from opencuda.optimizer.if_convert import if_convert_diamonds
+    for kernel in module.kernels:
+        if_convert_diamonds(kernel)
 
     for kernel in module.kernels:
         result[kernel.name] = emitter.emit_kernel(kernel)
