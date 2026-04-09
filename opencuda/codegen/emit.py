@@ -1036,7 +1036,8 @@ class PTXEmitter:
         # Skip blocks that were inlined by ternary diamond detection
         if hasattr(self, '_skip_blocks') and bb.label in self._skip_blocks:
             return
-        if bb.label != 'entry':
+        is_entry = bb.label == 'entry' or bb.label.startswith('entry_')
+        if not is_entry:
             self._lines.append(f'{bb.label}:')
 
         for inst in bb.instructions:
@@ -2779,7 +2780,17 @@ class PTXEmitter:
                 self._lines.append(f'    st.param.{ptx_ty} [retval0], {val};')
             self._lines.append('    ret;')
         elif isinstance(term, BrTerm):
-            self._lines.append(f'    bra {term.target};')
+            # If target was skipped (ret-only merge block), emit ret instead
+            _skip = getattr(self, '_skip_blocks', set())
+            if term.target in _skip:
+                bb_map = {b.label: b for b in self._kernel.blocks}
+                t_bb = bb_map.get(term.target)
+                if t_bb and isinstance(t_bb.terminator, RetTerm):
+                    self._lines.append('    ret;')
+                else:
+                    self._lines.append(f'    bra {term.target};')
+            else:
+                self._lines.append(f'    bra {term.target};')
         elif isinstance(term, CondBrTerm):
             # Ternary diamond detection: @p bra true; bra false where both
             # targets assign a constant and jump to the same merge block.
@@ -2892,9 +2903,9 @@ class PTXEmitter:
                     src = self._reg(term.cond)
                     self._lines.append(
                         f'    setp.ne.{ptx_ty} {pred}, {src}, 0;')
-                # Peephole: if false_bb is a ret-only block, emit inverted
-                # single branch @!pred bra false_bb (avoids extra block + NOPs
-                # that change text size and capmerc on SM_120).
+                # Peephole: if false_bb is a ret-only block, emit @!pred ret
+                # instead of two-branch pattern. This gives OpenPTXas the
+                # single early-exit pattern it can natively handle on SM_120.
                 false_is_ret = False
                 bb_map = {b.label: b for b in self._kernel.blocks}
                 f_bb = bb_map.get(term.false_bb)
@@ -2902,9 +2913,29 @@ class PTXEmitter:
                         and isinstance(f_bb.terminator, RetTerm)):
                     false_is_ret = True
                 if false_is_ret:
-                    # Emit normal branch pair — OpenPTXas handles this correctly.
-                    self._lines.append(f'    @{pred} bra {term.true_bb};')
-                    self._lines.append(f'    bra {term.false_bb};')
+                    self._lines.append(f'    @!{pred} ret;')
+                    # Inline the true block's body and skip the false/merge
+                    # blocks. This keeps PTX in a single-block layout that
+                    # OpenPTXas handles natively on SM_120.
+                    if not hasattr(self, '_skip_blocks'):
+                        self._skip_blocks = set()
+                    self._skip_blocks.add(term.false_bb)
+                    self._skip_blocks.add(term.true_bb)
+                    t_bb = bb_map.get(term.true_bb)
+                    if t_bb:
+                        for t_inst in t_bb.instructions:
+                            self._emit_inst(t_inst, self._kernel)
+                        # Replace bra-to-ret-merge with direct ret
+                        if isinstance(t_bb.terminator, BrTerm):
+                            m_bb = bb_map.get(t_bb.terminator.target)
+                            if (m_bb and len(m_bb.instructions) == 0
+                                    and isinstance(m_bb.terminator, RetTerm)):
+                                self._skip_blocks.add(t_bb.terminator.target)
+                                self._lines.append('    ret;')
+                            else:
+                                self._emit_term(t_bb.terminator)
+                        elif t_bb.terminator:
+                            self._emit_term(t_bb.terminator)
                 else:
                     self._lines.append(f'    @{pred} bra {term.true_bb};')
                     self._lines.append(f'    bra {term.false_bb};')
