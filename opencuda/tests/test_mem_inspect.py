@@ -170,11 +170,13 @@ def test_guarded_store_in_correct_branch():
     branch before the store (the store is conditionally executed)."""
     ptx = _ptx_file('nasty_mem_guarded_store.cu')
 
-    # Count predicated branches (@%pN bra)
-    pred_branches = re.findall(r'@%p\d+ bra', ptx)
-    assert len(pred_branches) >= 1, (
-        f"Expected at least one '@%p bra' (predicated branch) before guarded store, "
-        f"got:\n{ptx}"
+    # Count predicated guards: either @%pN bra (conditional branch)
+    # or @!%pN ret (early-exit from false_is_ret peephole — OC-2).
+    # Both patterns validly guard the subsequent store.
+    pred_guards = re.findall(r'@[!]?%p\d+ (?:bra|ret)', ptx)
+    assert len(pred_guards) >= 1, (
+        f"Expected at least one predicated guard ('@%p bra' or '@!%p ret') "
+        f"before guarded store, got:\n{ptx}"
     )
 
     # Confirm store exists and is guarded (in conditional true branch)
