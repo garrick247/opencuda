@@ -1033,6 +1033,11 @@ class PTXEmitter:
 
     def _emit_block(self, bb: BasicBlock, kernel: Kernel,
                     printf_strings=None, printf_idx=None):
+        # Stash printf context on self so the false_is_ret peephole
+        # (which inlines true_bb instructions via _emit_inst) can
+        # forward them to PrintfInst handling.  OC-3 fix.
+        self._cur_printf_strings = printf_strings
+        self._cur_printf_idx = printf_idx
         # Skip blocks that were inlined by ternary diamond detection
         if hasattr(self, '_skip_blocks') and bb.label in self._skip_blocks:
             return
@@ -2949,7 +2954,9 @@ class PTXEmitter:
                         self._skip_blocks.add(term.true_bb)
                         if t_bb:
                             for t_inst in t_bb.instructions:
-                                self._emit_inst(t_inst, self._kernel)
+                                self._emit_inst(t_inst, self._kernel,
+                                                getattr(self, '_cur_printf_strings', None),
+                                                getattr(self, '_cur_printf_idx', None))
                             # Replace bra-to-ret-merge with direct ret,
                             # but ONLY if the merge block has exactly 1
                             # predecessor (the inlined true_bb).
