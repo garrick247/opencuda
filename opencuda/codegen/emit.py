@@ -2913,29 +2913,68 @@ class PTXEmitter:
                         and isinstance(f_bb.terminator, RetTerm)):
                     false_is_ret = True
                 if false_is_ret:
-                    self._lines.append(f'    @!{pred} ret;')
-                    # Inline the true block's body and skip the false/merge
-                    # blocks. This keeps PTX in a single-block layout that
-                    # OpenPTXas handles natively on SM_120.
-                    if not hasattr(self, '_skip_blocks'):
-                        self._skip_blocks = set()
-                    self._skip_blocks.add(term.false_bb)
-                    self._skip_blocks.add(term.true_bb)
+                    # Count predecessors of true_bb — only safe to inline
+                    # if it has exactly 1 predecessor (this CondBrTerm) and
+                    # does not self-loop.  Otherwise fall through to the
+                    # normal two-branch pattern.
                     t_bb = bb_map.get(term.true_bb)
-                    if t_bb:
-                        for t_inst in t_bb.instructions:
-                            self._emit_inst(t_inst, self._kernel)
-                        # Replace bra-to-ret-merge with direct ret
-                        if isinstance(t_bb.terminator, BrTerm):
-                            m_bb = bb_map.get(t_bb.terminator.target)
-                            if (m_bb and len(m_bb.instructions) == 0
-                                    and isinstance(m_bb.terminator, RetTerm)):
-                                self._skip_blocks.add(t_bb.terminator.target)
-                                self._lines.append('    ret;')
-                            else:
+                    true_pred_count = sum(
+                        1 for b in self._kernel.blocks
+                        if (isinstance(b.terminator, BrTerm) and b.terminator.target == term.true_bb)
+                        or (isinstance(b.terminator, CondBrTerm) and term.true_bb in (b.terminator.true_bb, b.terminator.false_bb))
+                    )
+                    true_self_loop = (
+                        t_bb is not None
+                        and isinstance(t_bb.terminator, (BrTerm, CondBrTerm))
+                        and (
+                            (isinstance(t_bb.terminator, BrTerm) and t_bb.terminator.target == term.true_bb)
+                            or (isinstance(t_bb.terminator, CondBrTerm) and term.true_bb in (t_bb.terminator.true_bb, t_bb.terminator.false_bb))
+                        )
+                    )
+                    can_inline_true = (true_pred_count == 1 and not true_self_loop)
+
+                    if can_inline_true:
+                        self._lines.append(f'    @!{pred} ret;')
+                        if not hasattr(self, '_skip_blocks'):
+                            self._skip_blocks = set()
+                        # Only skip false_bb if it has no other
+                        # predecessors besides this CondBrTerm.
+                        false_pred_count = sum(
+                            1 for b in self._kernel.blocks
+                            if (isinstance(b.terminator, BrTerm) and b.terminator.target == term.false_bb)
+                            or (isinstance(b.terminator, CondBrTerm) and term.false_bb in (b.terminator.true_bb, b.terminator.false_bb))
+                        )
+                        if false_pred_count <= 1:
+                            self._skip_blocks.add(term.false_bb)
+                        self._skip_blocks.add(term.true_bb)
+                        if t_bb:
+                            for t_inst in t_bb.instructions:
+                                self._emit_inst(t_inst, self._kernel)
+                            # Replace bra-to-ret-merge with direct ret,
+                            # but ONLY if the merge block has exactly 1
+                            # predecessor (the inlined true_bb).
+                            if isinstance(t_bb.terminator, BrTerm):
+                                m_label = t_bb.terminator.target
+                                m_bb = bb_map.get(m_label)
+                                merge_pred_count = sum(
+                                    1 for b in self._kernel.blocks
+                                    if (isinstance(b.terminator, BrTerm) and b.terminator.target == m_label)
+                                    or (isinstance(b.terminator, CondBrTerm) and m_label in (b.terminator.true_bb, b.terminator.false_bb))
+                                )
+                                if (m_bb and len(m_bb.instructions) == 0
+                                        and isinstance(m_bb.terminator, RetTerm)
+                                        and merge_pred_count == 1):
+                                    self._skip_blocks.add(m_label)
+                                    self._lines.append('    ret;')
+                                else:
+                                    self._emit_term(t_bb.terminator)
+                            elif t_bb.terminator:
                                 self._emit_term(t_bb.terminator)
-                        elif t_bb.terminator:
-                            self._emit_term(t_bb.terminator)
+                    else:
+                        # Cannot safely inline — fall through to normal
+                        # two-branch pattern (emits @pred bra / bra).
+                        self._lines.append(f'    @{pred} bra {term.true_bb};')
+                        self._lines.append(f'    bra {term.false_bb};')
                 else:
                     self._lines.append(f'    @{pred} bra {term.true_bb};')
                     self._lines.append(f'    bra {term.false_bb};')
