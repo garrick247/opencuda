@@ -298,7 +298,13 @@ def _build_alloc_map(kernel: Kernel):
         end = live_end.get(val_id, start)
         buckets.setdefault(prefix, []).append((start, end, val_id))
 
-    # Linear scan per bucket
+    # OCUDA-SSA: Linear scan with REUSE-DISABLED for 32-bit int registers.
+    # OpenPTXas downstream re-orders LDG instructions for latency hiding;
+    # when an LDG dest vreg has been reused for a logically-distinct value,
+    # the reorder corrupts the earlier load.  Eliminating reuse for `r`
+    # (32-bit int) preserves PTX-level value identity and unblocks the
+    # FORGE13 map-composition slice.  Other prefixes (rd/f/h/p/etc.)
+    # retain their original linear-scan reuse behaviour.
     alloc = {}
     alloc_max = {}
 
@@ -307,13 +313,17 @@ def _build_alloc_map(kernel: Kernel):
         free_list = []
         next_reg = 0
         active = []  # (end, phys_idx, val_id)
+        # Suppress reuse for 32-bit int vregs (PTX `%r`).  Other prefixes
+        # keep linear-scan reuse to preserve register-pressure tests.
+        _allow_reuse = (prefix != 'r')
 
         for start, end, val_id in intervals:
             # Expire old intervals
             new_active = []
             for a_end, a_phys, a_id in active:
                 if a_end < start:
-                    free_list.append(a_phys)
+                    if _allow_reuse:
+                        free_list.append(a_phys)
                 else:
                     new_active.append((a_end, a_phys, a_id))
             active = new_active
