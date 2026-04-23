@@ -1,19 +1,23 @@
-"""If-conversion optimizer: convert if/else diamonds to selp (branchless select).
+"""If-conversion optimizer: convert load+mul+store diamonds to selp.
 
-Detects the pattern:
-    if (cond) {
-        out[idx] = load_val * const_true;
-    } else {
-        out[idx] = load_val * const_false;
-    }
+Matches the pattern
 
-And converts to:
+    if (cond) { out[idx] = load_val * const_true;  }
+    else     { out[idx] = load_val * const_false; }
+
+and rewrites to
+
     mult = selp(const_true, const_false, cond);
-    result = load_val * mult;
-    out[idx] = result;
+    out[idx] = load_val * mult;
 
-This eliminates redundant loads and address calculations in both arms,
-producing dramatically smaller SASS (4 instructions vs 21).
+This hits ~21 SASS instructions vs ~4 for the branchless form. Today this
+fires on exactly one kernel in the test corpus (`cond_test` in
+test_gpu_e2e.py). A two-pass measurement (2026-04-23) across all 81 test
+kernels showed the earlier "single-arm inline" and "MUL(0,X) cleanup"
+passes firing zero times — they were written too narrowly to match
+anything OpenCUDA actually emits after the main optimize() pipeline. Both
+were removed; broader if-conversion should live in a rewrite rather than
+be retrofitted here.
 """
 from __future__ import annotations
 from opencuda.ir.nodes import (
@@ -220,96 +224,5 @@ def if_convert_diamonds(kernel: Kernel) -> Kernel:
 
     if modified:
         kernel.blocks = [bb for bb in kernel.blocks if bb.label not in blocks_to_remove]
-
-    # Constant fold: MUL(0, X) → 0, ADD(X, 0) → X
-    # This eliminates dead address computations like out[0] = out + 0*4
-    for bb in kernel.blocks:
-        i = 0
-        const_vals = {}  # value_id → constant value
-        while i < len(bb.instructions):
-            inst = bb.instructions[i]
-            if isinstance(inst, BinInst) and inst.op == BinOp.MUL:
-                # MUL with 0 → result is 0
-                lhs_zero = (isinstance(inst.lhs, Const) and inst.lhs.value == 0)
-                rhs_zero = (isinstance(inst.rhs, Const) and inst.rhs.value == 0)
-                if lhs_zero or rhs_zero:
-                    const_vals[inst.dest.id] = 0
-                    bb.instructions.pop(i)
-                    continue
-            elif isinstance(inst, CvtInst):
-                # If source is known-zero, result is zero
-                if isinstance(inst.src, Value) and inst.src.id in const_vals:
-                    const_vals[inst.dest.id] = const_vals[inst.src.id]
-                    bb.instructions.pop(i)
-                    continue
-            elif isinstance(inst, BinInst) and inst.op == BinOp.ADD:
-                # ADD(X, 0) → X (propagate X)
-                rhs_zero = (isinstance(inst.rhs, Value) and inst.rhs.id in const_vals
-                           and const_vals[inst.rhs.id] == 0)
-                lhs_zero = (isinstance(inst.lhs, Value) and inst.lhs.id in const_vals
-                           and const_vals[inst.lhs.id] == 0)
-                if rhs_zero and isinstance(inst.lhs, Value):
-                    # Result = lhs. Replace all uses of dest with lhs.
-                    old_id = inst.dest.id
-                    new_val = inst.lhs
-                    for j in range(i, len(bb.instructions)):
-                        other = bb.instructions[j]
-                        for attr in ('lhs', 'rhs', 'addr', 'value', 'src', 'cond',
-                                     'true_val', 'false_val'):
-                            v = getattr(other, attr, None)
-                            if isinstance(v, Value) and v.id == old_id:
-                                setattr(other, attr, new_val)
-                        if hasattr(other, 'srcs'):
-                            pass  # srcs is a list, handled differently
-                    bb.instructions.pop(i)
-                    continue
-            i += 1
-
-    # Pass 2: Single-arm diamonds (empty false arm).
-    # Pattern: condbr → true_bb (has code) + false_bb (empty, just bra merge)
-    # → merge_bb (ret or bra)
-    # Rewrite: inline true_bb code into parent, guarded by condition.
-    bb_map = {bb.label: bb for bb in kernel.blocks}
-    blocks_to_remove2 = set()
-    for bb in kernel.blocks:
-        if not isinstance(bb.terminator, CondBrTerm):
-            continue
-        term = bb.terminator
-        t_bb = bb_map.get(term.true_bb)
-        f_bb = bb_map.get(term.false_bb)
-        if not (t_bb and f_bb):
-            continue
-        # False arm must be empty (0 instructions, just bra to merge)
-        if len(f_bb.instructions) != 0:
-            continue
-        if not isinstance(f_bb.terminator, BrTerm):
-            continue
-        # True arm must branch to same merge as false
-        if not isinstance(t_bb.terminator, BrTerm):
-            continue
-        if t_bb.terminator.target != f_bb.terminator.target:
-            continue
-        merge_label = t_bb.terminator.target
-        merge_bb = bb_map.get(merge_label)
-        if not merge_bb:
-            continue
-        # Merge must be simple (empty + ret, or empty + bra)
-        if len(merge_bb.instructions) != 0:
-            continue
-
-        # Inline: move true_bb's instructions into parent, then branch to merge target
-        bb.instructions.extend(t_bb.instructions)
-        if isinstance(merge_bb.terminator, RetTerm):
-            bb.terminator = merge_bb.terminator
-        elif isinstance(merge_bb.terminator, BrTerm):
-            bb.terminator = merge_bb.terminator
-        else:
-            bb.terminator = BrTerm(target=merge_label)
-            continue
-
-        blocks_to_remove2.update({term.true_bb, term.false_bb, merge_label})
-
-    if blocks_to_remove2:
-        kernel.blocks = [bb for bb in kernel.blocks if bb.label not in blocks_to_remove2]
 
     return kernel
