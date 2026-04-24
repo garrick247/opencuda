@@ -1,0 +1,139 @@
+.version 9.0
+.target sm_120
+.address_size 64
+
+.visible .entry softmax_rowwise(
+    .param .u64 inp, .param .u64 out, .param .s32 n_cols)
+{
+    .shared .f32 smem[256];
+    .reg .f32 %f<6>;
+    .reg .b32 %r<19>;
+    .reg .b64 %rd<10>;
+    .reg .pred %p<2>;
+
+    mov.u64 %rd0, smem;
+    ld.param.u64 %rd1, [inp];
+    ld.param.u64 %rd2, [out];
+    ld.param.s32 %r0, [n_cols];
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r3, %ctaid.x;
+    mov.f32 %f0, 0f00000000;
+    setp.lt.s32 %p0, %r1, %r0;
+    @%p0 bra if_true_2;
+    bra if_merge_4;
+if_true_2:
+    mul.lo.s32 %r5, %r3, %r0;
+    add.s32 %r6, %r5, %r1;
+    cvt.u64.u32 %rd4, %r6;
+    shl.b64 %rd4, %rd4, 2;
+    add.u64 %rd3, %rd1, %rd4;
+    ld.global.f32 %f1, [%rd3];
+    mov.f32 %f0, %f1;
+    bra if_merge_4;
+if_merge_4:
+    mov.f32 %f1, %f0;
+    setp.ge.s32 %p0, %r1, %r0;
+    @%p0 bra if_true_5;
+    bra if_merge_7;
+if_true_5:
+    mov.f32 %f1, 0fF149F2CA;
+    bra if_merge_7;
+if_merge_7:
+    cvt.u64.u32 %rd5, %r1;
+    shl.b64 %rd5, %rd5, 2;
+    add.u64 %rd1, %rd0, %rd5;
+    st.shared.f32 [%rd1], %f1;
+    bar.sync 0;
+    mov.s32 %r9, 128;
+    bra while_cond_8;
+while_cond_8:
+    setp.gt.s32 %p0, %r9, 0;
+    @%p0 bra while_body_9;
+    bra while_exit_10;
+while_body_9:
+    setp.lt.s32 %p1, %r1, %r9;
+    @%p1 bra if_true_11;
+    bra if_merge_13;
+while_exit_10:
+    ld.shared.f32 %f1, [%rd0];
+    bar.sync 0;
+    mov.f32 %f2, 0f00000000;
+    setp.lt.s32 %p1, %r1, %r0;
+    @%p1 bra if_true_17;
+    bra if_merge_19;
+if_true_11:
+    add.s32 %r10, %r1, %r9;
+    cvt.u64.u32 %rd6, %r10;
+    shl.b64 %rd6, %rd6, 2;
+    add.u64 %rd3, %rd0, %rd6;
+    ld.shared.f32 %f3, [%rd3];
+    add.u64 %rd1, %rd0, %rd5;
+    ld.shared.f32 %f4, [%rd1];
+    setp.gt.f32 %p1, %f3, %f4;
+    @%p1 bra if_true_14;
+    bra if_merge_13;
+if_merge_13:
+    bar.sync 0;
+    shr.s32 %r12, %r9, 31;
+    shr.b32 %r13, %r12, 31;
+    add.s32 %r14, %r9, %r13;
+    shr.s32 %r15, %r14, 1;
+    mov.s32 %r9, %r15;
+    bra while_cond_8;
+if_true_14:
+    st.shared.f32 [%rd1], %f3;
+    bra if_merge_13;
+if_true_17:
+    sub.f32 %f3, %f0, %f1;
+    mul.f32 %f5, %f3, 0f3FB8AA3B;
+    ex2.approx.f32 %f4, %f5;
+    mov.f32 %f2, %f4;
+    bra if_merge_19;
+if_merge_19:
+    cvt.u64.u32 %rd7, %r1;
+    shl.b64 %rd7, %rd7, 2;
+    add.u64 %rd3, %rd0, %rd7;
+    st.shared.f32 [%rd3], %f2;
+    bar.sync 0;
+    mov.s32 %r17, 128;
+    bra while_cond_20;
+while_cond_20:
+    setp.gt.s32 %p0, %r17, 0;
+    @%p0 bra while_body_21;
+    bra while_exit_22;
+while_body_21:
+    setp.lt.s32 %p1, %r1, %r17;
+    @%p1 bra if_true_23;
+    bra if_merge_25;
+while_exit_22:
+    ld.shared.f32 %f0, [%rd0];
+    setp.lt.s32 %p1, %r1, %r0;
+    @!%p1 ret;
+    mul.lo.s32 %r14, %r3, %r0;
+    add.s32 %r15, %r14, %r1;
+    cvt.u64.u32 %rd8, %r15;
+    shl.b64 %rd8, %rd8, 2;
+    add.u64 %rd0, %rd2, %rd8;
+    div.approx.f32 %f1, %f2, %f0;
+    st.global.f32 [%rd0], %f1;
+    ret;
+if_true_23:
+    add.u64 %rd1, %rd0, %rd7;
+    ld.shared.f32 %f1, [%rd1];
+    add.s32 %r18, %r1, %r17;
+    cvt.u64.u32 %rd9, %r18;
+    shl.b64 %rd9, %rd9, 2;
+    add.u64 %rd3, %rd0, %rd9;
+    ld.shared.f32 %f3, [%rd3];
+    add.f32 %f4, %f1, %f3;
+    st.shared.f32 [%rd1], %f4;
+    bra if_merge_25;
+if_merge_25:
+    bar.sync 0;
+    shr.s32 %r10, %r17, 31;
+    shr.b32 %r11, %r10, 31;
+    add.s32 %r12, %r17, %r11;
+    shr.s32 %r13, %r12, 1;
+    mov.s32 %r17, %r13;
+    bra while_cond_20;
+}
