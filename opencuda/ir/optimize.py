@@ -1238,6 +1238,62 @@ def thread_empty_blocks(kernel: Kernel) -> int:
     return removed
 
 
+def fold_empty_ret_blocks(kernel: Kernel) -> int:
+    """Replace ``BrTerm`` → empty-RetTerm with inline ``RetTerm``.
+
+    Shape folded::
+
+        X:  ...              X:  ...
+            br L        =>       ret
+        L:                   (L: dropped by dead_block_elim)
+            ret
+
+    Fires when block L is instruction-less and terminated by ``RetTerm``.
+    Every predecessor that reaches L via an unconditional ``BrTerm`` is
+    rewritten to return inline; L's own ret value is copied by reference
+    (RetTerm is immutable enough that sharing the operand is fine).
+
+    CondBrTerm arms are not folded — turning one arm into inline ret
+    would require synthesizing a predicated-ret block, and the cost/win
+    doesn't justify the complexity.
+
+    Historical note: this pass was tried in 2026-04-23 and reverted
+    because OpenPTXas miscompiled kernels with multiple `ret` basic
+    blocks (an entry guard plus a diamond where both arms ret inline
+    landed the post-preamble LDC.64 after the trailing bra, reading an
+    uninitialised R-pair).  That bug is fixed as of openptxas
+    ``e14a2717de`` — see ``_fuzz_bugs/multi_ret_blocks/REPRO.md``.
+
+    Returns the number of BrTerms rewritten to RetTerm.
+    """
+    if not kernel.blocks:
+        return 0
+
+    label_to_bb = {bb.label: bb for bb in kernel.blocks}
+    entry_label = kernel.blocks[0].label
+
+    # Identify empty-ret blocks (but never the entry block — emitter
+    # always starts from block[0]).
+    empty_ret: dict[str, RetTerm] = {}
+    for bb in kernel.blocks:
+        if bb.label == entry_label:
+            continue
+        if len(bb.instructions) == 0 and isinstance(bb.terminator, RetTerm):
+            empty_ret[bb.label] = bb.terminator
+
+    if not empty_ret:
+        return 0
+
+    folded = 0
+    for bb in kernel.blocks:
+        t = bb.terminator
+        if isinstance(t, BrTerm) and t.target in empty_ret:
+            bb.terminator = RetTerm(ret_val=empty_ret[t.target].ret_val)
+            folded += 1
+
+    return folded
+
+
 def fma_fuse(kernel: Kernel) -> int:
     """Fuse adjacent float mul + add → fma.rn.fNN within a single basic block.
 
@@ -1484,6 +1540,8 @@ def optimize(module: Module, verbose: bool = False,
         _gate(kernel, 'dead_inst_elim-2')
         n_teb = thread_empty_blocks(kernel)
         _gate(kernel, 'thread_empty_blocks')
+        n_fer = fold_empty_ret_blocks(kernel)
+        _gate(kernel, 'fold_empty_ret_blocks')
         # Pass 12: thread + dead-cleanup to fixpoint.
         # Rationale: dead_inst_elim may reveal new transparent blocks (e.g.
         # lor_rhs/lor_skip blocks whose instructions become dead after the
@@ -1520,6 +1578,7 @@ def optimize(module: Module, verbose: bool = False,
             _n_post += dead_inst_elim(kernel)
             _n_post += dead_block_elim(kernel)
             _n_post += thread_empty_blocks(kernel)
+            _n_post += fold_empty_ret_blocks(kernel)
             if _n_post == 0:
                 break
             merge_linear_chains(kernel)
@@ -1560,8 +1619,11 @@ def optimize(module: Module, verbose: bool = False,
         constant_fold(func)
         dead_inst_elim(func)
         thread_empty_blocks(func)
+        fold_empty_ret_blocks(func)
         for _ in range(8):
-            if dead_block_elim(func) == 0 and dead_inst_elim(func) == 0 and thread_empty_blocks(func) == 0:
+            if (dead_block_elim(func) == 0 and dead_inst_elim(func) == 0
+                    and thread_empty_blocks(func) == 0
+                    and fold_empty_ret_blocks(func) == 0):
                 break
 
     return module
