@@ -20,6 +20,7 @@ OpenCUDA is the middle stage of a fully open-source GPU toolchain:
 - **[Forge](https://github.com/garrick99/forge)** — formally-verified systems language (optional front-end; emits the CUDA C that OpenCUDA consumes)
 - **OpenCUDA** (this repo) — CUDA C → PTX, pure Python
 - **[OpenPTXas](https://github.com/garrick99/openptxas)** — PTX → SM_120 cubin, pure Python
+- **[forge-workbench](https://github.com/garrick99/forge-workbench)** — cross-stack CLI cockpit (run / compare / benchmark / classify)
 - **[VortexSTARK](https://github.com/garrick99/VortexSTARK)** — production user via the Forge front-end
 
 No NVIDIA compiler is invoked at any stage of the toolchain.
