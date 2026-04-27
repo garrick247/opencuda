@@ -6,11 +6,29 @@ OpenCUDA compiles CUDA C to PTX. [OpenPTXas](https://github.com/garrick99/openpt
 
 **Just Python. Real cubins. Real GPU. Correct output.**
 
+## What is this?
+
+A pure-Python compiler that takes CUDA C source and emits PTX assembly. Pair it with [OpenPTXas](https://github.com/garrick99/openptxas) to get an executable cubin you can `cuModuleLoad` directly on a Blackwell GPU. No `nvcc` required.
+
+OpenCUDA is the middle stage of a fully open-source GPU toolchain:
+
+```
+[Forge (.fg)]  ──►  CUDA C  ──►  OpenCUDA  ──►  PTX  ──►  [OpenPTXas]  ──►  cubin  ──►  GPU
+                                  ↑ this repo               PTX → SASS → ELF
+```
+
+- **[Forge](https://github.com/garrick99/forge)** — formally-verified systems language (optional front-end; emits the CUDA C that OpenCUDA consumes)
+- **OpenCUDA** (this repo) — CUDA C → PTX, pure Python
+- **[OpenPTXas](https://github.com/garrick99/openptxas)** — PTX → SM_120 cubin, pure Python
+- **[VortexSTARK](https://github.com/garrick99/VortexSTARK)** — production user via the Forge front-end
+
+No NVIDIA compiler is invoked at any stage of the toolchain.
+
 ## The Proof
 
-CUDA C compiled to working SM_120 cubins using only open-source Python tools.
+**Test suite: 30,804 pass, 0 fail** (full `pytest opencuda/tests/`). 1,688 of those are the parametrized `test_compiler.py` driver running every `.cu` in `tests/` through parse + emit + ptxas-validate.
 
-**GPU-verified on RTX 5090:**
+**GPU-verified on RTX 5090** (subset of the parametrized suite, executed end-to-end):
 
 | Kernel | What it does | Status |
 |--------|-------------|--------|
@@ -46,7 +64,7 @@ python -m opencuda kernel.cu --emit-ptx
 # Compile to executable cubin (requires OpenPTXas)
 python -m opencuda kernel.cu --out kernel.cubin
 
-# Run the compiler test suite (31,000+ tests)
+# Run the compiler test suite (30,804 tests, all passing)
 pytest opencuda/tests/ -x -q
 ```
 
