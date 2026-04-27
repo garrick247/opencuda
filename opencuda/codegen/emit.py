@@ -476,6 +476,17 @@ class PTXEmitter:
         self._fallback_alloc = {}
         self._fallback_count = {}
         self._pred_ids = set()
+        # Reset per-function: block labels are not globally unique, so a
+        # skip_blocks set built up by a previous device function (via the
+        # false_is_ret peephole, which adds inlined true/merge labels to
+        # skip_blocks) would otherwise cause the NEXT function's same-named
+        # blocks to be silently dropped — leaving its `bra` instructions
+        # pointing at non-existent labels. Bug 5: probe_zf.cu, two recursive
+        # device fns (power and bvh_intersect) both happened to assign
+        # `if_true_8` and `if_merge_10` to logically distinct blocks; power
+        # emitted first, set skip_blocks, and bvh's same-named blocks were
+        # then silently elided.
+        self._skip_blocks = set()
         self._kernel = func  # reference for SelectInst CmpInst lookup
 
         # Build register allocation map
