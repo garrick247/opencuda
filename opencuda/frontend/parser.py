@@ -3662,33 +3662,58 @@ class Parser:
         self._inline_struct_return_fields = {}
         self._copy_chain_global = {}
 
-        # Load kernel parameters into variables
+        # Load kernel parameters into variables.  Struct-by-value params
+        # are flattened to one ParamInst per scalar/pointer leaf field;
+        # the codegen mirrors this by emitting one .param per leaf with
+        # the compound `paramname_fieldname` naming.  Matches the
+        # Itanium-style ABI nvcc uses for small POD structs.
+        #
+        # Dedup by name: FORGE-emitted code carries both `s: span<T>` and
+        # an explicit `s_len: u64` for proof obligations (with `requires
+        # s_len == s.len`).  Once flattened the names collide; the first
+        # occurrence wins.  Matches FORGE's own codegen_cuda.ml.
         entry = self._new_block("entry")
         self._cur_block = entry
         self._lazy_params = {}
+        _seen_param_names: set[str] = set()
         for i, p in enumerate(params):
-            val = self._new_val(p.name, p.ty)
-            self._emit(ParamInst(val, i, p.name))
-            self._variables[p.name] = val
-            # For struct-type parameters, also create per-field variables.
-            # PTX struct-by-value params are not natively supported; emit zero-init
-            # so the IR is valid (field reads won't be "undefined").
             if isinstance(p.ty, StructTy):
-                def _zero_init_struct_fields(prefix: str, sty: 'StructTy') -> None:
+                # Register a struct sentinel so dot-access discovers it
+                if p.name not in self._variables:
+                    sent = self._new_val(p.name, p.ty)
+                    self._variables[p.name] = sent
+
+                def _flat_struct_params(prefix: str, sty: 'StructTy',
+                                        slot_idx: int) -> int:
+                    """Emit one ParamInst per leaf field, returning the
+                    next ParamInst slot index.  Sub-structs recurse.
+                    Skip names already bound to dedup struct/primitive
+                    name collisions."""
                     for _pfname, _pfty in sty.fields:
                         _key = f"{prefix}_{_pfname}"
-                        if isinstance(_pfty, ScalarTy):
-                            _pfval = self._new_val(_key, _pfty)
-                            _pzero = Const(_pfty, 0.0 if _pfty.is_float else 0)
-                            self._emit(BinInst(_pfval, BinOp.ADD, _pzero, _pzero))
-                            self._variables[_key] = _pfval
-                        elif isinstance(_pfty, StructTy):
-                            # Create sentinel for the sub-struct itself
+                        if _key in _seen_param_names:
+                            continue
+                        if isinstance(_pfty, StructTy):
                             _sent = self._new_val(_key, _pfty)
                             self._variables[_key] = _sent
-                            # Recurse into sub-struct fields
-                            _zero_init_struct_fields(_key, _pfty)
-                _zero_init_struct_fields(p.name, p.ty)
+                            _seen_param_names.add(_key)
+                            slot_idx = _flat_struct_params(_key, _pfty,
+                                                            slot_idx)
+                        else:
+                            _pfval = self._new_val(_key, _pfty)
+                            self._emit(ParamInst(_pfval, slot_idx, _key))
+                            self._variables[_key] = _pfval
+                            _seen_param_names.add(_key)
+                            slot_idx += 1
+                    return slot_idx
+                _flat_struct_params(p.name, p.ty, i)
+            else:
+                if p.name in _seen_param_names:
+                    continue
+                val = self._new_val(p.name, p.ty)
+                self._emit(ParamInst(val, i, p.name))
+                self._variables[p.name] = val
+                _seen_param_names.add(p.name)
 
         # Inject module-level extern __shared__ declarations into this kernel's scope.
         for shname, shty, shcount in self._module_shared_decls:

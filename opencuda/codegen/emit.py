@@ -456,6 +456,43 @@ class PTXEmitter:
             return self._reg(op)
         return self._reg(tmp)
 
+    def _coerce_to_int(self, op: Operand, target_ity: str, kernel: Kernel) -> str:
+        """Return a PTX operand string of the requested integer type.
+
+        Mirror of _coerce_to_float for the integer side.  Inserts a
+        `cvt.{target}.{src}` if op's PTX type differs from target_ity.
+        Lets BinOp-ADD-zero-as-copy and similar "copy" sites emit valid
+        PTX even when the IR has type-mismatched operands (e.g. a u32
+        loop carrier whose RHS got widened to u64 by upstream `cvt.u64.u32`).
+        Const operands are returned as integer literals.  Predicate
+        Values are routed through _pred_to_int (matching _operand's
+        behavior) — `cvt` cannot consume a predicate register.
+        """
+        if isinstance(op, Const):
+            return self._operand(op, target_ity)
+        if not isinstance(op, Value):
+            return str(op)
+        # Predicate → 0/1 integer via selp.  `cvt` rejects predicate src.
+        if op.id in self._pred_ids:
+            return self._pred_to_int(op, target_ity, kernel)
+        op_ty = op.ty
+        op_ptx = _ptx_type(op_ty) if isinstance(op_ty, ScalarTy) else None
+        if op_ptx == target_ity:
+            return self._reg(op)
+        _INT_PTX = {'s8', 'u8', 's16', 'u16', 's32', 'u32', 's64', 'u64'}
+        if op_ptx in _INT_PTX and target_ity in _INT_PTX:
+            from ..ir.types import (INT8, UINT8, INT16, UINT16,
+                                     INT32, UINT32, INT64, UINT64)
+            _MAP = {'s8': INT8, 'u8': UINT8, 's16': INT16, 'u16': UINT16,
+                    's32': INT32, 'u32': UINT32, 's64': INT64, 'u64': UINT64}
+            tmp = kernel.new_value(f'_coerce_{op.id}', _MAP[target_ity])
+            self._lines.append(
+                f'    cvt.{target_ity}.{op_ptx} '
+                f'{self._reg(tmp)}, {self._reg(op)};')
+            return self._reg(tmp)
+        # Pointer / unknown type combinations: trust the caller.
+        return self._reg(op)
+
     def _pred_to_int(self, op: 'Value', dest_ty: str, kernel: 'Kernel') -> str:
         """Convert a predicate register to a 0/1 integer using selp.
         PTX predicate registers cannot be used as integer operands directly.
@@ -910,9 +947,34 @@ class PTXEmitter:
             t = _ptx_type(ty)
             return 'b16' if t == 'f16' else t
 
-        params = ', '.join(
-            f'.param .{_param_ptx_type(p.ty)} {p.name}' for p in kernel.params
-        )
+        # Struct-by-value parameters are flattened to one .param per
+        # scalar/pointer field, matching the Itanium-style ABI nvcc uses.
+        # The compound `paramname_fieldname` naming mirrors the parser's
+        # per-field SSA value registration so ld.param sites resolve
+        # to the correct flattened slot.
+        #
+        # Dedup by name: FORGE-emitted code carries both `s: span<T>` and
+        # an explicit `s_len: u64` with `requires s_len == s.len` for
+        # proof obligations.  Once flattened, both produce a `s_len`
+        # slot — emitting two `.param .u64 s_len` is a ptxas redeclaration
+        # error.  The first occurrence wins, matching FORGE's own
+        # codegen_cuda.ml emit_param dedup.
+        def _flatten_param(prefix, ty, seen):
+            if isinstance(ty, StructTy):
+                decls = []
+                for fname, fty in ty.fields:
+                    decls.extend(_flatten_param(f'{prefix}_{fname}', fty, seen))
+                return decls
+            if prefix in seen:
+                return []
+            seen.add(prefix)
+            return [f'.param .{_param_ptx_type(ty)} {prefix}']
+
+        param_decls = []
+        _seen_param_names: set[str] = set()
+        for p in kernel.params:
+            param_decls.extend(_flatten_param(p.name, p.ty, _seen_param_names))
+        params = ', '.join(param_decls)
         ptx.append(f'.visible .entry {kernel.name}(')
         ptx.append(f'    {params})')
         # __launch_bounds__ → .maxntid and .minnctapersm directives (before '{')
@@ -1103,7 +1165,12 @@ class PTXEmitter:
                 self._lines.append(f'    cvta.to.global.u64 {dest}, {dest};')
             return
         if isinstance(inst, ParamInst):
-            ty = kernel.params[inst.param_index].ty
+            # Read the load type from the SSA destination value, not from
+            # kernel.params[inst.param_index].  Struct-by-value params are
+            # flattened in the parser to one ParamInst per field; each
+            # field's ld.param needs its own type, not the source-level
+            # struct type.
+            ty = inst.dest.ty
             ptx_ty = _ptx_type(ty)
             # PTX does not support ld.param.f16 — use b16 instead
             if ptx_ty == 'f16':
@@ -1154,7 +1221,14 @@ class PTXEmitter:
                         src = self._coerce_to_float(inst.lhs, fty, kernel)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
                     else:
-                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.lhs, ptx_ty, kernel)};')
+                        # Coerce src to dest's integer type so a wider RHS
+                        # (e.g. u64 produced upstream via cvt.u64.u32) is
+                        # truncated via cvt instead of emitting a
+                        # type-mismatched mov that ptxas rejects.
+                        src = self._coerce_to_int(inst.lhs, ptx_ty, kernel) \
+                              if isinstance(inst.lhs, Value) \
+                              else self._operand(inst.lhs, ptx_ty, kernel)
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {src};')
                     return
                 elif lhs_zero and not isinstance(inst.rhs, Const) and not _is_half(ty):
                     # mov D, V  (add D, 0, V)
@@ -1164,7 +1238,10 @@ class PTXEmitter:
                         src = self._coerce_to_float(inst.rhs, fty, kernel)
                         self._lines.append(f'    mov.{fty} {self._reg(inst.dest)}, {src};')
                     else:
-                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {self._operand(inst.rhs, ptx_ty, kernel)};')
+                        src = self._coerce_to_int(inst.rhs, ptx_ty, kernel) \
+                              if isinstance(inst.rhs, Value) \
+                              else self._operand(inst.rhs, ptx_ty, kernel)
+                        self._lines.append(f'    mov.{ptx_ty} {self._reg(inst.dest)}, {src};')
                     return
 
             op_map = {
