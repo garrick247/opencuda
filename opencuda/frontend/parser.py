@@ -2138,11 +2138,81 @@ class Parser:
 
         if tok.kind == TokKind.LPAREN:
             self._advance()
+            # Detect C99 compound literal `(TYPE){fields}` or a C-style
+            # cast `(TYPE)expr`.  FORGE_AGG expands to the compound-literal
+            # form.  The lookahead: an opening LPAREN followed by a token
+            # that begins a type (KW_INT, KW_FLOAT, ..., or a typedef'd /
+            # struct identifier).  Save self._pos so we can roll back if
+            # what follows turns out not to be a type after all.
+            _type_start_kinds = (
+                TokKind.KW_VOID, TokKind.KW_INT, TokKind.KW_FLOAT,
+                TokKind.KW_DOUBLE, TokKind.KW_HALF, TokKind.KW_CHAR,
+                TokKind.KW_BOOL, TokKind.KW_SHORT, TokKind.KW_LONG,
+                TokKind.KW_SIGNED, TokKind.KW_UNSIGNED,
+                TokKind.KW_STRUCT, TokKind.KW_UNION, TokKind.KW_ENUM,
+                TokKind.KW_CONST, TokKind.KW_VOLATILE,
+            )
+            _is_type_lookahead = (
+                self._peek().kind in _type_start_kinds
+                or (self._at(TokKind.IDENT)
+                    and (self._peek().value in self._typedefs
+                         or self._peek().value in self._struct_types))
+            )
+            if _is_type_lookahead:
+                _saved = self._pos
+                try:
+                    cast_ty = self._parse_type_with_ptr()
+                    if self._at(TokKind.RPAREN):
+                        self._advance()  # consume ')'
+                        if self._at(TokKind.LBRACE) and isinstance(cast_ty, StructTy):
+                            # C99 compound literal: (TYPE){f0, f1, ...}
+                            return self._parse_compound_literal(cast_ty)
+                        # C-style cast: (TYPE)expr
+                        operand = self._parse_unary_expr()
+                        dest = self._new_val("cast", cast_ty)
+                        self._emit(CvtInst(dest, operand))
+                        return dest
+                except Exception:
+                    self._pos = _saved
             expr = self._parse_expr()
             self._expect(TokKind.RPAREN)
             return expr
 
         raise ParseError(f"Line {tok.line}: unexpected token '{tok.value}'")
+
+    def _parse_compound_literal(self, sty: 'StructTy') -> 'Value':
+        """Parse a C99 compound literal `{f0, f1, ...}` after the
+        opening `(TYPE)` has been consumed.  Returns a Value of struct
+        type with per-field Values registered in
+        self._inline_struct_return_fields[dest.id] so that the existing
+        return-statement and field-access machinery can pick them up.
+        """
+        self._expect(TokKind.LBRACE)
+        field_vals: list = []
+        if not self._at(TokKind.RBRACE):
+            field_vals.append(self._parse_assign_expr())
+            while self._match(TokKind.COMMA):
+                if self._at(TokKind.RBRACE):
+                    break  # trailing comma
+                field_vals.append(self._parse_assign_expr())
+        self._expect(TokKind.RBRACE)
+        # Construct a struct Value and populate its per-field map.  Mirror
+        # the protocol used for inline struct returns: a dict keyed by the
+        # destination Value's id, mapping field name → field Value.
+        dest = self._new_val("compound", sty)
+        fmap: dict = {}
+        for (fname, fty), val in zip(sty.fields, field_vals):
+            if not isinstance(fty, ScalarTy):
+                continue
+            fval = self._new_val(f"{dest.name}_{fname}", fty)
+            zero = Const(fty, 0.0 if fty.is_float else 0)
+            self._emit(BinInst(fval, BinOp.ADD, val, zero))
+            fmap[fname] = fval
+            # Also expose under the compound name so dot-access can
+            # find the field via _variables lookup.
+            self._variables[f"{dest.name}_{fname}"] = fval
+        self._inline_struct_return_fields[dest.id] = fmap
+        return dest
 
     # -- Statement parsing ---------------------------------------------------
 

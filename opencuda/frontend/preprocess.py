@@ -22,11 +22,27 @@ from pathlib import Path
 
 
 def _expand_func_macro(body: str, params: list[str], args: list[str]) -> str:
-    """Substitute macro parameters into body with whole-word matching."""
+    """Substitute macro parameters into body with whole-word matching.
+
+    Variadic support (`#define X(p1, ...) body`): if the last entry in
+    params is the literal '...', all args beyond the named-param prefix
+    are joined with ', ' and substituted for `__VA_ARGS__` in body.
+    Mirrors C99/C++11 variadic-macro semantics.  Used by FORGE_AGG and
+    similar.
+    """
     result = body
-    for param, arg in zip(params, args):
-        # Only replace whole-word occurrences of the parameter
-        result = re.sub(r'\b' + re.escape(param) + r'\b', arg, result)
+    is_variadic = bool(params) and params[-1] == '...'
+    if is_variadic:
+        named = params[:-1]
+        # Bind named params positionally; rest become __VA_ARGS__
+        for param, arg in zip(named, args):
+            result = re.sub(r'\b' + re.escape(param) + r'\b', arg, result)
+        va = ', '.join(args[len(named):])
+        result = re.sub(r'\b__VA_ARGS__\b', va, result)
+    else:
+        for param, arg in zip(params, args):
+            # Only replace whole-word occurrences of the parameter
+            result = re.sub(r'\b' + re.escape(param) + r'\b', arg, result)
     # Stringify operator ## (token pasting) — strip spaces around ##
     result = re.sub(r'\s*##\s*', '', result)
     return result
