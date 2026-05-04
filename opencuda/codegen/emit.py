@@ -2955,14 +2955,34 @@ class PTXEmitter:
                         return (isinstance(v_inst_lhs, Value)
                                 and v_inst_lhs.id in self._pred_ids
                                 and ptx_ty not in ('pred',))
-                    if _pred_op(t_inst.lhs, true_op):
-                        self._lines.append(f'    @{pred} selp.{ptx_ty} {dest}, 1, 0, {true_op};')
-                    else:
-                        self._lines.append(f'    @{pred} mov.{ptx_ty} {dest}, {true_op};')
-                    if _pred_op(f_inst.lhs, false_op):
-                        self._lines.append(f'    @!{pred} selp.{ptx_ty} {dest}, 1, 0, {false_op};')
-                    else:
-                        self._lines.append(f'    @!{pred} mov.{ptx_ty} {dest}, {false_op};')
+
+                    def _emit_pred_assign(guard: str, src_inst_lhs, src_op: str):
+                        """Emit `@guard dest = src_op` with the right PTX shape:
+                        - selp for predicate-source-to-int
+                        - cvt for cross-type integer conversions (e.g.
+                          u64 dest from u32 source — `mov.u64 R, r` is
+                          rejected by ptxas as "Arguments mismatch")
+                        - mov in the same-type case
+                        """
+                        if _pred_op(src_inst_lhs, src_op):
+                            self._lines.append(
+                                f'    @{guard} selp.{ptx_ty} {dest}, 1, 0, {src_op};')
+                            return
+                        # Cross-type integer: insert cvt instead of mov.
+                        if (isinstance(src_inst_lhs, Value)
+                                and isinstance(src_inst_lhs.ty, ScalarTy)):
+                            src_ptx = _ptx_type(src_inst_lhs.ty)
+                            _INT_PTX = {'s8','u8','s16','u16','s32','u32','s64','u64'}
+                            if (src_ptx in _INT_PTX and ptx_ty in _INT_PTX
+                                    and src_ptx != ptx_ty):
+                                self._lines.append(
+                                    f'    @{guard} cvt.{ptx_ty}.{src_ptx} '
+                                    f'{dest}, {src_op};')
+                                return
+                        self._lines.append(f'    @{guard} mov.{ptx_ty} {dest}, {src_op};')
+
+                    _emit_pred_assign(pred, t_inst.lhs, true_op)
+                    _emit_pred_assign(f'!{pred}', f_inst.lhs, false_op)
 
                     # Mark true/false blocks as handled; also inline merge block
                     if not hasattr(self, '_skip_blocks'):

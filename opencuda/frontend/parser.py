@@ -1302,8 +1302,24 @@ class Parser:
                         # Struct element: keep as pointer so .field access can
                         # compute the correct byte offset and load the scalar.
                         lhs = addr
+                    elif self._at(TokKind.ASSIGN) or self._at(TokKind.PLUS_EQ) \
+                            or self._at(TokKind.MINUS_EQ) or self._at(TokKind.STAR_EQ) \
+                            or self._at(TokKind.SLASH_EQ) or self._at(TokKind.PERCENT_EQ) \
+                            or self._at(TokKind.AMP_EQ) or self._at(TokKind.PIPE_EQ) \
+                            or self._at(TokKind.CARET_EQ) or self._at(TokKind.LSHIFT_EQ) \
+                            or self._at(TokKind.RSHIFT_EQ):
+                        # arr[idx] = ... or arr[idx] += ...
+                        # The next token is an assignment op — keep `lhs` as
+                        # the address so parse_assign_expr's PtrTy branch can
+                        # emit a StoreInst.  Eagerly LOADing here would have
+                        # turned the LHS into a scalar rvalue and the store
+                        # would silently degrade to a variable rebind that
+                        # writes nothing to memory.  Surfaced by FB-1 e2e on
+                        # bit_reverse_qm31_forge: the kernel emitted only
+                        # ld.global ops with no st.global — silent miscompile.
+                        lhs = addr
                     else:
-                        # Load the scalar value
+                        # Load the scalar value (rvalue use of arr[idx]).
                         dest = self._new_val("elem", lhs.ty.pointee)
                         self._emit(LoadInst(dest, addr))
                         lhs = dest
