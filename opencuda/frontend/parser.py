@@ -4041,6 +4041,36 @@ class Parser:
             # Skip leading storage class qualifiers (static, inline) before __global__/__device__
             while self._at(TokKind.KW_STATIC):
                 self._advance()
+            # File-scope `(static) const TYPE NAME = VALUE;` — FORGE-emitted
+            # CUDA wrappers (cuda/forge/*_forge.cu) use this form for M31_P
+            # and similar field-prime constants.  Register the value in
+            # _global_consts so identifier lookups in expressions resolve it.
+            # Only fold a constant if the initializer is a Const expression;
+            # complex initializers fall through and the declaration is
+            # skipped.  Save/restore self._pos so a parse failure here
+            # doesn't lose tokens for the dispatch below.
+            if self._at(TokKind.KW_CONST):
+                _saved_pos = self._pos
+                self._advance()  # consume 'const'
+                try:
+                    _ty = self._parse_type_with_ptr()
+                    if self._at(TokKind.IDENT):
+                        _name = self._advance().value
+                        if self._match(TokKind.ASSIGN):
+                            _val_op = self._parse_assign_expr()
+                            if isinstance(_val_op, Const):
+                                self._global_consts[_name] = _val_op
+                            # consume rest of statement up to ';'
+                            while (not self._at(TokKind.SEMI)
+                                   and not self._at(TokKind.EOF)):
+                                self._advance()
+                            self._match(TokKind.SEMI)
+                            continue
+                except Exception:
+                    pass
+                # Couldn't parse cleanly — rewind and let the normal
+                # dispatch handle whatever's there.
+                self._pos = _saved_pos
             # Skip C++ namespace IDENT { ... } — treat contents as module-level
             if self._at(TokKind.IDENT) and self._peek().value == 'namespace':
                 self._advance()  # consume 'namespace'

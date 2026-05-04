@@ -7,11 +7,18 @@ Handles:
   #define NAME                — define without value (for #ifdef)
   #undef NAME                 — remove a define
   #ifdef / #ifndef / #else / #elif / #endif — conditional compilation
+  #include "name"             — quoted-include, resolved against the include
+                                paths supplied to preprocess() (see
+                                CLI -I).  Angle-bracket includes
+                                (#include <...>) and unresolvable
+                                quoted includes are silently skipped
+                                (system headers).
   // and /* */ comments — already handled by lexer
 """
 
 from __future__ import annotations
 import re
+from pathlib import Path
 
 
 def _expand_func_macro(body: str, params: list[str], args: list[str]) -> str:
@@ -96,8 +103,69 @@ def _eval_if_expr(expr: str, obj_defines: dict[str, str]) -> bool:
         return True  # conservative: include on parse error
 
 
-def preprocess(source: str) -> str:
-    """Apply #define substitutions and conditional compilation to source code."""
+_INCLUDE_DEPTH_LIMIT = 32
+
+
+def _resolve_includes(source: str, include_paths: list[Path],
+                      visited: set[str], depth: int = 0) -> str:
+    """Recursively inline #include "name" directives by reading the file
+    from one of include_paths and splicing its contents in place.
+
+    - Quoted includes (#include "name") are resolved against include_paths
+      in order; the first hit wins.  If unresolvable, the line is dropped
+      (matches the prior silent-skip behavior so missing system headers
+      don't break compilation).
+    - Angle-bracket includes (#include <name>) are always skipped.  Those
+      are NVIDIA / libc++ headers OpenCUDA can't usefully inline.
+    - Idempotency: each absolute file is included at most once per
+      compilation, simulating #pragma once / include guards.  Prevents
+      cycles and duplicate-definition errors when several headers pull
+      in a common dependency.
+    - Depth-limited at 32 to defend against pathological cycles that
+      slip past the visited set.
+    """
+    if depth > _INCLUDE_DEPTH_LIMIT:
+        return source
+    out = []
+    for line in source.split('\n'):
+        stripped = line.lstrip()
+        # Allow optional whitespace between '#' and the directive name
+        m = re.match(r'#\s*include\s+"([^"]+)"', stripped)
+        if m:
+            name = m.group(1)
+            resolved = None
+            for d in include_paths:
+                cand = (d / name).resolve()
+                if cand.is_file():
+                    resolved = cand
+                    break
+            if resolved is None:
+                out.append('')  # silently drop unresolvable
+                continue
+            key = str(resolved)
+            if key in visited:
+                out.append('')  # already included — idempotent
+                continue
+            visited.add(key)
+            inner = resolved.read_text(encoding='utf-8')
+            out.append(_resolve_includes(inner, include_paths, visited,
+                                          depth + 1))
+            continue
+        # Angle-bracket include — skip (system headers)
+        if re.match(r'#\s*include\s+<', stripped):
+            out.append('')
+            continue
+        out.append(line)
+    return '\n'.join(out)
+
+
+def preprocess(source: str, include_paths: list[Path] | None = None) -> str:
+    """Apply #include resolution, #define substitutions, and conditional
+    compilation.  Quoted includes are resolved against include_paths
+    (defaults to empty); angle-bracket includes are skipped.  See
+    _resolve_includes for the include policy."""
+    if include_paths:
+        source = _resolve_includes(source, list(include_paths), visited=set())
     # object-like: name → replacement string
     obj_defines: dict[str, str] = {}
     # function-like: name → (params list, body string)

@@ -21,6 +21,10 @@ def main():
                     help="Emit PTX text instead of cubin")
     ap.add_argument("--arch", default="sm_120",
                     help="Target architecture (sm_89 or sm_120)")
+    ap.add_argument("-I", "--include", action="append", default=[],
+                    metavar="DIR",
+                    help="Add directory to header search path "
+                         "(may be repeated; for #include \"...\" only)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -33,7 +37,11 @@ def main():
 
     # Preprocess
     from opencuda.frontend.preprocess import preprocess
-    source = preprocess(source)
+    include_paths = [Path(p) for p in args.include]
+    # The source's own directory is always on the search path so that
+    # quoted includes resolve relatively (matches gcc/clang behavior).
+    include_paths.append(source_path.parent)
+    source = preprocess(source, include_paths=include_paths)
 
     # Parse C → IR
     from opencuda.frontend.parser import parse
