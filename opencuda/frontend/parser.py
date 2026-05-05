@@ -596,6 +596,18 @@ class Parser:
                     coerced = self._new_val("coerce", lhs.ty.pointee)
                     self._emit(CvtInst(coerced, rhs))
                     rhs = coerced
+                # Retype Const literals to the pointer's pointee type so the
+                # store width matches.  Without this, `u32_ptr[i] = 0ULL`
+                # emits `st.global.u64`, which faults with misalignedAddress
+                # whenever the address isn't 8-byte aligned (it's only
+                # required to be 4-byte aligned for u32 stores).
+                elif (isinstance(rhs, Const)
+                        and isinstance(lhs.ty.pointee, ScalarTy)
+                        and isinstance(rhs.ty, ScalarTy)
+                        and rhs.ty != lhs.ty.pointee
+                        and not rhs.ty.is_float
+                        and not lhs.ty.pointee.is_float):
+                    rhs = Const(lhs.ty.pointee, rhs.value)
                 self._emit(StoreInst(addr=lhs, value=rhs))
                 return rhs
             # Variable assignment: update the variable binding.
@@ -1067,6 +1079,46 @@ class Parser:
                             _next_pos_after_ident < len(self._toks)
                             and self._toks[_next_pos_after_ident].kind in (
                                 TokKind.DOT, TokKind.ARROW))
+                        # Fast path: `&struct_var.field[idx]` where the struct
+                        # is a flattened-by-value param (e.g. forge_span_u32_t).
+                        # Without this, the recursive fallback parses
+                        # `struct_var.field[idx]` as an rvalue (eagerly loads
+                        # the value), then spills the scalar to .local, and
+                        # `&` returns the local pointer.  __ldg(local_ptr)
+                        # then becomes ld.global.nc from a .local address,
+                        # which faults at runtime with cudaErrorIllegalAddress.
+                        # Mirrors the &local_var[idx] handling at line 1009.
+                        if (_has_member_access
+                                and self._toks[_next_pos_after_ident].kind == TokKind.DOT
+                                and _next_pos_after_ident + 1 < len(self._toks)
+                                and self._toks[_next_pos_after_ident + 1].kind == TokKind.IDENT
+                                and _next_pos_after_ident + 2 < len(self._toks)
+                                and self._toks[_next_pos_after_ident + 2].kind == TokKind.LBRACKET):
+                            _field_name = self._toks[_next_pos_after_ident + 1].value
+                            _compound_name = f"{name}_{_field_name}"
+                            _flat_var = self._variables.get(_compound_name)
+                            if (_flat_var is not None
+                                    and isinstance(_flat_var, Value)
+                                    and isinstance(_flat_var.ty, PtrTy)):
+                                # Consume IDENT, '.', IDENT, '['
+                                self._advance()  # ident (struct var)
+                                self._advance()  # '.'
+                                self._advance()  # ident (field)
+                                self._advance()  # '['
+                                index = self._parse_expr()
+                                self._expect(TokKind.RBRACKET)
+                                elem_size = _flat_var.ty.pointee.size
+                                if elem_size != 1:
+                                    idx_ty = (index.ty if isinstance(index, Value)
+                                              else INT32)
+                                    scaled = self._new_val("scale", idx_ty)
+                                    self._emit(BinInst(scaled, BinOp.MUL, index,
+                                                       Const(idx_ty, elem_size)))
+                                    index = scaled
+                                addr = self._new_val("addr", _flat_var.ty)
+                                self._emit(BinInst(addr, BinOp.ADD,
+                                                   _flat_var, index))
+                                return addr
                         if not _has_member_access:
                             # &struct_var — allocate a .local struct spill slot,
                             # store current field values, return LOCAL pointer.
