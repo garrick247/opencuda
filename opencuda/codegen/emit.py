@@ -592,9 +592,11 @@ class PTXEmitter:
                     body_lines[add_i] = body_lines[add_i].replace(
                         f'add.u64 {dest_reg}, {ptr_reg}',
                         f'add.u64 {ptr_reg}, {ptr_reg}', 1)
+                    # Word-boundary regex so %rd1 doesn't match inside %rd10.
+                    _dr_re = _re.compile(_re.escape(dest_reg) + r'(?!\d)')
                     for i in range(add_i + 1, scope_end):
                         if dest_reg in body_lines[i]:
-                            body_lines[i] = body_lines[i].replace(dest_reg, ptr_reg)
+                            body_lines[i] = _dr_re.sub(ptr_reg, body_lines[i])
                 # Compact rd indices to fill gaps
                 used_rds = set()
                 for line in body_lines:
@@ -605,9 +607,10 @@ class PTXEmitter:
                         if gap not in used_rds:
                             top = max(used_rds)
                             if top > gap:
+                                _top_re = _re.compile(rf'%rd{top}(?!\d)')
                                 for i in range(len(body_lines)):
-                                    body_lines[i] = body_lines[i].replace(
-                                        f'%rd{top}', f'%rd{gap}')
+                                    body_lines[i] = _top_re.sub(
+                                        f'%rd{gap}', body_lines[i])
                                 used_rds.discard(top)
                                 used_rds.add(gap)
                     actual_counts['rd'] = max(used_rds) + 1 if used_rds else 0
@@ -851,8 +854,14 @@ class PTXEmitter:
                         i += 1
                         continue  # keep the mov; dest is needed after src changes
                     # Safe to eliminate: copy-propagate dest → src up to the
-                    # first redefinition of dest or src.
+                    # first redefinition of dest or src.  Match dest with a
+                    # word boundary so `%r5` doesn't substring-match inside
+                    # `%r50`, `%r55`, etc.  (Without this guard, propagating
+                    # %r5 → %r4 also rewrites %r50 → %r40, silently aliasing
+                    # distinct vregs and causing wrong-output miscompiles in
+                    # kernels with >9 r-prefix registers.)
                     body_lines.pop(i)
+                    _dest_re = _mov_re.compile(_mov_re.escape(dest) + r'(?!\d)')
                     for j in range(i, len(body_lines)):
                         dm = _dest_def_re.match(body_lines[j])
                         if dm and dm.group(1) == dest:
@@ -862,7 +871,7 @@ class PTXEmitter:
                         # so `add %r1, %r2, %r3` with %r2→%r1 propagation
                         # correctly becomes `add %r1, %r1, %r3`.
                         redef_src = dm and dm.group(1) == src
-                        body_lines[j] = body_lines[j].replace(dest, src)
+                        body_lines[j] = _dest_re.sub(src, body_lines[j])
                         if redef_src:
                             break  # src redefined: further subs would read new value
                     continue  # re-check at same index after pop
@@ -913,10 +922,12 @@ class PTXEmitter:
                     body_lines[add_i] = body_lines[add_i].replace(
                         f'add.u64 {dest_reg}, {ptr_reg}',
                         f'add.u64 {ptr_reg}, {ptr_reg}', 1)
-                    # Rename old dest → ptr in lines after this add up to scope_end
+                    # Rename old dest → ptr in lines after this add up to scope_end.
+                    # Word-boundary regex so %rd1 doesn't match inside %rd10.
+                    _dr_re = _re.compile(_re.escape(dest_reg) + r'(?!\d)')
                     for i in range(add_i + 1, scope_end):
                         if dest_reg in body_lines[i]:
-                            body_lines[i] = body_lines[i].replace(dest_reg, ptr_reg)
+                            body_lines[i] = _dr_re.sub(ptr_reg, body_lines[i])
                 # Compact: rename the offset register down to fill any freed slot
                 used_rds = set()
                 for line in body_lines:
@@ -927,9 +938,10 @@ class PTXEmitter:
                         if gap not in used_rds:
                             top = max(used_rds)
                             if top > gap:
+                                _top_re = _re.compile(rf'%rd{top}(?!\d)')
                                 for i in range(len(body_lines)):
-                                    body_lines[i] = body_lines[i].replace(
-                                        f'%rd{top}', f'%rd{gap}')
+                                    body_lines[i] = _top_re.sub(
+                                        f'%rd{gap}', body_lines[i])
                                 used_rds.discard(top)
                                 used_rds.add(gap)
                     new_rd_count = max(used_rds) + 1 if used_rds else 0
