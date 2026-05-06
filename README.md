@@ -2,13 +2,13 @@
 
 **Full CUDA C pipeline, fully open-source, validated on RTX 5090.**
 
-OpenCUDA compiles CUDA C to PTX. [OpenPTXas](https://github.com/garrick99/openptxas) assembles PTX to SM_120 cubins. The resulting kernels run correctly on Blackwell hardware — without nvcc or ptxas.
+OpenCUDA compiles CUDA C to PTX. [OpenPTXas](https://github.com/garrick247/openptxas) assembles PTX to SM_120 cubins. The resulting kernels run correctly on Blackwell hardware — without nvcc or ptxas.
 
 **Just Python. Real cubins. Real GPU. Correct output.**
 
 ## What is this?
 
-A pure-Python compiler that takes CUDA C source and emits PTX assembly. Pair it with [OpenPTXas](https://github.com/garrick99/openptxas) to get an executable cubin you can `cuModuleLoad` directly on a Blackwell GPU. No `nvcc` required.
+A pure-Python compiler that takes CUDA C source and emits PTX assembly. Pair it with [OpenPTXas](https://github.com/garrick247/openptxas) to get an executable cubin you can `cuModuleLoad` directly on a Blackwell GPU. No `nvcc` required.
 
 OpenCUDA is the middle stage of a fully open-source GPU toolchain:
 
@@ -17,11 +17,11 @@ OpenCUDA is the middle stage of a fully open-source GPU toolchain:
                                   ↑ this repo               PTX → SASS → ELF
 ```
 
-- **[Forge](https://github.com/garrick99/forge)** — formally-verified systems language (optional front-end; emits the CUDA C that OpenCUDA consumes)
+- **[Forge](https://github.com/garrick247/forge)** — formally-verified systems language (optional front-end; emits the CUDA C that OpenCUDA consumes)
 - **OpenCUDA** (this repo) — CUDA C → PTX, pure Python
-- **[OpenPTXas](https://github.com/garrick99/openptxas)** — PTX → SM_120 cubin, pure Python
-- **[forge-workbench](https://github.com/garrick99/forge-workbench)** — cross-stack CLI cockpit (run / compare / benchmark / classify)
-- **[VortexSTARK](https://github.com/garrick99/VortexSTARK)** — production user via the Forge front-end
+- **[OpenPTXas](https://github.com/garrick247/openptxas)** — PTX → SM_120 cubin, pure Python
+- **[forge-workbench](https://github.com/garrick247/forge-workbench)** — cross-stack CLI cockpit (run / compare / benchmark / classify)
+- **[VortexSTARK](https://github.com/garrick247/VortexSTARK)** — production user via the Forge front-end
 
 No NVIDIA compiler is invoked at any stage of the toolchain.
 
@@ -91,12 +91,12 @@ Pure Python. No dependencies beyond pytest.
 - **Frontend**: Lexer + recursive descent parser + SSA IR
 - **Optimizer**: Constant folding, CSE, copy propagation, loop unrolling
 - **Codegen**: PTX 9.0 emission with ternary diamond detection, register peepholes
-- **Backend**: [OpenPTXas](https://github.com/garrick99/openptxas) for PTX-to-cubin
+- **Backend**: [OpenPTXas](https://github.com/garrick247/openptxas) for PTX-to-cubin
 
 ## Requirements
 
 - Python 3.11+
-- [OpenPTXas](https://github.com/garrick99/openptxas) (for cubin generation)
+- [OpenPTXas](https://github.com/garrick247/openptxas) (for cubin generation)
 - NVIDIA GPU + CUDA toolkit (for execution)
 
 ## License
